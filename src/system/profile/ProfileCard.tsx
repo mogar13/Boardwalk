@@ -46,112 +46,115 @@ export function ProfileCard() {
 
   return (
     <>
-    <Card className="flex flex-col gap-6 px-6 py-5">
-      <div className="flex flex-wrap items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <span className="text-4xl" aria-hidden>
-            {profile.avatar}
-          </span>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="font-display text-base-content text-lg font-semibold tracking-[0.08em]">
-                {profile.name}
-              </span>
-              {/* The one editable thing. Quiet, next to the name, opening a real <Modal> — never
+      <Card className="flex flex-col gap-6 px-6 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <span className="text-4xl" aria-hidden>
+              {profile.avatar}
+            </span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="font-display text-base-content text-lg font-semibold tracking-[0.08em]">
+                  {profile.name}
+                </span>
+                {/* The one editable thing. Quiet, next to the name, opening a real <Modal> — never
                   a native prompt(), which is a lint error and cannot be themed or tested. */}
-              <Button variant="quiet" size="sm" onClick={openEditor}>
-                Edit
-              </Button>
-            </div>
-            <span className="text-bw-muted text-xs">
-              Level {level}
-              {/* Hiding a badge is cosmetic. `admins/<uid>` and database.rules.json are
+                <Button variant="quiet" size="sm" onClick={openEditor}>
+                  Edit
+                </Button>
+              </div>
+              <span className="text-bw-muted text-xs">
+                Level {level}
+                {/* Hiding a badge is cosmetic. `admins/<uid>` and database.rules.json are
                   what actually stop a non-admin's writes — this only renders a fact the
                   server already decided. v1 shipped two backdoors by getting that
                   backwards. */}
-              {isAdmin && ' · admin'}
-            </span>
+                {isAdmin && ' · admin'}
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-6">
-          <div className="flex flex-col gap-1">
-            <span className="font-display text-bw-muted text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
-              Bankroll
-            </span>
-            {/* Gold, once, and only here on this card. It is money — that is the whole
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col gap-1">
+              <span className="font-display text-bw-muted text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
+                Bankroll
+              </span>
+              {/* Gold, once, and only here on this card. It is money — that is the whole
                 rule. `data-money` gives tabular figures from the theme, so a ticking
                 balance does not reflow on every digit the way v1's HUD does. */}
-            <span data-money className="font-display text-accent text-3xl font-bold tracking-tight">
-              {formatMoney(profile.bankrollCents)}
-            </span>
+              <span
+                data-money
+                className="font-display text-accent text-3xl font-bold tracking-tight"
+              >
+                {formatMoney(profile.bankrollCents)}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                void signOut();
+              }}
+            >
+              Sign out
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void signOut();
-            }}
-          >
-            Sign out
-          </Button>
         </div>
-      </div>
 
-      {/* The XP meter. Cyan, not gold — progress is "here", not money — and it does not
+        {/* The XP meter. Cyan, not gold — progress is "here", not money — and it does not
           glow: the room stays dark, and a filling bar is furniture, not a sign. `into` and
           `needed` come from the same `xpProgress` call as `level`, so there is one source
           for the badge and the bar both. */}
-      <div className="flex flex-col gap-1.5">
-        <div className="text-bw-muted flex items-center justify-between text-xs">
-          <span className="font-display font-semibold tracking-[0.2em] uppercase">
-            Level {level}
-          </span>
-          <span data-money>
-            {into.toLocaleString('en-US')} / {needed.toLocaleString('en-US')} XP
-          </span>
-        </div>
-        <div
-          className="bg-base-300 border-bw-line inset-shadow-well h-2 w-full overflow-hidden rounded-full border"
-          role="progressbar"
-          aria-valuenow={Math.round(pct * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Level ${String(level)} progress`}
-        >
+        <div className="flex flex-col gap-1.5">
+          <div className="text-bw-muted flex items-center justify-between text-xs">
+            <span className="font-display font-semibold tracking-[0.2em] uppercase">
+              Level {level}
+            </span>
+            <span data-money>
+              {into.toLocaleString('en-US')} / {needed.toLocaleString('en-US')} XP
+            </span>
+          </div>
           <div
-            className="bg-secondary h-full rounded-full transition-[width] duration-500 ease-strike"
-            style={{ width: `${String(Math.round(pct * 100))}%` }}
-          />
+            className="bg-base-300 border-bw-line inset-shadow-well h-2 w-full overflow-hidden rounded-full border"
+            role="progressbar"
+            aria-valuenow={Math.round(pct * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Level ${String(level)} progress`}
+          >
+            <div
+              className="bg-secondary h-full rounded-full transition-[width] duration-500 ease-strike"
+              style={{ width: `${String(Math.round(pct * 100))}%` }}
+            />
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
 
-    <Modal
-      open={editing}
-      onClose={() => setEditing(false)}
-      title="Edit your name"
-      description="Your display name — not your login. It shows in the top bar and on the leaderboard."
-      footer={
-        <>
-          <Button variant="ghost" onClick={() => setEditing(false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={save} disabled={saving}>
-            Save name
-          </Button>
-        </>
-      }
-    >
-      <Input
-        label="Display name"
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-        }}
-        maxLength={40}
-        autoFocus
-      />
-    </Modal>
+      <Modal
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="Edit your name"
+        description="Your display name — not your login. It shows in the top bar and on the leaderboard."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={save} disabled={saving}>
+              Save name
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Display name"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+          }}
+          maxLength={40}
+          autoFocus
+        />
+      </Modal>
     </>
   );
 }

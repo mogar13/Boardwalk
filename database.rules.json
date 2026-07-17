@@ -299,6 +299,14 @@
       // `hands/<gameId>/<roomId>/<seatIndex>` — mirrors the room path so a hand maps to its seat.
       "$gameId": {
         "$roomId": {
+          // Room-level write is DELETE-ONLY, and host-authorised — the mirror of the room's own
+          // delete rule, so a closed room's hands are cleared WITH it. `roomRepo.remove()` deletes
+          // this subtree before the room node precisely so `meta/host` is still readable here.
+          // Without this rule the per-seat writes below cannot bubble up to authorise deleting the
+          // parent, so the delete is refused for everyone (host included) and the hands orphan
+          // forever. `!newData.exists()` keeps it a pure delete — it cannot cascade a broad write
+          // over the per-seat rules, and the per-seat `.read` stays owner-only.
+          ".write": "auth != null && !newData.exists() && (root.child('rooms').child($gameId).child($roomId).child('meta').child('host').val() === auth.uid || root.child('admins').child(auth.uid).exists())",
           "$seatIndex": {
             // Read ONLY by the account in that seat — resolved against the room's seat array.
             ".read": "auth != null && root.child('rooms').child($gameId).child($roomId).child('seats').child($seatIndex).child('uid').val() === auth.uid",

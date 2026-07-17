@@ -1,13 +1,7 @@
 import { useCallback } from 'react';
 import { useAuthStore } from '@/system/auth/authStore';
 import { formatDollars } from '@/system/profile/money';
-import {
-  applyEquip,
-  applyPurchase,
-  canBuy,
-  isOwned,
-  type Cosmetic,
-} from '@/system/store/catalog';
+import { applyEquip, applyPurchase, canBuy, isOwned, type Cosmetic } from '@/system/store/catalog';
 import { useConfirm, useToast } from '@/ui';
 
 /**

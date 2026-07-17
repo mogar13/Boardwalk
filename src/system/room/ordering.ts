@@ -33,13 +33,18 @@ export function isFresh(incomingSeq: number, appliedSeq: number): boolean {
 }
 
 /**
- * The reconcile a subscriber runs on every incoming snapshot: keep the current value unless the
- * incoming one is genuinely newer. This is what makes out-of-order delivery harmless — a late
- * packet carrying seq 4 cannot clobber the seq 5 we already showed, so the screen never flickers
- * backwards to a state the player has already moved past.
+ * The reconcile primitive: keep the current value unless the incoming one is genuinely newer. This
+ * is what makes out-of-order delivery harmless — a late packet carrying seq 4 cannot clobber the
+ * seq 5 we already showed, so the screen never flickers backwards to a state the player has already
+ * moved past.
  *
- * Pure and total: it decides between two values it is handed and touches nothing else, which is
- * why it can be unit-tested against a shuffled delivery order with no Firebase in the room.
+ * Today the live subscription does not call this: a single `onValue` listener (RoomProvider) is
+ * delivered value events in order by RTDB, and the server `seq` rule refuses a rewind at the source,
+ * so a stale snapshot never reaches the client to be dropped. This is the client-side belt for the
+ * day state arrives from more than one listener (BACKEND_PLAN.md's WebSocket path) — proven now,
+ * against a shuffled delivery order, so it is correct before it is load-bearing.
+ *
+ * Pure and total: it decides between two values it is handed and touches nothing else.
  */
 export function applyIfFresh<T>(
   current: { readonly value: T; readonly seq: number },

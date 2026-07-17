@@ -601,6 +601,18 @@ describe('rooms/<gameId>/<roomId> — Phase 5, and strictly more closed than v1'
     await assertFails(set(ref(asAdmin(), `${HANDS_PATH}/1`), { hand: ['Q'] }));
   });
 
+  it('lets the host clear the whole hands subtree (room still present), and refuses a non-host', async () => {
+    // roomRepo.remove() deletes hands BEFORE the room, so this host rule reads a still-present
+    // meta/host. Without a room-level delete rule this fails silently for everyone and the hands
+    // orphan forever — a private node that no client can remove.
+    await seedRoom();
+    await seed(async (db) => {
+      await set(ref(db, `${HANDS_PATH}/0`), { hand: ['A', 'K'] });
+    });
+    await assertFails(dbRemove(ref(asUser(STRANGER), HANDS_PATH)));
+    await assertSucceeds(dbRemove(ref(asUser(ME), HANDS_PATH)));
+  });
+
   it('lets you write only your OWN presence', async () => {
     await seedRoom();
     await assertSucceeds(set(ref(asUser(ME), `${ROOM_PATH}/presence/${ME}`), true));

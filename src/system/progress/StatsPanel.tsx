@@ -19,7 +19,9 @@ function Tile({ label, value }: { label: string; value: string }) {
       <span className="font-display text-bw-muted text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
         {label}
       </span>
-      <span className="font-display text-base-content text-2xl font-bold tabular-nums">{value}</span>
+      <span className="font-display text-base-content text-2xl font-bold tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }
@@ -56,7 +58,9 @@ export function StatsPanel() {
               key={gameId}
               className="border-bw-line/60 flex items-center justify-between border-b py-2 text-sm last:border-b-0"
             >
-              <span className="text-base-content font-medium">{findGame(gameId)?.name ?? gameId}</span>
+              <span className="text-base-content font-medium">
+                {findGame(gameId)?.name ?? gameId}
+              </span>
               <span className="text-bw-muted tabular-nums">
                 {s.won}W · {s.lost}L{s.pushed > 0 ? ` · ${String(s.pushed)}P` : ''}
               </span>

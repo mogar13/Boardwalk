@@ -98,8 +98,15 @@ export function Modal({
     // Guarded both ways. showModal() on an already-open dialog throws
     // InvalidStateError, and close() on a closed one fires a spurious `close`
     // event — either turns a harmless double-render into a real bug.
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // The dialog's children are always in the DOM (they must be, to animate out), so React's
+      // `autoFocus` fired imperatively at mount — while this dialog was display:none — and did
+      // nothing. The native dialog-autofocus algorithm then finds no [autofocus] node and lands on
+      // the first tabbable element, which is the × Close button. So focus the first form control
+      // ourselves. Dialogs without one (confirm) match nothing and keep the native default.
+      dialog.querySelector<HTMLElement>('input, textarea, select')?.focus();
+    } else if (!open && dialog.open) dialog.close();
   }, [open]);
 
   return (

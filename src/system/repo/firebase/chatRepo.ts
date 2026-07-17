@@ -55,14 +55,20 @@ export const firebaseChatRepo: ChatRepo = {
     const key = messageKey(Date.now(), counter);
     counter += 1;
     // The message is filed AT its key. `uid` is written as the sender's own — the rules refuse it
-    // otherwise, so this is the only value that can succeed.
-    await set(ref(firebaseDb(), `${CHAT(gameId, roomId)}/${key}`), {
-      uid: message.uid,
-      name: message.name,
-      text: message.text,
-      key,
-    });
-    return { ok: true, value: undefined };
+    // otherwise, so this is the only value that can succeed. A rejection (offline, rate-limited) is
+    // returned as a value, not thrown: `send` is a `RepoResult` method (types.ts) and its one caller
+    // (`useChat`) fires it as `void`, so a thrown rejection would be an unhandled promise rejection.
+    try {
+      await set(ref(firebaseDb(), `${CHAT(gameId, roomId)}/${key}`), {
+        uid: message.uid,
+        name: message.name,
+        text: message.text,
+        key,
+      });
+      return { ok: true, value: undefined };
+    } catch {
+      return { ok: false, error: 'Message not sent.' };
+    }
   },
 
   subscribe(gameId, roomId, listener, limit): Unsubscribe {

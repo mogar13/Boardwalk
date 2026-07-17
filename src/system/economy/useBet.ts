@@ -57,7 +57,10 @@ export function useBet(): BetApi {
     (cents: number) => setAmount((a) => clampBet(a + cents, balance, bounds)),
     [balance, bounds]
   );
-  const clear = useCallback(() => setAmount(clampBet(bounds.min, balance, bounds)), [balance, bounds]);
+  const clear = useCallback(
+    () => setAmount(clampBet(bounds.min, balance, bounds)),
+    [balance, bounds]
+  );
 
   const commit = useCallback((): number | null => {
     const profile = useAuthStore.getState().profile;

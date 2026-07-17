@@ -49,7 +49,11 @@ export function maxBet(balanceCents: number, bounds: BetBounds): number {
  * not their problem. Under the table minimum is checked first because a $0 or negative bet is
  * the degenerate case and should not be reported as "you can't afford it".
  */
-export function validateBet(amountCents: number, balanceCents: number, bounds: BetBounds): BetCheck {
+export function validateBet(
+  amountCents: number,
+  balanceCents: number,
+  bounds: BetBounds
+): BetCheck {
   if (!Number.isInteger(amountCents)) {
     // Not a user-facing situation — chips are whole — so the message is plain. Reaching here
     // means a caller built a fractional bet, which is the bug this refuses to paper over.

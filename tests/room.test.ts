@@ -223,6 +223,10 @@ describe('teardownPlan — only the host clears shared state', () => {
     const s = snap(ME, { [ME]: true }, [human(ME), ai()]);
     const plan = teardownPlan(s, ME);
     expect(plan).toContainEqual({ target: 'room' });
+    // ...and does NOT also release the seat: that write is a read-then-write which, racing the
+    // room delete, can re-create a seat leaf under a room with no meta — an unremovable orphan.
+    // Removing the room frees the seat. (Regression guard for the zombie-room race.)
+    expect(plan.some((p) => p.target === 'seat')).toBe(false);
   });
 
   it('omits the seat step when I hold no seat (a spectator leaving)', () => {

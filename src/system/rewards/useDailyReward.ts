@@ -45,7 +45,9 @@ export function useDailyReward(): DailyRewardApi {
     };
     void mutateProfile(next).then(
       () => {
-        toast.success(`Day ${String(result.state.streak)} — ${formatMoney(result.rewardCents)} claimed`);
+        toast.success(
+          `Day ${String(result.state.streak)} — ${formatMoney(result.rewardCents)} claimed`
+        );
       },
       () => {
         toast.error('Could not claim your reward — try again.');

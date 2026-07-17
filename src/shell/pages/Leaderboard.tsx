@@ -25,9 +25,7 @@ function Row({ entry, rank, isMe }: { entry: LeaderboardEntry; rank: number; isM
         isMe && 'bg-secondary/10 ring-secondary/40 ring-1'
       )}
     >
-      <span className="font-display text-bw-muted text-sm font-semibold tabular-nums">
-        {rank}
-      </span>
+      <span className="font-display text-bw-muted text-sm font-semibold tabular-nums">{rank}</span>
       <div className="flex min-w-0 items-center gap-3">
         <span className="text-2xl" aria-hidden>
           {entry.avatar}
@@ -73,16 +71,18 @@ export function Leaderboard() {
           Leaderboard
         </h1>
         <p className="text-bw-muted max-w-2xl text-sm">
-          The public standings, ranked by wins. Everyone can see this — it is the one projection of a
-          profile that is world-readable, and it holds no more than a name, an avatar, a level, wins
-          and a bankroll.
+          The public standings, ranked by wins. Everyone can see this — it is the one projection of
+          a profile that is world-readable, and it holds no more than a name, an avatar, a level,
+          wins and a bankroll.
         </p>
       </header>
 
       <Card className="flex flex-col gap-1 p-3">
         {/* Column headers, on wide screens only — the row layout carries the labels on mobile. */}
         <div className="text-bw-muted hidden grid-cols-[2.5rem_1fr_5rem_7rem] gap-4 px-3 pb-2 sm:grid">
-          <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">#</span>
+          <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
+            #
+          </span>
           <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
             Player
           </span>
