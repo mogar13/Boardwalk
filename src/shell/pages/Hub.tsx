@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Card } from '@/ui';
-import { PIERS, gamesOnPier } from '@/games/registry';
+import { PIERS, gameIconSrc, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
 import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
 
@@ -21,14 +21,31 @@ function GameCard({ game }: { game: RegisteredGame }) {
   // A link to `/play/:id`, keyed off `manifest.id` — the same string the route resolves back
   // through `findGame`. The hub never hardcodes a game; it reads the registry, so a new game
   // appears here the moment its manifest lands, with no change to this file.
-  const { id, name, blurb } = game.manifest;
+  const { id, name, blurb, icon } = game.manifest;
+  const iconSrc = gameIconSrc(icon);
   return (
     <Link to={`/play/${id}`} className="block">
-      <Card interactive className="flex h-full flex-col gap-2 p-5">
-        <h3 className="font-display text-base-content text-base font-semibold tracking-[0.1em] uppercase">
-          {name}
-        </h3>
-        <p className="text-bw-muted text-sm">{blurb}</p>
+      <Card interactive className="flex h-full flex-col gap-3 p-5">
+        {iconSrc !== undefined ? (
+          // The art is furniture, not a sign — no glow (CLAUDE.md's card rule). `alt=""` +
+          // aria-hidden because the heading right below already names the card.
+          <img src={iconSrc} alt="" aria-hidden className="h-14 w-14 object-contain" />
+        ) : (
+          // Until a game's art is curated in, a quiet well with its initial keeps every card
+          // the same height — the "bring the asset with its reader" rule, drawn honestly.
+          <span
+            aria-hidden
+            className="bg-base-300 border-bw-line text-bw-muted rounded-field font-display flex h-14 w-14 items-center justify-center border text-2xl font-bold"
+          >
+            {name.charAt(0)}
+          </span>
+        )}
+        <div className="flex flex-col gap-1">
+          <h3 className="font-display text-base-content text-base font-semibold tracking-[0.1em] uppercase">
+            {name}
+          </h3>
+          <p className="text-bw-muted text-sm">{blurb}</p>
+        </div>
       </Card>
     </Link>
   );

@@ -25,6 +25,7 @@ export const ticTacToeManifest = {
   id: 'tic-tac-toe',
   name: 'Tic-Tac-Toe',
   blurb: 'Three in a row. The oldest table on the boardwalk — play a friend or the house.',
+  icon: 'tic-tac-toe.png',
   pier: 'tables',
   seats: { min: 1, max: 2 },
   modes: ['ai', 'online'],

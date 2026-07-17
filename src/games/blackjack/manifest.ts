@@ -24,6 +24,7 @@ export const blackjackManifest = {
   id: 'blackjack',
   name: 'Blackjack',
   blurb: 'Beat the dealer to 21 without busting. A natural pays 3:2 — the house stands on all 17s.',
+  icon: 'blackjack.png',
   pier: 'casino',
   seats: { min: 1, max: 1 },
   modes: ['solo'],
