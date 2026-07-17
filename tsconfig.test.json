@@ -7,7 +7,14 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "target": "ES2023",
-    "lib": ["ES2023"],
+    /* `DOM`/`DOM.Iterable` and `jsx` are here for TRANSITIVELY-imported src, not the tests
+       themselves (which stay plain Node `.ts`). `game-icons.test.ts` imports the registry to check
+       every registered game's icon resolves on disk, and the registry lazy-imports each game's
+       `*Game.tsx`, which reach `document`/`window`/JSX. Without these, `tsc -b` on the test project
+       fails on browser code the app project checks fine. Runtime is unaffected — `lazy()` never runs
+       those imports under test, and Node still owns the guard tests via `"types": ["node", …]`. */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "bundler",
     /* `vite/client` alongside `node` because a test may import a browser-side src module that

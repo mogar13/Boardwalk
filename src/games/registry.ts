@@ -123,6 +123,16 @@ export interface GameManifest {
   /** One line on the hub card — what the game is, in a breath. */
   readonly blurb: string;
 
+  /**
+   * The hub-card icon: a bare filename under `public/games/` (e.g. `'blackjack.png'`),
+   * resolved to a base-path-aware URL by `gameIconSrc`. OPTIONAL on purpose — a game may
+   * register before its art is curated in (the same "bring the asset with its reader" rule
+   * the audio/card registries hold to), and the hub draws a neutral placeholder until then.
+   * `tests/game-icons.test.ts` asserts every icon that IS named resolves to a file on disk,
+   * so a typo is a failing test, not a silent broken image — the `cardSrc` rule, for icons.
+   */
+  readonly icon?: string;
+
   /** Which pier it stands on. Assigned, from the fixed set above. */
   readonly pier: Pier;
 
@@ -199,4 +209,15 @@ export function findGame(id: string | undefined): RegisteredGame | undefined {
 /** The games standing on a given pier, in registry order. Empty piers render an empty state. */
 export function gamesOnPier(pier: Pier): readonly RegisteredGame[] {
   return registry.filter((game) => game.manifest.pier === pier);
+}
+
+/**
+ * A game icon's URL from its bare filename, base-path-aware — `/Boardwalk/games/…` in prod,
+ * `/games/…` in dev/test. The same shape as `cardSrc`, and the single place the `public/games/`
+ * path is spelled, so the icon set could be re-dropped or moved without hunting call sites.
+ * Returns `undefined` when the manifest names no icon, which is the hub's cue to draw its
+ * placeholder rather than a broken `<img>`.
+ */
+export function gameIconSrc(icon: string | undefined): string | undefined {
+  return icon === undefined ? undefined : `${import.meta.env.BASE_URL}games/${icon}`;
 }
