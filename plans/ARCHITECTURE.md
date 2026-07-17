@@ -2,7 +2,8 @@
 
 **Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
-five games) is design.
+five games) is in progress: **Tic-Tac-Toe shipped 2026-07-17**, the SDK's smoke test; Blackjack,
+Chess, UNO and Solitaire remain.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -340,7 +341,7 @@ One phase per conversation. Each ends green and deployed.
 | 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
 | 4 | ~~**Economy + progress**~~ ✅ | `useBet`, `reportResult`, stats, achievements, store (avatars), daily rewards, live leaderboard. |
 | 5 | ~~**Multiplayer**~~ ✅ | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests, and the `rooms/`/`hands/`/`chat/` rules Phase 2 deferred. |
-| 6 | **The five games** | See below. |
+| 6 | **The five games** | In progress — Tic-Tac-Toe ✅. See below. |
 
 Phases 0→5 are sequential. Phase 6 is five independent units.
 
@@ -847,3 +848,81 @@ rules are stale in production is a hidden-information leak, not just a malformed
 rules (`npm run rules:deploy`) in the same breath as shipping this. And the browser verification,
 though it now runs against a real backend, is still a manual pass a person must remember — a real
 browser/integration guard in CI remains unbuilt.
+
+## Phase 6 — Tic-Tac-Toe (the first of five)
+
+2026-07-17. The SDK's smoke test, and it passed: `src/games/tic-tac-toe` (manifest, pure
+`logic/ticTacToe.ts`, `Board.tsx`), the component loader the registry deferred through five phases,
+the `<Lobby>` `children` seam, and the two lint rules Phase 6 owed — `@boardwalk/no-impure-logic`
+and `@boardwalk/no-cross-game-imports` — with 18 game-logic tests and 7 new lint-guard assertions
+(262 total, all green). The game is a manifest, a pure rules module, and a board that reads three hooks; the
+lobby, the room, the seats, the ordering and the economy are all the OS's. ARCHITECTURE.md's bet —
+"if this isn't ~150 lines, the SDK is wrong" — held: the two glue files (`TicTacToeGame.tsx`,
+`Board.tsx`) are ~130 lines together, and every hard thing is in the OS or in tested pure logic.
+
+### The loader question, answered by its first caller
+
+Phases 0–5 all refused to build the component loader (`registry.ts`, `Play.tsx`, `GameShell` and
+`useSeats` each say so): a `React.lazy` with no component to load is `validateAndCommit()` in
+miniature. Tic-Tac-Toe is that caller, and the answer is the smallest thing that works. A
+`RegisteredGame` is `{ manifest, Component }` where `Component = lazy(() => import('./…Game'))` is
+built ONCE at module load — the manifest imported eagerly (the hub needs every name and pier before
+any component fetches), the component lazily (its own chunk: `TicTacToeGame-*.js`, 4.5kB, the
+per-game code-split Phase 3's 500kB note wanted). `lazy` lives in the registry, not the play route,
+because `react-hooks/static-components` forbids minting a lazy wrapper in render — a per-render
+wrapper is a new component type each tick, which remounts and tears down the room subscription. The
+registry is the module that already runs once and already names every game.
+
+The composition is then three layers, each owed to every game and no more: `Play.tsx` wraps the
+lazy component in `<GameShell manifest>` (the economy context) and `<Suspense>`, passing only
+`onExit`; a multiplayer game renders `<Lobby manifest onExit>` and hands its board in as `children`,
+which the lobby swaps in for the seat list once `status === 'playing'`. The board is thus mounted
+inside the lobby's single `<RoomProvider>`, so its `useRoom`/`useSeats`/`useGame` reach the one
+subscription without the game registering anything — the reason no game can leak a listener is still
+structural, now proven by a game.
+
+### The bug only a browser found — and it was exactly the kind the docs promised
+
+Every static guard was green — `tsc`, ESLint, 18 logic tests, the production build — and the game
+was broken. The board never rendered: `PAGEERROR: Cannot read properties of undefined (reading
+'map')`, caught only by driving the built app against the emulator with a headless Chrome (real
+sign-up, AI table, seat, start, play), the same manual browser pass Phases 1/3/5 used and the same
+class of bug Phase 1's `<dialog>` scroll was.
+
+The cause is a RTDB fact no type system encodes: **RTDB drops null children.** The board was
+`Cell = Player | null` with empty = `null`, so the host's opening state wrote `board: [null × 9]` —
+an all-null array is an empty node, which RTDB deletes — and every client read `state.board` back as
+`undefined` and crashed on `.map` before a single cell drew. It typechecked (the wire type and the
+domain type were the same `Cell[]`), it unit-tested (the pure logic never round-trips through a
+database), and it built. The fix is a wire-safe empty sentinel: `EMPTY = -1`, which `0` (a real
+seat) is not, so the board is a fixed-length array of numbers that survives the round trip. The
+lesson is the one already in this document, paid for again in a new place: the wire shape and the
+domain shape are not automatically the same, and the gap between them is invisible to every tool here
+except a real backend. (This is also the argument, made once more, for the browser/integration guard
+in CI that Phase 5 left unbuilt — it would have caught this without a person remembering to look.)
+
+### The house is perfect on purpose
+
+`bestMove` is minimax, not a heuristic — Tic-Tac-Toe is a solved draw, so the house never loses and
+a human can at best tie it. Two reasons over a heuristic: it is the honest result for the oldest
+table on the boardwalk, and (the load-bearing one) it is exactly specifiable, so the tests assert it
+*takes* an open win, *blocks* a forced loss, opens centre, and draws against itself — rather than
+eyeballing "plays alright". Ties among equal-value moves break by a centre→corner→edge rank, which
+changes no outcome but makes play deterministic (so the tests can pin "empty board → 4") and
+natural-looking. The house drives its seat through `aiSeatsToDrive` (host-only), the Phase-5 seam
+for AI-as-occupant — an online guest never computes the bot's move, so no human is ever prompted to
+play the computer's hand (v1's bug).
+
+**Not built, on purpose:** hot-seat for Tic-Tac-Toe. The manifest offers `ai` and `online` only;
+hot-seat (one screen, two humans) is Chess's assigned coverage, and adding it here would test the
+same `sharedScreen` path twice while leaving this game's question — "is the SDK cheap?" — no better
+answered. It also surfaced a real open question for whoever builds it: the `SeatList` "Sit" button
+gates on `mySeatIndex === -1`, so one account cannot claim two seats — hot-seat needs a way to seat
+a second local human that does not yet exist, and Chess is the design input for it. No generic
+board-game engine, and no shared game code hoisted (there is nothing to hoist from one game).
+
+**The gap Phase 6 (so far) leaves.** The browser pass that found the null-board bug is still a manual
+one — the CI browser guard Phases 1/3/5 all named remains the honest missing piece, and it is now the
+guard that would have caught a shipped-broken game rather than a cosmetic. And the hand-deploy rules
+gap persists, though Phase 6 did not touch `database.rules.json` (Tic-Tac-Toe adds no new node — it
+lives under the existing `rooms/`/`state/` rules), so nothing new needs deploying for this game.

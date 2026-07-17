@@ -59,7 +59,7 @@ export function StatsPanel() {
               className="border-bw-line/60 flex items-center justify-between border-b py-2 text-sm last:border-b-0"
             >
               <span className="text-base-content font-medium">
-                {findGame(gameId)?.name ?? gameId}
+                {findGame(gameId)?.manifest.name ?? gameId}
               </span>
               <span className="text-bw-muted tabular-nums">
                 {s.won}W · {s.lost}L{s.pushed > 0 ? ` · ${String(s.pushed)}P` : ''}

@@ -4,11 +4,20 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0–5 have shipped. Phase 6 has not.** There is a live routed app, a green pipeline,
+**Phases 0–5 have shipped. Phase 6 is in progress: Tic-Tac-Toe, the first of the five, is live.**
+The registry now carries a real game and a `React.lazy` component loader (`RegisteredGame` =
+`{ manifest, Component }`), the play route mounts a game inside `<GameShell>` + `<Suspense>`, the
+`<Lobby>` renders a game's board as `children` once play starts, and `src/games/tic-tac-toe`
+(manifest, pure unit-tested `logic/`, board) is registered and playable. The two Phase-6 lint rules
+this phase owed — `@boardwalk/no-impure-logic` (a game's `logic/` imports nothing impure) and
+`@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live and their guards
+fire in `tests/lint-rules.test.ts`. **Four games remain: Blackjack, Chess, UNO, Solitaire.**
+
+There is a live routed app, a green pipeline,
 `@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
 repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
 the emulator and proves it — `src/shell` (router, auth gate, top bar with bankroll + XP, the hub and
-its piers), `src/games/registry.ts` (the typed catalogue, empty until Phase 6), the **economy**
+its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe registered, four to go), the **economy**
 (`src/system/economy` — `useBet`, `reportResult`, `GameShell` over pure bet/payout logic —
 `src/system/progress`, `src/system/store`, `src/system/rewards`), and now **multiplayer**:
 `src/system/room` (`useRoom`, `useSeats`, seats as the universal primitive, `localSeatIds`,
@@ -17,7 +26,11 @@ uid-pinned messages), over `RoomRepo`/`ChatRepo` and pure, unit-tested seat/orde
 logic. `database.rules.json` now governs `rooms/`, `hands/` (owner-only hidden information) and
 `chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase/a
 daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
-derived from `xp`, `wins` from `stats`, neither stored. There are still **no games**. Start at
+derived from `xp`, `wins` from `stats`, neither stored. There is now **one game** (Tic-Tac-Toe),
+which is how the SDK first got exercised end-to-end — it proved the OS carries the weight (the game
+is ~1 file of glue plus a pure `logic/`), and it found the one bug static guards could not (RTDB
+drops null children, so a null-filled board round-trips back as `undefined`; the fix is a `-1` empty
+sentinel — see ARCHITECTURE.md). Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
@@ -87,18 +100,35 @@ lint rule that matches nothing reports success.
 
 ### Games
 
-- **A game receives `{ onExit }` and nothing else.** Everything else is a hook. A `system` prop would
-  rebuild the `window.SystemUI` god-object this project exists to escape.
-- **`logic/` is pure.** No DOM, no React, no `@/system`, no Firebase. Lint-enforced. This is what
-  makes rules unit-testable now and server-runnable later ([BACKEND_PLAN.md](plans/BACKEND_PLAN.md)).
+- **A game receives `{ onExit }` and nothing else.** ✅ Live — `GameProps` in `src/games/registry.ts`,
+  and the play route (`src/shell/pages/Play.tsx`) passes only `onExit`. Everything else is a hook. A
+  `system` prop would rebuild the `window.SystemUI` god-object this project exists to escape.
+- **`logic/` is pure.** No DOM, no React, no `@/system`, no Firebase. ✅ Lint-enforced —
+  `@boardwalk/no-impure-logic` (bans React and any resolved import into `src/system`/`src/ui`, four
+  import syntaxes, relative escapes included). This is what makes rules unit-testable now and
+  server-runnable later ([BACKEND_PLAN.md](plans/BACKEND_PLAN.md)).
 - **Extract logic → test logic → then draw UI.** In that order. Tests before any UI exists. This is
-  the only step that catches a bad shuffle or an off-by-one score.
+  the only step that catches a bad shuffle or an off-by-one score. (Tic-Tac-Toe: `logic/ticTacToe.ts`
+  + `tests/ticTacToe.test.ts` existed and were green before `Board.tsx` was drawn.)
 - **`gameId` comes from `manifest.id`.** Never a string literal. In v1, 5 of 31 games' stats silently
-  never reached the hub because `texas_holdem` recorded itself as `"poker"`.
-- **Nothing under `games/` imports another game's folder.** Lint-enforced. Hoist shared code to
-  `system/` or `ui/` deliberately.
+  never reached the hub because `texas_holdem` recorded itself as `"poker"`. ✅ Live — the registry
+  keys on `manifest.id` (frozen `as const`), and stats/room-path/route all derive from it.
+- **Nothing under `games/` imports another game's folder.** ✅ Lint-enforced —
+  `@boardwalk/no-cross-game-imports` (resolves the specifier, so a single-`../` sibling escape fires
+  too; the registry, which names every game, is deliberately exempt). Hoist shared code to `system/`
+  or `ui/` deliberately.
+- **A game attaches to its component via a lazy `Component` on its registry entry.** ✅ Live —
+  `RegisteredGame` is `{ manifest, Component }`, `Component = lazy(() => import(...))` built once at
+  module load so each game is its own chunk. Never `lazy()` in render (it remounts and drops the room
+  subscription); the registry is the module that runs once and already names every game.
+- **A multiplayer game renders `<Lobby manifest onExit>` and passes its board as `children`.** ✅ Live.
+  The lobby owns create/join/seats/chat/start and the one `<RoomProvider>` subscription; the board
+  renders inside it once `status === 'playing'`, which is how the board's `useRoom`/`useSeats` reach
+  the subscription without the game registering a listener.
 - **Don't build a generic board-game engine.** Five games isn't enough evidence to know what games
-  share — and neither was 31. Build them, note what repeats, extract only that.
+  share — and neither was 31. Build them, note what repeats, extract only that. (Tic-Tac-Toe added no
+  shared abstraction beyond the loader and the `<Lobby>` `children` seam — both of which had a caller
+  the moment they were written.)
 
 ### Multiplayer
 
@@ -246,6 +276,9 @@ builds the thing it guards.
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
 | `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
+| A game's `logic/` imports nothing impure (React, `@/system`, `@/ui`) | `@boardwalk/no-impure-logic` — path-scoped to `**/logic/**` under `src/games`, resolves specifiers so relative escapes fire |
+| No game imports a sibling game's folder | `@boardwalk/no-cross-game-imports` — resolves specifiers (a single-`../` escape fires); the registry is exempt |
+| Tic-Tac-Toe's rules are correct | `tests/ticTacToe.test.ts` (18) — every win line, draw-vs-win, `play` immutability + illegal-move no-op, and the house: takes a win, blocks a loss, opens centre, perfect-vs-perfect draws |
 | The security rules do what they say | `tests/database-rules.test.ts` (53) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins` allowed but nothing beyond it, and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
@@ -256,11 +289,10 @@ builds the thing it guards.
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
-| Every guard above actually fires | `tests/lint-rules.test.ts` (36), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
+| Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
-| `logic/` is pure; no cross-game imports | Phase 6 (needs `src/games`) |
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
@@ -314,12 +346,14 @@ than merely existing. The five `VITE_FIREBASE_*` values are GitHub Actions secre
 
 Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile` · `/_dev/lobby`
 (**DEV only** — the Phase 5 multiplayer harness; tree-shaken from prod). The shell (`src/shell`) owns
-the router, the auth gate and the top bar; the game hub reads `src/games/registry.ts`, which is empty
-until Phase 6.
+the router, the auth gate and the top bar; the game hub reads `src/games/registry.ts`, which now
+holds Tic-Tac-Toe (`/play/tic-tac-toe`).
 
 To drive the room flow locally: `npx firebase emulators:start --only auth,database`, then
-`VITE_USE_EMULATOR=1 npm run dev`, and open `/Boardwalk/_dev/lobby`. The flag is dev-only and points
-the app at the emulators instead of production.
+`VITE_USE_EMULATOR=1 npm run dev`, and open `/Boardwalk/_dev/lobby` (or `/Boardwalk/play/tic-tac-toe`
+to play a real game against the emulator). The flag is dev-only and points the app at the emulators
+instead of production.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 6 (the five games — Tic-Tac-Toe first, the SDK's smoke test).**
+green and deployed. **Phase 6 in progress: Tic-Tac-Toe shipped; next is any of Blackjack, Chess, UNO,
+Solitaire (independent units — Blackjack is the natural next, for the betting/`reportResult` payout path).**

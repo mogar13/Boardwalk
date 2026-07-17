@@ -44,6 +44,12 @@ const FIXTURE_DIRS = [
   join(SRC, 'system', '__lint_fixtures__'),
   join(SRC, 'system', 'repo', '__lint_fixtures__'),
   join(SRC, 'system', 'repo', 'firebase', '__lint_fixtures__'),
+  // Phase 6. The games tree's two rules are BOTH path-scoped — logic/ vs a game's components,
+  // and one game vs a sibling — so proving them needs real game directories on each side of the
+  // line, exactly as the Firebase zones do. `_fixgame_a` holds the fixtures; `_fixgame_b` exists
+  // only as the sibling `_fixgame_a` is caught reaching into.
+  join(SRC, 'games', '_fixgame_a'),
+  join(SRC, 'games', '_fixgame_b'),
 ];
 
 /**
@@ -54,7 +60,7 @@ const FIXTURE_DIRS = [
  * particular side of a path-scoped rule, and a fixture that cannot say where it lives
  * cannot test one.
  */
-const LITERAL_PREFIXES = ['ui/', 'system/'];
+const LITERAL_PREFIXES = ['ui/', 'system/', 'games/'];
 
 /**
  * Every fixture, written to disk ONCE before any linting happens.
@@ -266,6 +272,43 @@ export const db = getDatabase;`,
   // door that is genuinely open unless this rule closes it.
   'system/__lint_fixtures__/relative-escape-bad.ts': `import { firebaseProfileRepo } from '../repo/firebase/profileRepo';
 export const p = firebaseProfileRepo;`,
+
+  // ── Phase 6: logic/ is pure ────────────────────────────────────────────────
+  // A file under a game's logic/ may import nothing impure. React and the OS are the two
+  // roads out, and each is banned by IMPORT because that is the half a linter can see.
+
+  // BAN — the OS, via the alias. logic/ sits below @/system; an import is the arrow backwards.
+  'games/_fixgame_a/logic/impure-system.ts': `import { emptyTable } from '@/system/room/seats';
+export const x = emptyTable;`,
+  // BAN — React. A hook in logic/ is logic welded to the render cycle.
+  'games/_fixgame_a/logic/impure-react.ts': `import { useState } from 'react';
+export const x = useState;`,
+  // OK — a logic module importing a SIBLING logic module of its OWN game. This is the load-
+  // bearing negative: pure code is allowed to be built out of more pure code, or the rule bans
+  // the very structure it is meant to require.
+  'games/_fixgame_a/logic/pure-ok.ts': `import { helper } from '@/games/_fixgame_a/logic/helper';
+export const s = helper;`,
+  // OK — a NON-logic game file importing the OS. A game's components SHOULD call the hooks; the
+  // rule governs logic/ ONLY, and this proves the scope. If it ever fires, every game component
+  // that calls useGame() is an error and the rule gets deleted.
+  'games/_fixgame_a/Board.tsx': `import { useGame } from '@/system/economy/useGame';
+export function Board(): null {
+  void useGame;
+  return null;
+}`,
+
+  // ── Phase 6: no game imports another game ──────────────────────────────────
+  // BAN — reaching a sibling game via the alias.
+  'games/_fixgame_a/cross-alias-bad.ts': `import { Board } from '@/games/_fixgame_b/Board';
+export const x = Board;`,
+  // BAN — reaching a sibling game via a single '../'. This is the escape a string match misses
+  // and no-restricted-imports allows (one '../' is a sibling), so only resolving the path catches
+  // it — the same relative-escape proof the Firebase rule needs.
+  'games/_fixgame_a/cross-relative-bad.ts': `import { Board } from '../_fixgame_b/Board';
+export const x = Board;`,
+  // OK — importing WITHIN the same game. Must stay silent or a game cannot use its own logic/.
+  'games/_fixgame_a/same-game-ok.ts': `import { s } from '@/games/_fixgame_a/logic/pure-ok';
+export const x = s;`,
 };
 
 /**
@@ -476,6 +519,52 @@ describe('Firebase is unreachable outside src/system/repo/firebase', () => {
     // The sanctioned road, and the load-bearing negative. Every consumer of the data layer
     // spells this — if it ever goes red, the rule bans the thing it exists to require.
     expect(await rulesFiredOn('fb-interface-ok.ts')).not.toContain(RULE);
+  });
+});
+
+describe('game logic/ is pure', () => {
+  const RULE = '@boardwalk/no-impure-logic';
+
+  it.each([
+    ['an @/system import — the OS, from below it', 'games/_fixgame_a/logic/impure-system.ts'],
+    [
+      'a React import — a hook welded to the render cycle',
+      'games/_fixgame_a/logic/impure-react.ts',
+    ],
+  ])('fires on %s', async (_label, fixture) => {
+    expect(await rulesFiredOn(fixture)).toContain(RULE);
+  });
+
+  it('does NOT fire on a logic module importing a sibling logic module', async () => {
+    // Pure code built out of pure code. If this fires, the rule bans the structure it requires.
+    expect(await rulesFiredOn('games/_fixgame_a/logic/pure-ok.ts')).not.toContain(RULE);
+  });
+
+  it('does NOT fire on a game component importing the OS — logic/ is the ONLY scope', async () => {
+    // The load-bearing negative: a game's components SHOULD call the hooks. Board.tsx sits in the
+    // game root, not logic/, and imports useGame — if this ever goes red, every game is an error.
+    expect(await rulesFiredOn('games/_fixgame_a/Board.tsx')).not.toContain(RULE);
+  });
+});
+
+describe('no game imports another game', () => {
+  const RULE = '@boardwalk/no-cross-game-imports';
+
+  it('fires on reaching a sibling game via the @/ alias', async () => {
+    expect(await rulesFiredOn('games/_fixgame_a/cross-alias-bad.ts')).toContain(RULE);
+  });
+
+  it('fires on a single-../ escape into a sibling game — which a string match would miss', async () => {
+    // '../_fixgame_b/Board' is one '../' (a sibling, so no-restricted-imports allows it) and holds
+    // no telltale substring. Only resolving the path reveals it crossing a game boundary.
+    const fired = await rulesFiredOn('games/_fixgame_a/cross-relative-bad.ts');
+    expect(fired).toContain(RULE);
+    expect(fired).not.toContain('no-restricted-imports');
+  });
+
+  it('does NOT fire on importing within the same game', async () => {
+    // Must stay silent, or a game cannot import its own logic/.
+    expect(await rulesFiredOn('games/_fixgame_a/same-game-ok.ts')).not.toContain(RULE);
   });
 });
 

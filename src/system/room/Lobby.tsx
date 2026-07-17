@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Button, Card, Input, useToast } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
@@ -20,13 +20,22 @@ import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
  * and, once there is a room, mounts a single `<RoomProvider>` around the in-room view. The
  * provider is what owns the subscription and the teardown, so "leave the table" is just unmounting
  * it — the hygiene runs itself.
+ *
+ * `children` IS THE GAME. A game (Tic-Tac-Toe onward) renders `<Lobby manifest onExit>` and passes
+ * its board as the children; the lobby draws the seat list and chat while `status === 'waiting'`,
+ * and swaps in the board the moment the host starts (`status === 'playing'`). The board is rendered
+ * INSIDE the `<RoomProvider>`, which is the whole point — that is how the board's `useRoom`/
+ * `useSeats`/`useChat` reach the one subscription without the game ever registering a listener. A
+ * game with no children (the dev harness) falls back to a placeholder, so the lobby stands alone.
  */
 export interface LobbyProps {
   readonly manifest: GameManifest;
   readonly onExit: () => void;
+  /** The game's board, rendered inside the room once play starts. Absent → a placeholder. */
+  readonly children?: ReactNode;
 }
 
-export function Lobby({ manifest, onExit }: LobbyProps) {
+export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -53,7 +62,9 @@ export function Lobby({ manifest, onExit }: LobbyProps) {
             setRoomId(null);
           }}
           onExit={onExit}
-        />
+        >
+          {children}
+        </LobbyRoom>
       </RoomProvider>
     );
   }
@@ -149,10 +160,12 @@ function LobbyRoom({
   manifest,
   onLeave,
   onExit,
+  children,
 }: {
   manifest: GameManifest;
   onLeave: () => void;
   onExit: () => void;
+  children?: ReactNode;
 }) {
   const { seats, status, meta, isHost, setStatus } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
@@ -207,14 +220,19 @@ function LobbyRoom({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-4">
-          <SeatList />
-          {status === 'playing' && (
-            <Card className="p-6">
-              <p className="text-bw-muted text-sm">
-                The game is in progress. This is where a Phase 6 game renders its board — the room,
-                seats, chat and ordering it stands on are all live now.
-              </p>
-            </Card>
+          {status === 'playing' ? (
+            // The game's board — rendered inside <RoomProvider>, so its hooks reach the one
+            // subscription. Falls back to a placeholder when the lobby is used bare (dev harness).
+            (children ?? (
+              <Card className="p-6">
+                <p className="text-bw-muted text-sm">
+                  The game is in progress. A game passed as children renders its board here — the
+                  room, seats, chat and ordering it stands on are all live.
+                </p>
+              </Card>
+            ))
+          ) : (
+            <SeatList />
           )}
           {meta !== null && (
             <p className="text-bw-muted text-xs">Hosted by {isHost ? 'you' : 'another player'}.</p>

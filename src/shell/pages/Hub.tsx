@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Card } from '@/ui';
 import { PIERS, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
@@ -17,15 +18,19 @@ import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
  */
 
 function GameCard({ game }: { game: RegisteredGame }) {
-  // Unreachable until Phase 6 fills the registry, but written now so a new game renders the
-  // moment its manifest lands — the hub never hardcodes a game, it reads them.
+  // A link to `/play/:id`, keyed off `manifest.id` — the same string the route resolves back
+  // through `findGame`. The hub never hardcodes a game; it reads the registry, so a new game
+  // appears here the moment its manifest lands, with no change to this file.
+  const { id, name, blurb } = game.manifest;
   return (
-    <Card interactive className="flex flex-col gap-2 p-5">
-      <h3 className="font-display text-base-content text-base font-semibold tracking-[0.1em] uppercase">
-        {game.name}
-      </h3>
-      <p className="text-bw-muted text-sm">{game.blurb}</p>
-    </Card>
+    <Link to={`/play/${id}`} className="block">
+      <Card interactive className="flex h-full flex-col gap-2 p-5">
+        <h3 className="font-display text-base-content text-base font-semibold tracking-[0.1em] uppercase">
+          {name}
+        </h3>
+        <p className="text-bw-muted text-sm">{blurb}</p>
+      </Card>
+    </Link>
   );
 }
 
@@ -68,7 +73,7 @@ export function Hub() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {games.map((game) => (
-                  <GameCard key={game.id} game={game} />
+                  <GameCard key={game.manifest.id} game={game} />
                 ))}
               </div>
             )}
