@@ -73,28 +73,58 @@ describe('applyResult — bankroll, XP, stats and achievements in one call', () 
     // Even-money win on a $10 bet: $10 left at commit, so bankroll is $4,990 here; $20 comes
     // back. Net +$10, and the stored bankroll is 499_000 + 2_000.
     const p = { ...defaultProfile('t'), bankrollCents: 499_000 };
-    const out = applyResult(p, 'blackjack', { outcome: 'win', payoutCents: 2000, wagerCents: 1000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'win', payoutCents: 2000, wagerCents: 1000 },
+      NOW
+    );
     expect(out.profile.bankrollCents).toBe(501_000);
     expect(out.netCents).toBe(1000);
     expect(out.xpGained).toBe(100);
-    expect(statFor(out.profile.stats, 'blackjack')).toEqual({ played: 1, won: 1, lost: 0, pushed: 0 });
+    expect(statFor(out.profile.stats, 'blackjack')).toEqual({
+      played: 1,
+      won: 1,
+      lost: 0,
+      pushed: 0,
+    });
   });
 
   it('records a loss with no payout and a losing stat', () => {
     const p = defaultProfile('t');
-    const out = applyResult(p, 'blackjack', { outcome: 'loss', payoutCents: 0, wagerCents: 1000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'loss', payoutCents: 0, wagerCents: 1000 },
+      NOW
+    );
     expect(out.profile.bankrollCents).toBe(p.bankrollCents); // wager already gone; nothing returns
     expect(out.netCents).toBe(-1000);
     expect(out.xpGained).toBe(10);
-    expect(statFor(out.profile.stats, 'blackjack')).toEqual({ played: 1, won: 0, lost: 1, pushed: 0 });
+    expect(statFor(out.profile.stats, 'blackjack')).toEqual({
+      played: 1,
+      won: 0,
+      lost: 1,
+      pushed: 0,
+    });
   });
 
   it('records a push as neither a win nor a loss and returns the stake', () => {
     const p = { ...defaultProfile('t'), bankrollCents: 499_000 };
-    const out = applyResult(p, 'blackjack', { outcome: 'push', payoutCents: 1000, wagerCents: 1000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'push', payoutCents: 1000, wagerCents: 1000 },
+      NOW
+    );
     expect(out.profile.bankrollCents).toBe(500_000);
     expect(out.netCents).toBe(0);
-    expect(statFor(out.profile.stats, 'blackjack')).toEqual({ played: 1, won: 0, lost: 0, pushed: 1 });
+    expect(statFor(out.profile.stats, 'blackjack')).toEqual({
+      played: 1,
+      won: 0,
+      lost: 0,
+      pushed: 1,
+    });
   });
 
   it('lets a non-betting game report a win: XP and a stat, no money moved', () => {
@@ -108,7 +138,12 @@ describe('applyResult — bankroll, XP, stats and achievements in one call', () 
 
   it('unlocks big_win — the achievement v1 could never fire — on a $1,000 net', () => {
     const p = defaultProfile('t');
-    const out = applyResult(p, 'blackjack', { outcome: 'win', payoutCents: 200_000, wagerCents: 100_000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'win', payoutCents: 200_000, wagerCents: 100_000 },
+      NOW
+    );
     expect(out.netCents).toBe(100_000);
     const ids = out.unlocked.map((a) => a.id);
     expect(ids).toContain('big_win');
@@ -119,13 +154,23 @@ describe('applyResult — bankroll, XP, stats and achievements in one call', () 
     // A $600 payout on a $500 bet is a $100 win, not a $600 one. The v1 bug was not knowing the
     // difference; this asserts we do.
     const p = { ...defaultProfile('t'), bankrollCents: 1_000_000 };
-    const out = applyResult(p, 'blackjack', { outcome: 'win', payoutCents: 60_000, wagerCents: 50_000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'win', payoutCents: 60_000, wagerCents: 50_000 },
+      NOW
+    );
     expect(out.unlocked.map((a) => a.id)).not.toContain('big_win');
   });
 
   it('unlocks first_win and high_roller together, once', () => {
     const p = { ...defaultProfile('t'), bankrollCents: 1_000_000 };
-    const out = applyResult(p, 'blackjack', { outcome: 'win', payoutCents: 100_000, wagerCents: 50_000 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'win', payoutCents: 100_000, wagerCents: 50_000 },
+      NOW
+    );
     const ids = out.unlocked.map((a) => a.id);
     expect(ids).toContain('first_win');
     expect(ids).toContain('high_roller');
@@ -150,7 +195,12 @@ describe('applyResult — bankroll, XP, stats and achievements in one call', () 
 
   it('floors the bankroll at zero rather than writing a negative', () => {
     const p = { ...defaultProfile('t'), bankrollCents: 0 };
-    const out = applyResult(p, 'blackjack', { outcome: 'loss', payoutCents: -5000, wagerCents: 0 }, NOW);
+    const out = applyResult(
+      p,
+      'blackjack',
+      { outcome: 'loss', payoutCents: -5000, wagerCents: 0 },
+      NOW
+    );
     expect(out.profile.bankrollCents).toBe(0);
   });
 });

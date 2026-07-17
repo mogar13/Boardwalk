@@ -52,18 +52,25 @@ export function teardownPlan<TPublic>(
 ): TeardownStep[] {
   const steps: TeardownStep[] = [{ target: 'presence' }];
 
-  const seat = mySeatIndex(snapshot.seats, myUid);
-  if (seat !== -1) steps.push({ target: 'seat', seatIndex: seat });
-
   const isHost = snapshot.meta.host === myUid;
+  // Last one out removes the room. "Last" means: no other uid is present. My own presence is about
+  // to be cleared, so an otherwise-empty presence map means the room is mine alone to close —
+  // leaving it would strand a dead lobby that shows up in nobody's list but sits in the database
+  // forever.
+  const others = isHost ? Object.keys(snapshot.presence).filter((uid) => uid !== myUid) : [];
+  const removingRoom = isHost && others.length === 0;
+
+  const seat = mySeatIndex(snapshot.seats, myUid);
+  // Free my seat — UNLESS the whole room is going away, in which case releasing it is not just
+  // redundant but actively harmful: `releaseSeat` is a read-then-write, and fired concurrently with
+  // the room delete its `set` can land AFTER the delete, re-creating a `seats/<i>` leaf under a room
+  // whose `meta` is already gone. Nothing can then remove it — the room delete rule needs
+  // `meta.host === auth.uid`, and there is no longer a `meta`. Removing the room frees the seat.
+  if (seat !== -1 && !removingRoom) steps.push({ target: 'seat', seatIndex: seat });
+
   if (isHost) {
     steps.push({ target: 'chat' });
-    // Last one out removes the room. "Last" means: no other uid is present. My own presence is
-    // about to be cleared by the step above, so an otherwise-empty presence map means the room
-    // is mine alone to close — leaving it would strand a dead lobby that shows up in nobody's
-    // list but sits in the database forever.
-    const others = Object.keys(snapshot.presence).filter((uid) => uid !== myUid);
-    if (others.length === 0) steps.push({ target: 'room' });
+    if (removingRoom) steps.push({ target: 'room' });
   }
 
   return steps;

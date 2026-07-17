@@ -5,11 +5,13 @@ logic, drawing a component, and exporting a manifest.
 
 React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase
 
-> **Status: Phases 0–2 shipped** — live at https://mogar13.github.io/Boardwalk/. There is a scaffold
-> and a green pipeline (0), a theme and a UI kit (1), and a data layer — Firebase Auth, profiles, repo
-> interfaces and tested security rules (2). Still to come: the shell, the economy, multiplayer, and
-> the five games. The architecture was written down first, on purpose. Start at
-> [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
+> **Status: Phases 0–5 shipped** — live at https://mogar13.github.io/Boardwalk/. There is a scaffold
+> and a green pipeline (0), a theme and a UI kit (1), a data layer — Firebase Auth, profiles, repo
+> interfaces and tested security rules (2), the shell — router, auth gate, top bar, hub (3), the
+> economy — one-way money through `useBet`/`reportResult`, XP, stats, achievements, store, daily
+> reward (4), and multiplayer — rooms, seats, presence, chat, and hidden information that is a rule
+> not a layout (5). Still to come: **the five games** (6). The architecture was written down first,
+> on purpose. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
 
 ## What this is
 
@@ -62,6 +64,14 @@ npm test         # the guards, proving they still fire (boots the RTDB emulator 
 npm run build    # prebuild (lint + file-size ratchet) → tsc -b → vite build
 ```
 
+Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile` · `/_dev/lobby`
+(DEV-only multiplayer harness, tree-shaken from prod). To drive the room flow against the emulators:
+
+```bash
+npx firebase emulators:start --only auth,database
+VITE_USE_EMULATOR=1 npm run dev    # then open /Boardwalk/_dev/lobby
+```
+
 `npm run dev` works on a fresh clone with no credentials: the page renders a panel naming the missing
 variables rather than a form. `npm run build` does not — a production build with no Firebase config
 **fails**, rather than deploying a site whose only feature is that panel.
@@ -80,5 +90,5 @@ npm run rules:test     # runs the REAL rules file against the RTDB emulator
 npm run rules:deploy   # push them to Firebase. NOTHING IN CI DOES THIS — do it in the same breath.
 ```
 
-**Next: Phase 3 — the shell (router, top bar, hub).** Phases are one per conversation, each ending
-green and deployed; see [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).
+**Next: Phase 6 — the five games** (Tic-Tac-Toe first, the SDK's smoke test). Phases are one per
+conversation, each ending green and deployed; see [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).

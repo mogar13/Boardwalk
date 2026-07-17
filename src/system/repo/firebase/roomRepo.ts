@@ -14,6 +14,7 @@ import {
   emptyTable,
   releaseSeat as releaseSeatPure,
 } from '@/system/room/seats';
+import { nextSeq } from '@/system/room/ordering';
 import type { RoomMeta, RoomSnapshot, Seat } from '@/system/room/types';
 import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
 
@@ -182,7 +183,15 @@ export const firebaseRoomRepo: RoomRepo = {
 
     // Claim-then-verify (ARCHITECTURE.md): write, re-read, confirm it is mine.
     const seatRef = ref(db, `${ROOM(gameId, roomId)}/seats/${String(index)}`);
-    await set(seatRef, { kind: 'human', name: who.name, uid: who.uid });
+    try {
+      await set(seatRef, { kind: 'human', name: who.name, uid: who.uid });
+    } catch {
+      // The seats `.write` rule refuses overwriting another human's seat, so a lost race for an
+      // open chair (both clients read it open, both write) REJECTS here for the loser rather than
+      // reaching the verify below. Map it to the same "taken" the pure check returns — a values-
+      // not-exceptions method must not throw its user-facing failure.
+      return { ok: false, error: 'Seat taken.' };
+    }
     const confirmed = readSeats([(await get(seatRef)).val()])[0];
     if (confirmed?.uid !== who.uid) return { ok: false, error: 'Seat taken.' };
     return { ok: true, value: undefined };
@@ -214,7 +223,7 @@ export const firebaseRoomRepo: RoomRepo = {
     // seq it writes is validated monotonic by the rules, so ordering cannot skip or repeat.
     const stateRef = ref(firebaseDb(), `${ROOM(gameId, roomId)}/state`);
     await runTransaction(stateRef, (current: StateWire | null) => ({
-      seq: num(current?.seq) + 1,
+      seq: nextSeq(num(current?.seq)),
       data: produce((current?.data ?? null) as TPublic | null),
     }));
   },
@@ -258,11 +267,14 @@ export const firebaseRoomRepo: RoomRepo = {
 
   async remove(gameId, roomId): Promise<void> {
     const db = firebaseDb();
+    // Clear the room's hands FIRST, while `rooms/<g>/<r>/meta/host` still exists — the hands
+    // room-level delete rule reads it to authorise the host. Delete them after the room and the
+    // host check has nothing to read, so the rule refuses and the subtree orphans forever.
+    const handsRef = ref(db, HANDS(gameId, roomId));
+    await dbRemove(handsRef).catch(() => set(handsRef, null).catch(() => undefined));
     const roomRef = ref(db, ROOM(gameId, roomId));
     // The v1 fallback: a plain remove refused mid-teardown falls back to writing null, which is
     // the same delete by another door and survives a rule that only allows `set`.
     await dbRemove(roomRef).catch(() => set(roomRef, null));
-    // The room's hands live in a sibling subtree; clear them too, so a closed room leaves nothing.
-    await dbRemove(ref(db, HANDS(gameId, roomId))).catch(() => undefined);
   },
 };

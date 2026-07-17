@@ -1,4 +1,4 @@
-import { Button, Card } from '@/ui';
+import { Button, Card, useToast } from '@/ui';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 
@@ -15,7 +15,16 @@ const seatLabel = (kind: 'open' | 'human' | 'ai'): string =>
 export function SeatList() {
   const { seats, claim, release, setAi, isHost, myId, status } = useRoom();
   const { mySeatIndex } = useSeats();
+  const toast = useToast();
   const inLobby = status === 'waiting';
+
+  // Claiming can lose a race for an open chair; the repo returns `{ ok: false, 'Seat taken.' }`.
+  // Without this the click did nothing visible — the whole ClaimResult had no consumer.
+  const sit = (index: number): void => {
+    void claim(index).then((r) => {
+      if (!r.ok) toast.error(r.error);
+    });
+  };
 
   return (
     <Card className="flex flex-col gap-2 p-4">
@@ -45,7 +54,7 @@ export function SeatList() {
                   size="sm"
                   variant="primary"
                   onClick={() => {
-                    void claim(i);
+                    sit(i);
                   }}
                 >
                   Sit

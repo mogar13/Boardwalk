@@ -33,7 +33,10 @@ export const firebaseLeaderboardRepo: LeaderboardRepo = {
 
     const raw = snap.val() as Record<string, unknown>;
     const rows: LeaderboardEntry[] = Object.entries(raw).map(([uid, value]) => {
-      const r = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
+      const r = (typeof value === 'object' && value !== null ? value : {}) as Record<
+        string,
+        unknown
+      >;
       return {
         uid,
         name: str(r.name, 'Player'),
@@ -46,9 +49,7 @@ export const firebaseLeaderboardRepo: LeaderboardRepo = {
 
     // Wins rank; bankroll breaks a tie; XP breaks that. A stable, total order so the board does
     // not reshuffle two equal players on every refresh.
-    rows.sort(
-      (a, b) => b.wins - a.wins || b.bankrollCents - a.bankrollCents || b.xp - a.xp
-    );
+    rows.sort((a, b) => b.wins - a.wins || b.bankrollCents - a.bankrollCents || b.xp - a.xp);
     return rows.slice(0, Math.max(0, limit));
   },
 };

@@ -96,6 +96,7 @@ export function AuthPanel() {
           {...(isSignUp ? { hint: 'Letters, numbers and underscores. 2–16 characters.' } : {})}
           onChange={(e) => {
             setIdentifier(e.target.value);
+            setError(null);
           }}
         />
 
@@ -112,6 +113,7 @@ export function AuthPanel() {
             hint="Without one, your password can never be reset. There is nowhere to send it."
             onChange={(e) => {
               setEmail(e.target.value);
+              setError(null);
             }}
           />
         )}
@@ -122,11 +124,21 @@ export function AuthPanel() {
           value={password}
           autoComplete={isSignUp ? 'new-password' : 'current-password'}
           {...(isSignUp ? { hint: `At least ${String(MIN_PASSWORD_LENGTH)} characters.` } : {})}
-          {...(error === null ? {} : { error })}
           onChange={(e) => {
             setPassword(e.target.value);
+            setError(null);
           }}
         />
+
+        {/* Form-level, not pinned to a field: the failure ("no account with that username",
+            "username taken") is often about the identifier, so flagging the password as invalid
+            misdirected the fix — and a screen reader announced the wrong field. role="alert" so it
+            is read on appearance; it clears the moment any field is edited. */}
+        {error !== null && (
+          <p role="alert" className="text-error text-sm">
+            {error}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="primary" type="submit" disabled={busy}>
