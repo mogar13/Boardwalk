@@ -12,10 +12,11 @@ import { CLASS_ATTRS, stringsIn, tokensOf } from './classStrings.mjs';
  *
  * The trap it is really guarding, from VS-Dashboard: `btn-primary` is BLUE. They
  * reserve blue for information and never for action. So the raw class is not merely
- * inconsistent — it is wrong, and it is wrong in a way that reads as fine. Here,
- * DaisyUI's `btn-primary` would render our magenta and STILL be wrong, because it
- * would skip the glow, the rim, the strike easing and the disabled desaturation
- * that make a Boardwalk button a lit sign rather than a coloured rectangle.
+ * inconsistent — it is wrong, and it is wrong in a way that reads as fine. Here it
+ * reads as fine twice over: our own action colour is now blue too, so DaisyUI's
+ * `btn-primary` would land near the right hue and STILL be wrong, because it would
+ * skip the glow, the rim, the strike easing and the disabled desaturation that make
+ * a Boardwalk button a lit sign rather than a coloured rectangle.
  *
  * TWO TIERS, because the words are not equally safe (see classStrings.mjs):
  *

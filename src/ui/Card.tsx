@@ -15,7 +15,7 @@ import { cx } from '@/ui/cx';
  * A card never glows. The room is dark, the signs glow, the furniture does not — if
  * the surface a button sits on is also lit, the button stops being the brightest
  * thing in its neighbourhood and the hierarchy is gone. `interactive` is the one
- * exception, and only on hover, and only cyan (= "here"), never magenta (= "act"):
+ * exception, and only on hover, and only cyan (= "here"), never the primary (= "act"):
  * a hovered card is a location, not a verb.
  */
 export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, 'className'> {

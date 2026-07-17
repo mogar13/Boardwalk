@@ -4,7 +4,7 @@
  * ARCHITECTURE.md's stack table says "ESLint 10 flat + local rules, fails the
  * build", and these are the local rules. They are here rather than in an npm
  * package because they encode decisions specific to this repo (which words are
- * DaisyUI components AND card-game nouns; that magenta means action) — the kind of
+ * DaisyUI components AND card-game nouns; that the primary colour means action) — the kind of
  * thing that is right for exactly one codebase.
  *
  * Both are wired in eslint.config.mjs and both are asserted to FIRE on the bug, and

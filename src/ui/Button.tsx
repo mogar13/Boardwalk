@@ -12,11 +12,14 @@ import { cx } from '@/ui/cx';
  * until someone has an opinion about it. That is the whole "fix by type, not by
  * convention" rule, applied to the smallest possible thing.
  *
- * WHY `primary` IS MAGENTA AND NOT BLUE. VS-Dashboard's trap, worth restating: they
- * reserve blue for information and never for action, so DaisyUI's `btn-primary` —
- * which is blue — is a lint error there and <Button variant="primary"> is orange.
- * Same shape here. `primary` is the ACTION, and on this theme the action is magenta.
- * If you want the DaisyUI meaning of a word, you want a different word.
+ * WHY `primary` IS THE ACTION, NOT AN INFORMATION COLOUR. VS-Dashboard's trap, worth
+ * restating: they reserve blue for information and never for action, so DaisyUI's
+ * `btn-primary` — which is blue — is a lint error there and <Button variant="primary">
+ * is orange. Same shape here. `primary` is the ACTION. On this theme the action now
+ * happens to also be blue, which sharpens the point rather than softening it: it is the
+ * GLOW and the one-per-view discipline that make this the action, never the hue. A flat
+ * blue would read as information; this lit blue tube reads as the thing to press. If you
+ * want the DaisyUI meaning of a word, you want a different word.
  */
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -40,17 +43,17 @@ const BASE = cx(
   // The tactile 1px. A sign you press should move like one.
   'active:translate-y-px',
   // Disabled is UNLIT AND DRAINED. Opacity alone is not enough on this palette:
-  // magenta at 40% over a dark base is still the most saturated thing on screen,
-  // so it keeps drawing the eye to the one control that does nothing. `saturate-0`
+  // the lit primary at 40% over a dark base is still among the most saturated things
+  // on screen, so it keeps drawing the eye to the one control that does nothing. `saturate-0`
   // is what actually removes it from the hierarchy.
   'disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none disabled:saturate-0'
 );
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  // The lit tube. This is the only magenta on the page, and there should be one
-  // per view — "which button is the action" is a question the design answers, not
+  // The lit tube. This is the only `bg-primary` tube on the page, and there should be
+  // one per view — "which button is the action" is a question the design answers, not
   // the user. `inset-shadow-rim` is the giveaway that sells it as lit glass rather
-  // than a pink rectangle: light catches the top edge of a tube, never the bottom.
+  // than a flat blue rectangle: light catches the top edge of a tube, never the bottom.
   primary: cx(
     'bg-primary text-primary-content',
     'shadow-glow-primary inset-shadow-rim',

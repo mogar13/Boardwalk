@@ -1,11 +1,11 @@
 import { cx } from '@/ui';
 
 /**
- * The sign. "THE BOARDWALK", lit magenta — the same optical trick as App.tsx's Phase 1
- * hero and for the same reason: the letters are `base-content` (near-white) and every bit
- * of magenta lives in `text-shadow`, because a real neon tube reads WHITE at its core and
- * throws the gas colour into the air around it. Setting the text itself magenta is the tell
- * that separates CSS neon from a sign.
+ * The sign. "THE BOARDWALK", lit in the primary (electric blue) — the same optical trick as
+ * App.tsx's Phase 1 hero and for the same reason: the letters are `base-content` (near-white)
+ * and every bit of the glow colour lives in `text-shadow`, because a real neon tube reads
+ * WHITE at its core and throws the gas colour into the air around it. Setting the text itself
+ * blue is the tell that separates CSS neon from a sign.
  *
  * It appears in two places — small in the top bar, large on the signed-out screen — so it
  * is a component with a `size`, not two copies that will drift the way v1's cosmetics did.
