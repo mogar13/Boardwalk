@@ -61,8 +61,12 @@
           "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
           "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
           "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "level": { ".validate": "newData.isNumber() && newData.val() >= 1" },
-          // NOTE there is deliberately no `isDev` field to validate. v2 does not
+          // NO `level` field. It is DERIVED from `xp` (see src/system/profile/xp.ts),
+          // never stored — so `$other: false` below now REFUSES a write that includes
+          // one, which is what keeps "level is a function, not a fact" true at the
+          // server rather than only in the client.
+          //
+          // NOTE there is also deliberately no `isDev` field to validate. v2 does not
           // store one. See `admins` below.
           "$other": { ".validate": false }
         }
@@ -99,8 +103,8 @@
       // readable, and it is the only place profile data is world-readable.
       //
       // `$other: false` is the load-bearing line. It pins the projection to exactly
-      // these five fields, so a field added to the private profile later CANNOT be
-      // leaked here by a writer who forgot this node is public. A sixth field is a
+      // these four fields, so a field added to the private profile later CANNOT be
+      // leaked here by a writer who forgot this node is public. A fifth field is a
       // rules change, on purpose. Phase 4 adds `wins` here, with its writer, in the
       // same commit.
       ".read": true,
@@ -113,7 +117,7 @@
         "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
         "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
         "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-        "level": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+        // No `level` here either — it is derived, not projected. See users/$uid/profile.
         "$other": { ".validate": false }
       }
     },

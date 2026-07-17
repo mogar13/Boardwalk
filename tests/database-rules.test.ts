@@ -146,7 +146,8 @@ const validProfile = {
   avatar: '👤',
   bankrollCents: 500_000,
   xp: 0,
-  level: 1,
+  // No `level` — it is derived from `xp`, never stored, so it is not a valid field. The
+  // `$other: false` test below asserts a write that includes one is now REFUSED.
 };
 
 describe('the root denies by default', () => {
@@ -201,6 +202,12 @@ describe('users/<uid> — the private record', () => {
     await assertFails(
       set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, sneaky: 'value' })
     );
+    // `level` specifically. Phase 2 stored it; Phase 3 derives it from `xp` and deletes the
+    // field, and this is the server half of that decision — a write that reintroduces a
+    // stored `level` is refused, so the client's derived value can never be shadowed by a
+    // stale stored one. Removing `level` from the rules without this test would look like a
+    // no-op; this is what makes the deletion enforced rather than merely done.
+    await assertFails(set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, level: 1 }));
   });
 
   it('rejects a profile field of the wrong type', async () => {
@@ -213,7 +220,7 @@ describe('users/<uid> — the private record', () => {
     await assertFails(
       set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, bankrollCents: -1 })
     );
-    await assertFails(set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, level: 0 }));
+    await assertFails(set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, xp: -1 }));
     await assertFails(set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, name: '' }));
   });
 

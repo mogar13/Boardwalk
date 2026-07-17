@@ -44,7 +44,7 @@ export function defaultProfile(rawUsername: string): Profile {
     name: displayNameFrom(rawUsername),
     avatar: DEFAULT_AVATAR,
     bankrollCents: STARTING_BANKROLL_CENTS,
+    // No `level`: it is derived from `xp` (0 → level 1) by `levelFromXp`, never stored.
     xp: 0,
-    level: 1,
   };
 }

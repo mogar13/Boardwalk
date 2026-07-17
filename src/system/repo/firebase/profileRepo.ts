@@ -37,7 +37,9 @@ interface ProfileWire {
   avatar?: unknown;
   bankrollCents?: unknown;
   xp?: unknown;
-  level?: unknown;
+  // No `level`: it is derived from `xp` and never stored. A record written by Phase 2 may
+  // still carry one on the wire; `readProfile` simply ignores it, and `$other: false` in
+  // database.rules.json refuses a NEW write that includes it. See @/system/profile/xp.
 }
 
 const str = (v: unknown, fallback: string): string =>
@@ -66,7 +68,6 @@ function readProfile(wire: ProfileWire): Profile {
     avatar: str(wire.avatar, DEFAULT_AVATAR),
     bankrollCents: Math.max(0, num(wire.bankrollCents, STARTING_BANKROLL_CENTS)),
     xp: Math.max(0, num(wire.xp, 0)),
-    level: Math.max(1, num(wire.level, 1)),
   };
 }
 
@@ -82,7 +83,6 @@ const publicProjection = (p: Profile) => ({
   avatar: p.avatar,
   bankrollCents: p.bankrollCents,
   xp: p.xp,
-  level: p.level,
 });
 
 export const firebaseProfileRepo: ProfileRepo = {

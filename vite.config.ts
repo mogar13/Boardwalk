@@ -18,6 +18,10 @@ import tailwindcss from '@tailwindcss/vite';
 // that cannot see each other. A copy of the list here is the v1 defect in miniature —
 // its Firebase config lived inline in 32 HTML files, each free to drift from the others.
 import { readFirebaseConfig, missingConfigMessage } from './src/system/repo/firebase/config';
+// The Pages SPA fallback: dist/404.html = a byte-copy of index.html, so a deep link that
+// Pages has no file for boots the app and lets react-router resolve it. Pure + self-checking
+// — see scripts/spa-fallback.mjs for why BrowserRouter needs this on a static host.
+import { writeSpaFallback } from './scripts/spa-fallback.mjs';
 
 export default defineConfig(({ command, mode }) => {
   // A PRODUCTION BUILD WITH NO CREDENTIALS FAILS HERE, LOUDLY.
@@ -44,7 +48,29 @@ export default defineConfig(({ command, mode }) => {
     // because dev and preview would still resolve from the root.
     base: '/Boardwalk/',
 
-    plugins: [tailwindcss(), react()],
+    plugins: [
+      tailwindcss(),
+      react(),
+      // Emit dist/404.html after the bundle is written. `apply: 'build'` so `npm run dev`
+      // and `preview` skip it (the dev server resolves any path to the SPA already);
+      // `closeBundle` so index.html is on disk when it copies. `outDir` is captured from
+      // the resolved config rather than hardcoded, so a future change to `build.outDir`
+      // does not silently write the fallback to the wrong place.
+      (() => {
+        let outDir = 'dist';
+        return {
+          name: 'boardwalk-spa-fallback',
+          apply: 'build',
+          configResolved(resolved) {
+            outDir = resolved.build.outDir;
+          },
+          closeBundle() {
+            const written = writeSpaFallback(outDir);
+            this.info?.(`SPA fallback written: ${written}`);
+          },
+        };
+      })(),
+    ],
 
     // The `@/` alias, decided on day one. VS-Dashboard has none and imports
     // '../../../actualLabor'; the depth of a relative path is not information anyone

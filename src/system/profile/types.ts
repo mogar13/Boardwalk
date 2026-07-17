@@ -40,8 +40,14 @@ export interface Profile {
    */
   readonly bankrollCents: number;
 
+  /**
+   * The only progression fact stored. `level` is NOT a field — it is a function of this
+   * number, computed by `levelFromXp` in `@/system/profile/xp`. Phase 2 stored both; Phase
+   * 3, the first reader, deleted the derived one, because two stored facts for one truth is
+   * the shape of half the v1 defect table and Phase 4's award sites would each have had to
+   * keep them in sync. See the header of xp.ts for the full argument.
+   */
   readonly xp: number;
-  readonly level: number;
 }
 
 /**

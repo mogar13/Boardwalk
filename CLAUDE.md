@@ -4,11 +4,13 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0 (scaffold), 1 (theme + kit) and 2 (data layer) have shipped. Phases 3–6 have not.**
-There is a live styled page, a green pipeline, `@boardwalk/theme`, `src/ui` (Button, Card, Input,
-Modal, `useToast`, `useConfirm`), and now `src/system` — repo interfaces, one Firebase singleton,
-Auth, profile, and `database.rules.json` with a test that boots the emulator and proves it. There is
-still no router, no hub, no economy, no rooms and no games. Start at
+**Phases 0 (scaffold), 1 (theme + kit), 2 (data layer) and 3 (shell) have shipped. Phases 4–6 have
+not.** There is a live routed app, a green pipeline, `@boardwalk/theme`, `src/ui` (Button, Card,
+Input, Modal, `useToast`, `useConfirm`), `src/system` — repo interfaces, one Firebase singleton,
+Auth, profile, and `database.rules.json` with a test that boots the emulator and proves it — and now
+`src/shell` (router, auth gate, top bar with bankroll + XP, the hub and its piers) and
+`src/games/registry.ts` (the typed catalogue, empty until Phase 6). `level` is derived from `xp`, not
+stored. There is still no economy, no rooms and no games. Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
@@ -133,6 +135,12 @@ lint rule that matches nothing reports success.
   taken". Don't tidy it away.
 - **Money is integer cents, and the field is named `bankrollCents`.** The name carries the unit
   because RTDB's `isNumber()` can't say "integer".
+- **`level` is not stored. It is `levelFromXp(xp)`.** ✅ Live — `$other: false` in
+  `database.rules.json` refuses a write that includes a `level`, and `tests/database-rules.test.ts`
+  asserts the refusal. A stored `level` is a second source of truth for a fact `xp` already
+  determines, and the award site that writes one but not the other is the `recordWin` defect
+  reborn. The curve lives in one pure module, `src/system/profile/xp.ts` — the badge and the bar
+  both read the same `xpProgress(xp)`, so they cannot disagree.
 
 ### UI
 
@@ -170,6 +178,12 @@ lint rule that matches nothing reports success.
 - **Use the `@/` path alias.** ✅ Live — `../../**` is a lint error. One `../` is fine; a sibling is a
   real relationship. (VS-Dashboard has none and imports `'../../../actualLabor'` — we're not doing
   that.)
+- **`BrowserRouter`, and `dist/404.html` is a byte-copy of `index.html`.** ✅ Live —
+  `scripts/spa-fallback.mjs` (a Vite build plugin) writes it and **throws** if it is missing or
+  differs, and `tests/spa-fallback.test.ts` proves both. GitHub Pages has no server-side rewrite, so
+  a deep link typed directly (`/Boardwalk/play/...`) is a Pages 404 without this fallback booting the
+  app. Don't switch to `HashRouter` to avoid it — Phase 5's shared room links would carry the `#`
+  forever. `basename` comes from `import.meta.env.BASE_URL`, never a hardcoded `/Boardwalk`.
 
 ## Docs
 
@@ -197,8 +211,10 @@ builds the thing it guards.
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
 | `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
-| The security rules do what they say | `tests/database-rules.test.ts` (28) — boots the RTDB emulator, loads the **real** `database.rules.json` |
+| The security rules do what they say | `tests/database-rules.test.ts` (28) — boots the RTDB emulator, loads the **real** `database.rules.json`; includes the refusal of a stored `level` |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
+| `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
+| The level curve is exact at every boundary | `tests/xp.test.ts` (13) — every threshold and its neighbours, plus a brute-force oracle |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (36), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
@@ -255,5 +271,10 @@ Push to `main` deploys via `.github/workflows/deploy.yml` → https://mogar13.gi
 `npm run build` runs the guards through npm's `prebuild` lifecycle, so they gate the deploy rather
 than merely existing. The five `VITE_FIREBASE_*` values are GitHub Actions secrets.
 
+Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile`. The shell
+(`src/shell`) owns the router, the auth gate and the top bar; the game hub reads
+`src/games/registry.ts`, which is empty until Phase 6.
+
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 3 (shell — router, top bar, hub, `registry.ts`).**
+green and deployed. **Next: Phase 4 (economy + progress — `useBet`, `reportResult`, stats,
+achievements, store, daily rewards).**

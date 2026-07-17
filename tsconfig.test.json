@@ -18,6 +18,11 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
 
+    /* spa-fallback.test.ts imports scripts/spa-fallback.mjs. `allowJs` lets tsc read its
+       JSDoc types; `checkJs` stays off — the .mjs is a typed dependency, not project code
+       this config type-checks. */
+    "allowJs": true,
+
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,

@@ -13,6 +13,12 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
 
+    /* vite.config.ts imports scripts/spa-fallback.mjs. `allowJs` lets tsc read it and pick
+       up its JSDoc types; `checkJs` stays off (default), so the .mjs is a typed dependency,
+       not a file this project type-checks. The .mjs is Node code with its own lint lane
+       (disableTypeChecked) — see eslint.config.mjs. */
+    "allowJs": true,
+
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,

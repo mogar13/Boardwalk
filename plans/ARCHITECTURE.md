@@ -1,7 +1,7 @@
 # The Boardwalk
 
-**Status:** Phases 0–1 shipped 2026-07-16, Phase 2 (data layer) shipped 2026-07-17 — live at
-https://mogar13.github.io/Boardwalk/. Phases 3–6 are design.
+**Status:** Phases 0–1 shipped 2026-07-16, Phase 2 (data layer) and Phase 3 (shell) shipped
+2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phases 4–6 are design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -282,7 +282,7 @@ type Room<TPublic, TPrivate> = {
 
 | Hook | Gives you |
 |---|---|
-| `useProfile()` | name, avatar, loadout, level, xp |
+| `useProfile()` | name, avatar, loadout, xp (level is `levelFromXp(xp)`, derived, not stored) |
 | `useBankroll()` | **readonly** balance |
 | `useBet()` | chip rack state, `validate()`, `commit()` |
 | `useRoom<T>()` | room state, seats, patch, status |
@@ -336,7 +336,7 @@ One phase per conversation. Each ends green and deployed.
 | 0 | ~~**Scaffold**~~ ✅ | Vite + TS strict + ESLint + Prettier + filesize ratchet + Pages deploy. An empty page that's live. |
 | 1 | ~~**Theme + kit**~~ ✅ | `@boardwalk/theme`, `src/ui` core (Button, Modal, Toast, Card, Input) + `useConfirm`. The look is decided: **Boardwalk at night**, dark only. |
 | 2 | ~~**Data layer**~~ ✅ | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 — posture unchanged, two departures, and a test that boots the emulator and proves them. |
-| 3 | **Shell** | Router, top bar with bankroll + XP, hub, `registry.ts`, piers. |
+| 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
 | 4 | **Economy + progress** | `useBet`, `reportResult`, stats, achievements, store, daily rewards. |
 | 5 | **Multiplayer** | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests. |
 | 6 | **The five games** | See below. |
@@ -403,7 +403,13 @@ a CNAME, so this was not worth blocking Phase 0 on.
   the answer is "token system", the honest follow-up is whether the ~25 lines of `@theme` that would
   replace it are worth the dependency at all.
 - **No browser test.** See the `<dialog>` story below. Every guard in the repo is static, and the
-  worst bug in Phase 1 was not one a static guard could see.
+  worst bug in Phase 1 was not one a static guard could see. Phase 3 confirmed the shell the same
+  way Phase 1 confirmed the kit — a Playwright screenshot of the built page across every route,
+  checking `scrollHeight === clientHeight` (the dead-scroll signature) and an empty console. That
+  found nothing this time, which is the point: it is a manual pass a person has to remember to run,
+  not a guard that fails the build. The bundle also crossed **500kB** at Phase 3 (react-router +
+  firebase in one chunk) — not acted on, because `React.lazy` per game in Phase 6 is the code-split
+  that answers it, and splitting before there is a second route worth splitting would be guesswork.
 
 ## Phase 0 — what actually shipped
 
@@ -570,3 +576,67 @@ file that does not match production is worse than none, because it reads like th
 prove the file is *right*; they cannot prove it is *deployed*. Fixing it needs a service account in
 CI, which is a real secret (unlike the web config), and that was not worth blocking the phase on. If
 it is ever forgotten once, that is the argument.
+
+## Phase 3 — what actually shipped
+
+2026-07-17. The shell: `react-router-dom` 7 (`BrowserRouter`), `src/shell` (the frame, the auth
+gate, the top bar, and the routed pages — hub, store, leaderboard, profile, play, not-found),
+`src/games/registry.ts` (the typed catalogue and the pier map), the Pages SPA fallback, and the
+deletion of the stored `level` field in favour of a derived one — with 17 new tests. App.tsx, the
+Phase 1–2 style guide, is retired to a route table; the kit it demonstrated now dresses the shell.
+
+### `level` was a stored field, and Phase 3 was the first code to read it — so it was deleted
+
+Phase 2 shipped `xp` **and** `level` on the profile, and the top bar is the first thing that renders
+either. Rendering them side by side is what made the redundancy obvious: `level` is a pure function
+of `xp`, so storing both is two sources of truth for one fact — the exact shape of half the v1 defect
+table (`loadout.color` written by the hub and read by nothing; `gameId` drifting from `games.json`).
+The concrete failure was Phase 4's, waiting to happen: every XP-award site would have had to write
+both fields, and the first one that wrote `xp` but forgot `level` mints an account whose badge and
+whose progress bar disagree forever. The fix is not "remember to write both" — it is that there is
+nothing to forget, because `level` is `levelFromXp(xp)` computed in one pure, unit-tested module and
+stored nowhere. `$other: false` in `database.rules.json` now *refuses* a write that includes a
+`level`, so the deletion is enforced at the server, not merely done — and the rules test asserts that
+refusal, because removing two lines from a rules file otherwise looks like a no-op.
+
+### BrowserRouter on a static host needs a 404.html, and the copy is where it goes wrong
+
+GitHub Pages has no server-side rewrite, so `/Boardwalk/play/blackjack` typed directly asks Pages for
+a file that does not exist and gets Pages' own 404. The fix is the standard Pages-SPA trick —
+`dist/404.html` is a byte-for-byte copy of `index.html`, which Pages serves for any unmatched path,
+booting the app so react-router can resolve the route. The alternative, `HashRouter`, would put a `#`
+in every URL forever, and Phase 5's shared room-code links are the ones that make that cost real. The
+copy itself is `copyFileSync` (byte-identical by construction); the failure mode is the *silent* one
+this repo dreads — the copy not running, or `index.html` not where the plugin looked, leaving a green
+build and broken deep links discovered by a user. So `scripts/spa-fallback.mjs` is a pure function
+with two callers that cannot see each other (the Vite plugin and its test, exactly like `config.ts`),
+and it reads both files back and **throws** if they differ or are missing, so the build goes red
+rather than the deploy going quietly half-broken.
+
+### The hub is empty on purpose, and that was the hardest call in the phase
+
+The registry ships with **zero games**, and the hub renders each pier with an honest "opening soon"
+rather than five "coming soon" cards. Five stub cards would have made the hub demonstrable — but a
+rendered list of five promised games is a game checklist whether it is called one or not, and the
+most important line in this document forbids exactly that. So the registry is the typed *structure*
+(the `GameManifest` and `Pier` types, the derive-from-`id` guarantee, the three piers as the
+boardwalk's map) and none of the *content*; a game appears in the same commit that builds it, Phase 6,
+and the hub reads the registry rather than hardcoding a catalogue, so it needs no change when one
+lands. Also deliberately absent: any `React.lazy`/`Suspense` loader — a lazy import with no component
+to load is `validateAndCommit()` again, an abstraction built before its caller. How a manifest
+attaches to its component gets decided by the first game needing it.
+
+**Not built, on purpose:** the store and leaderboard are honest placeholders naming their phase, not
+features. The `leaderboard/` node is world-readable and live *today*, so a leaderboard is genuinely
+buildable now — and it is held for Phase 4 because it ranks by `wins`, a stat that arrives with its
+writer then, and a leaderboard that can only rank by bankroll would be built to be rebuilt. Profile
+editing is deferred the same way: the page is the display, and it says so.
+
+**The gap Phase 3 leaves, named rather than papered over.** The verification of the signed-in shell
+(top bar, hub, profile meter) was done against a *mocked* session, because the deployed
+`boardwalk-fca02` project refused the sign-up write with `permission_denied` — the hand-deployed
+rules (or auth config) on production, not this repo's code, and the same "deployed by hand, nothing
+in CI" gap Phase 2 named. So the screenshots prove the shell renders a session *correctly*; they do
+not prove production will *grant* one. Wiring the app to the local emulator behind a dev-only env
+flag would let the whole flow be driven without touching production — that is the honest next step,
+and it was not worth blocking the shell on.
