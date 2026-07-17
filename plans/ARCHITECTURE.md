@@ -2,8 +2,8 @@
 
 **Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
-five games) is in progress: **Tic-Tac-Toe shipped 2026-07-17**, the SDK's smoke test; Blackjack,
-Chess, UNO and Solitaire remain.
+five games) is in progress: **Tic-Tac-Toe** (the SDK's smoke test) and **Blackjack** (the economy
+proof) shipped 2026-07-17; Chess, UNO and Solitaire remain.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -352,8 +352,8 @@ keep the coverage or the OS ships untested.
 
 | Game | v1 JS | Proves |
 |---|---|---|
-| **Tic-Tac-Toe** | 530 | The SDK is cheap. If this isn't ~150 lines, the SDK is wrong. |
-| **Blackjack** | 966 | Betting, casino economy, `reportResult` payouts, dealer hole card. |
+| **Tic-Tac-Toe** ✅ | 530 | The SDK is cheap. If this isn't ~150 lines, the SDK is wrong. |
+| **Blackjack** ✅ | 966 | Betting, casino economy, `reportResult` payouts, dealer hole card. Shipped room-less — its coverage is the economy, not seats. |
 | **Chess** | 1,339 | Pure unit-tested `logic/`, hot-seat, 2-seat online, zero betting. |
 | **UNO** | 1,079 | Private hands, seq ordering, AI-as-occupant, 7 seats. *It already solved the hard problems — port the reasoning.* |
 | **Solitaire** | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
@@ -974,3 +974,67 @@ prove the files exist and resolve, and a dev-server pass confirmed Vite serves e
 `/Boardwalk/` base with the right content-type and the top bar renders the toggle, but *hearing* a
 sound fire on a real gesture lands when Blackjack drives `play('deal')`. That is the browser pass
 the memory recipe calls for, owed at the game, not the infra.
+
+## Phase 6 — Blackjack (the economy proof, and the first room-less game)
+
+2026-07-17. `src/games/blackjack` — a manifest, a pure `logic/blackjack.ts` (deck, ace-soft
+`handValue`, the dealer's fixed strategy, the settle matrix, the integer-safe 3:2 payout, and a pure
+reducer), a `Hand` that draws cards through `system/cards`, and a `Table` that runs the betting loop
+over `useBet`/`reportResult`/`useAudio` — with 26 logic tests (297 total). The economy was driven
+end-to-end in a real browser against the emulator: 14 hands, every bankroll delta matching the shown
+result to the cent, wagers deducted and payouts credited, all card art loaded, zero console errors.
+
+### The scope call: Blackjack is single-player and opts out of rooms
+
+The ARCHITECTURE sketch drew Blackjack with `seats: { min: 1, max: 5 }` and `modes:
+['ai','hotseat','online']` — a multi-seat table. It shipped instead as `modes: ['solo']`, one seat,
+no room. The reasoning is the coverage matrix, which is the authoritative scoping doc over the
+hook/manifest sketches (the hook table already deviated once — `useSeats` has no `currentSeat`).
+Blackjack's assigned coverage is **the casino economy**: betting, the 3:2 natural, `reportResult`
+payouts, the dealer hole card. None of that needs multiplayer — you play the house, not other
+players, and the dealer is the bank, not a seat. Multiplayer with private hands is UNO's coverage,
+and opting out of rooms is Solitaire's; building a 5-seat shared-shoe table here would have
+duplicated both and dragged in the hidden-shoe problem (a visible public deck leaks the next card)
+for no coverage gain. So Blackjack is the first caller of the room-less seam `Play.tsx` always
+described ("a solo game just renders") — it mounts its board straight into `<GameShell>`, drives a
+local `useReducer`, and the dealer's hole card is hidden the honest simple way: a face-down card in
+local state, revealed on stand, not a networked-privacy trick. Solitaire will confirm the same seam.
+
+### `'solo'` became a real manifest mode, and the lobby had to be told it is not one of its own
+
+Adding `'solo'` to `GameManifest['modes']` is the kind of shared-type change this repo is wary of,
+but it has two real callers (Blackjack now, Solitaire later) and it is the honest name for "no room",
+so it is a mode and not a per-game string. The tension it exposed: `RoomIdentity.mode` is the three
+*multiplayer* modes (`'ai'|'hotseat'|'online'`), and the lobby's mode state was typed off
+`manifest.modes[number]` — which now includes `'solo'`, a mode the lobby cannot honour. The fix
+states the boundary that was always true: the lobby filters `'solo'` out (`roomModes`), so its mode
+type stays the three room modes and a mixed-mode game never renders a "solo" button in a lobby. A
+solo-*only* game never reaches that code at all — it has no lobby — so the filter is belt-and-braces
+for a future game that offers both.
+
+### The browser pass verified the thing static tests structurally cannot: that money moves
+
+Tic-Tac-Toe's browser pass found a wire bug; Blackjack's had a different job. The payout math is
+unit-tested to the cent, but "does `commit()` actually deduct and `reportResult` actually credit,
+against a real profile write" is a claim only a running app and a real backend can settle — the same
+reason the economy is client-authoritative-but-rule-shaped rather than provable in a unit test. So
+the driver played 14 hands and asserted each full-hand bankroll delta equalled the result's expected
+net (`-wager` on a loss, `+wager` on a win, `0` on a push, and the wager off then the payout on),
+watching 4 wins and 2 pushes credit correctly. A dealt natural never came up in 14 hands (~4.8% a
+hand), so the 3:2 *credit* path is proven only by unit test and the even-money credit by browser —
+noted honestly rather than claimed. The `parseInt`-drop bug that names this game in the v1 table is
+killed at the type level (integer cents throughout) and at the unit level (`payoutCents('blackjack',
+505)` is asserted to be an exact integer).
+
+**Not built, on purpose:** splits and insurance (the two most complex blackjack branches, and neither
+adds economy coverage the base loop and double-down do not — double-down already exercises the
+second `commit()`); a card-counting shoe (a fresh 52 is shuffled each hand, which removes the
+deck-runs-low edge case entirely and costs nothing a friendly game misses); per-card dealer-draw
+animation (the dealer resolves in one reducer step; the reveal is instant, which is a polish gap, not
+a correctness one); and any multiplayer, per the scope call above.
+
+**The gap Blackjack leaves.** The same manual-browser-pass gap every game inherits — the CI
+browser/integration guard Phases 1/3/5/6 all named is still unbuilt, and it is now the guard that
+would prove the *economy* keeps working without a person remembering to deal 14 hands. Blackjack adds
+no new node to `database.rules.json` (it writes only the existing profile, through the existing
+`mutateProfile`), so nothing new needs deploying for it.

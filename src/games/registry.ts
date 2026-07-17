@@ -1,5 +1,6 @@
 import { lazy, type ComponentType } from 'react';
 import { ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
+import { blackjackManifest } from '@/games/blackjack/manifest';
 
 /**
  * The registry — what `games.json` was in v1, made typed, and the place `gameId` is
@@ -137,8 +138,15 @@ export interface GameManifest {
    * `"local"`-vs-`"hotseat"` split across 14 games (7 spelled it each way) is the bug this
    * project deletes with `localSeatIds` in Phase 5. This field is the LOBBY's menu of what
    * to offer, not a mode string a game reads.
+   *
+   * `'solo'` is the room-LESS mode: a single player against the house or the board, with no
+   * lobby, no seats and no subscription (Blackjack, and later Solitaire). A game that offers
+   * only `['solo']` never mounts `<Lobby>` — the play route mounts its board straight into
+   * `<GameShell>` — so the mode string here is documentation and a hub hint, not something the
+   * game reads. It is a real, reusable mode (two callers), not a per-game invention, which is
+   * the bar this union holds to.
    */
-  readonly modes: readonly ('ai' | 'hotseat' | 'online')[];
+  readonly modes: readonly ('solo' | 'ai' | 'hotseat' | 'online')[];
 
   /**
    * Present only for games where money is on the table. Absent means the game does not
@@ -171,6 +179,10 @@ export const registry: readonly RegisteredGame[] = [
   {
     manifest: ticTacToeManifest,
     Component: lazy(() => import('@/games/tic-tac-toe/TicTacToeGame')),
+  },
+  {
+    manifest: blackjackManifest,
+    Component: lazy(() => import('@/games/blackjack/BlackjackGame')),
   },
 ];
 

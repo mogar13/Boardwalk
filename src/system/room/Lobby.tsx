@@ -39,7 +39,11 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const [roomId, setRoomId] = useState<string | null>(null);
-  const [mode, setMode] = useState<GameManifest['modes'][number]>(manifest.modes[0] ?? 'online');
+  // The lobby is multiplayer-only: `'solo'` means no room at all, so a solo game never renders this
+  // component. Filter it out defensively so the mode type stays the three room modes `RoomIdentity`
+  // accepts, and a mixed-mode game never offers a "solo" button that a lobby cannot honour.
+  const roomModes = manifest.modes.filter((m): m is RoomIdentity['mode'] => m !== 'solo');
+  const [mode, setMode] = useState<RoomIdentity['mode']>(roomModes[0] ?? 'online');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -95,9 +99,9 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         <h2 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
           New table
         </h2>
-        {manifest.modes.length > 1 && (
+        {roomModes.length > 1 && (
           <div className="flex flex-wrap gap-2">
-            {manifest.modes.map((m) => (
+            {roomModes.map((m) => (
               <Button
                 key={m}
                 size="sm"
