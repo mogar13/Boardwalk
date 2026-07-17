@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+scripts/file-size-baseline.json
+
+# Prose is hand-wrapped and stays that way. Prettier is here for uniformity in
+# CODE, where nobody should spend a thought on it. Run on the docs it rewrites
+# `*emphasis*` to `_emphasis_` and reflows every table — 176 lines of churn in
+# ARCHITECTURE.md, no reader better off, and every future doc diff buried under
+# formatting noise. The architecture doc is an argument, not output.
+*.md

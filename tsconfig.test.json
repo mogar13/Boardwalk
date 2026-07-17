@@ -1,0 +1,34 @@
+{
+  /* Tests get their own project because they are NODE code, not browser code:
+     they spawn `git`, read the filesystem, and run ESLint's API. Folding them into
+     tsconfig.app.json meant either denying `node:fs` to the guard tests or handing
+     `node:child_process` to the game code — and the second is how `logic/` stops
+     being portable to a server. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "noEmit": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["tests"]
+}

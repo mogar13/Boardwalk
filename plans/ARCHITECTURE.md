@@ -1,6 +1,7 @@
 # The Boardwalk
 
-**Status:** Design. No code yet.
+**Status:** Phase 0 shipped 2026-07-16 — scaffold live at https://mogar13.github.io/Boardwalk/.
+Phases 1–6 are design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -104,8 +105,8 @@ Mirrors VS-Dashboard, which is the proven-in-anger reference.
 
 | Concern | Choice | Note |
 |---|---|---|
-| Build | **Vite 6** | |
-| Language | **TypeScript, `strict: true`** | |
+| Build | **Vite 8** | Was written as "Vite 6" mirroring VS-Dashboard; 8 was current at Phase 0 and greenfield had no reason to start two majors back |
+| Language | **TypeScript 6, `strict: true`** | Not 7: `typescript-eslint` peers `<6.1.0`, so TS 7 buys the native compiler by turning the lint config off. Revisit when it supports 7 |
 | UI | **React 19** | |
 | Routing | **react-router-dom 7** | `React.lazy` + `<Suspense>` per game |
 | Styling | **Tailwind v4 + DaisyUI 5** | Configured in CSS, no `tailwind.config.js` |
@@ -379,6 +380,30 @@ The accepted cost: **separate Auth, so Shack accounts don't log into Boardwalk.*
 $5,000. That's a feature — not inheriting v1's shape was the whole argument for greenfield, and
 inheriting it through the database would undo that at the last step.
 
+**Deploy target: project Pages at `mogar13.github.io/Boardwalk/`.** Decided 2026-07-16, alongside the
+Shack. `base: '/Boardwalk/'` in `vite.config.ts`. A custom domain stays a one-line `base` change plus
+a CNAME, so this was not worth blocking Phase 0 on.
+
 ## Open questions
 
-- Deploy target: `mogar13.github.io/Boardwalk/` alongside the Shack, or a custom domain?
+- None currently blocking. Phase 1 decides the look, which is the next real fork.
+
+## Phase 0 — what actually shipped
+
+2026-07-16. Vite 8 + React 19 + TS 6 strict, ESLint 10 flat (type-aware), Prettier, the file-size
+ratchet, and a Pages deploy on push to `main`. The page is deliberately unstyled — the look is Phase
+1's decision and anything designed here would be that decision made in the wrong phase, in the
+hardest place to reverse it: already on screen.
+
+Three things the build taught us, recorded because they cannot be re-derived from the tree:
+
+- **`strict: true` is not the whole story.** `noUncheckedIndexedAccess` and
+  `exactOptionalPropertyTypes` are off under `strict`, and they are exactly the ones that matter for a
+  seat array — without the first, `seats[9].name` on a 2-seat table typechecks fine. Both are on.
+- **Tests are a separate TS project** (`tsconfig.test.json`). They are Node code — they spawn `git`,
+  read the filesystem, run ESLint's API. Folding them into the app's project meant either denying
+  `node:fs` to the guard tests or handing `node:child_process` to the game code, and the second is how
+  `logic/` quietly stops being portable to a server.
+- **Prettier does not touch `*.md`.** Run on the docs it rewrites `*emphasis*` to `_emphasis_` and
+  reflows every table — 176 lines of churn here, no reader better off. This document is an argument,
+  not output.

@@ -1,0 +1,14 @@
+/* Phase 0 has no design system, and this file must not grow one.
+   Tailwind v4 + DaisyUI and `@boardwalk/theme` arrive in Phase 1; every rule
+   here is expected to be deleted then. Semantic tokens only — from Phase 1. */
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0b0b12;
+  color: #e8e8f0;
+}
+
+main {
+  padding: 2rem;
+}

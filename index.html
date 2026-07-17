@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Boardwalk</title>
+    <meta name="description" content="An arcade built on Casino OS v2." />
+    <!-- Explicitly "no icon", not a design decision — Phase 1 replaces this with the
+         real mark. Without SOME rel="icon", the browser probes the ORIGIN root for
+         /favicon.ico, which on Pages is mogar13.github.io/favicon.ico — the Game
+         Shack's user site, not this project. A 404 against the archive on every page
+         load is the kind of harmless noise that becomes permanent. -->
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

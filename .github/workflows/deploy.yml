@@ -1,0 +1,64 @@
+# Build and deploy The Boardwalk to GitHub Pages.
+#
+# `npm run build` triggers `prebuild` (lint + file-size guard) through npm's
+# lifecycle, so the guards gate the deploy rather than merely existing. `npm test`
+# is a separate step because a test failure and a lint failure should not look the
+# same in the log.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: only what Pages' OIDC deploy needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race to publish. `cancel-in-progress: false` — a
+# superseded run should finish its upload rather than leave Pages half-written.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 24, matching @types/node — CI typechecking against a different Node's types
+      # than the one developers run is a difference that only ever surfaces here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # `ci` not `install`: it fails on a package-lock.json that disagrees with
+      # package.json instead of quietly resolving something the local tree never saw.
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      # Runs prebuild → lint + guard:filesize → tsc -b → vite build.
+      - name: Build
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

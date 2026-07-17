@@ -5,8 +5,9 @@ logic, drawing a component, and exporting a manifest.
 
 React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase
 
-> **Status: design.** No code yet. The architecture is written down first, on purpose.
-> Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
+> **Status: Phase 0 shipped** — the scaffold is live at https://mogar13.github.io/Boardwalk/ and the
+> pipeline is green. No Casino OS yet; that's Phases 1–6. The architecture was written down first, on
+> purpose. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
 
 ## What this is
 
@@ -51,6 +52,17 @@ forever. *"we have no `off()`"* rots the day someone adds one.
 
 ## Develop
 
-Nothing to run yet. Phase 0 sets up Vite + TS strict + ESLint + Prettier + the file-size ratchet +
-Pages deploy, and ships a live empty page. Phases are one per conversation, each ending green and
-deployed.
+```bash
+npm install
+npm run dev      # http://localhost:5173/Boardwalk/
+npm test         # the guards, proving they still fire
+npm run build    # prebuild (lint + file-size ratchet) → tsc -b → vite build
+```
+
+Push to `main` deploys to Pages. `npm run build` runs the guards via npm's `prebuild` lifecycle, so
+they gate the deploy rather than merely existing — a linter nobody runs is a convention, not a rule.
+
+Phase 0 shipped Vite 8 + React 19 + TS 6 strict, ESLint 10 flat (type-aware), Prettier, the 800-line
+ratchet, and the Pages deploy. **Next: Phase 1 — theme + kit, where the look gets decided.** Phases
+are one per conversation, each ending green and deployed; see
+[ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).

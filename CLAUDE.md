@@ -4,12 +4,18 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**There is no code yet.** This repo is currently three documents. Start at
+**Phase 0 (scaffold) has shipped. Phases 1–6 have not.** There is a live empty page, a green
+pipeline, and no Casino OS: no `src/system`, no `src/ui`, no games. Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
-everything below. Phase 0 (scaffold) has not been run.
+everything below.
 
-Do not describe this file's rules as "how the code works" until code exists. When you build something,
-update this file to match.
+**Most rules below describe code that does not exist yet.** They are the contract for the phase that
+builds each thing, not a description of the tree. A rule marked *"Lint-enforced"* is only enforced if
+it appears in the table under [Enforcement](#enforcement) — that table is the honest list, and a rule
+gets its guard in the phase that creates its subject (a lint rule aimed at a directory that does not
+exist matches nothing, and a rule that matches nothing reports success).
+
+When you build something, update this file and that table to match.
 
 ## The project
 
@@ -104,21 +110,26 @@ lint rule that matches nothing reports success.
 
 ### UI
 
-- **Raw DaisyUI component classes are banned outside `src/ui`.** Lint-enforced. This is the whole
-  reason VS-Dashboard looks like one product — and a neon casino needs it more than a dashboard does,
-  not less. Neon without a system looks like a ransom note.
+- **Raw DaisyUI component classes are banned outside `src/ui`.** Lint rule lands in Phase 1, with
+  `src/ui`. This is the whole reason VS-Dashboard looks like one product — and a neon casino needs it
+  more than a dashboard does, not less. Neon without a system looks like a ransom note.
 - **Semantic tokens only** (`bg-base-200`, `text-primary-content`). Never a raw palette value.
-- **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** One `<Modal>`, one `useToast()`. v1
-  has four ad-hoc modal systems and toasts that lazily self-inject an inline-styled container.
+- **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live. One `<Modal>`, one
+  `useToast()` — both Phase 1; the ban came first so they are the only road when they arrive. v1 has
+  four ad-hoc modal systems and toasts that lazily self-inject an inline-styled container.
 
 ### Files
 
-- **800-line ratchet, enforced on `prebuild`.** A new file over 800 lines fails; a baselined file that
-  *grew* fails. It never fails on a file that shrank — it tells you to re-lock the baseline. Script is
-  copyable from `../VS-Dashboard/scripts/check-file-size.mjs`.
+- **800-line ratchet, enforced on `prebuild`.** ✅ Live — `scripts/check-file-size.mjs`. A new file at
+  or over 800 lines fails; a baselined file that *grew* fails. It never fails on a file that shrank —
+  it tells you to re-lock the baseline. The baseline is `{}` and the correct number of entries it will
+  ever hold is zero: over in VS-Dashboard this guard arrived too late and fences nine files, one of
+  them 2,586 lines. Here it is a ceiling, not a ratchet on debt. Keep it that way.
 - Components are `PascalCase.tsx`; logic and hooks are `camelCase.ts`. The extension is the signal.
-- Use the `@/` path alias. (VS-Dashboard has none and imports `'../../../actualLabor'` — we're not
-  doing that.)
+  (Convention only — no guard. Don't trust it to hold.)
+- **Use the `@/` path alias.** ✅ Live — `../../**` is a lint error. One `../` is fine; a sibling is a
+  real relationship. (VS-Dashboard has none and imports `'../../../actualLabor'` — we're not doing
+  that.)
 
 ## Docs
 
@@ -131,8 +142,49 @@ Two tiers, and the split matters:
   they stay true forever. "v1 had no `off()`" cannot rot; "we have no `off()`" rots the day someone
   adds one.
 
+## Enforcement
+
+The honest list. **Left column = a rule with teeth today.** Right column = prose until its phase
+builds the thing it guards.
+
+| Live now | Guard |
+|---|---|
+| `alert`/`confirm`/`prompt` banned | `no-restricted-globals`, scope-aware — sees `confirm(msg)`, ignores `const { confirm } = useToast()` |
+| `@/` alias, no `../../` escapes | `no-restricted-imports`, pattern `../../**` |
+| 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` |
+| Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
+| Every guard above actually fires | `tests/lint-rules.test.ts`, `tests/file-size-guard.test.ts` |
+
+| Not yet enforced | Lands in |
+|---|---|
+| Raw DaisyUI classes banned outside `src/ui` | Phase 1 (needs `src/ui`) |
+| Semantic tokens only | Phase 1 |
+| `firebase/*` only under `src/system/repo/firebase/` | Phase 2 |
+| `logic/` is pure; no cross-game imports | Phase 6 (needs `src/games`) |
+| `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
+
+Adding a rule means adding its guard **and a test that the guard fires**, in the same commit. Both
+test files exist to be copied from. Falsify a new guard before trusting it: break the thing on
+purpose, watch it go red. Phase 0 found two of its own tests were vacuous that way — one linted a
+`.tsx` fixture that TypeScript had silently dropped from the program (a `.ts` and a `.tsx` sharing a
+basename resolve to the same module; the `.ts` wins), which is precisely the "guard goes blind on the
+file-extension axis" failure the suite was written to prevent, landing on the suite itself.
+
 ## Develop
 
-Nothing to run yet. Phase 0 sets up Vite + TS strict + ESLint + Prettier + the file-size ratchet +
-Pages deploy, and ships a live empty page. Phases are listed in
-[ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends green and deployed.
+```bash
+npm install
+npm run dev            # vite, http://localhost:5173/Boardwalk/
+npm test               # vitest — the guard tests
+npm run lint
+npm run format         # prettier; docs are .prettierignore'd on purpose
+npm run build          # prebuild (lint + filesize) → tsc -b → vite build
+npm run guard:filesize -- --init   # re-lock the ratchet after a file SHRANK
+```
+
+Push to `main` deploys via `.github/workflows/deploy.yml` → https://mogar13.github.io/Boardwalk/.
+`npm run build` runs the guards through npm's `prebuild` lifecycle, so they gate the deploy rather
+than merely existing.
+
+Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
+green and deployed. **Next: Phase 1 (theme + kit).**
