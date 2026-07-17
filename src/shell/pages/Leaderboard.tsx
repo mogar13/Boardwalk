@@ -65,7 +65,9 @@ export function Leaderboard() {
   const { loading, entries, error } = useLeaderboard(25);
 
   return (
-    <div className="flex flex-col gap-6">
+    // A ranked list reads better held to a column than stretched edge-to-edge, so this one
+    // page opts out of the shell's full width — the grid pages (hub, store) fill; a list does not.
+    <div className="flex w-full max-w-5xl flex-col gap-6">
       <header className="flex flex-col gap-2">
         <h1 className="font-display text-base-content text-3xl font-bold tracking-[0.08em] uppercase">
           Leaderboard

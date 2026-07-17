@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { Button, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
+import { useAudio } from '@/system/audio/useAudio';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { xpProgress } from '@/system/profile/xp';
 import { Wordmark } from '@/shell/Wordmark';
@@ -23,6 +24,35 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     'font-display text-sm font-semibold tracking-[0.14em] uppercase transition-colors duration-200 ease-strike',
     isActive ? 'text-secondary' : 'text-bw-muted hover:text-base-content'
   );
+
+/**
+ * The mute toggle. Always shown — audio is a page-global concern, not a signed-in one — and the
+ * one non-money glyph in the bar. Unmuting plays a `click` for immediate feedback (the toggle
+ * itself is the gesture that unlocks the browser's audio); muting is silent, because a sound
+ * confirming "sounds off" is a contradiction. `aria-pressed` makes it a real toggle to a screen
+ * reader rather than a mystery button.
+ */
+function MuteToggle() {
+  const { muted, toggleMute, play } = useAudio();
+  return (
+    <Button
+      variant="quiet"
+      size="sm"
+      aria-pressed={muted}
+      aria-label={muted ? 'Unmute sound' : 'Mute sound'}
+      title={muted ? 'Sound off' : 'Sound on'}
+      onClick={() => {
+        const willUnmute = muted;
+        toggleMute();
+        if (willUnmute) play('click');
+      }}
+    >
+      <span aria-hidden className="text-base">
+        {muted ? '🔇' : '🔊'}
+      </span>
+    </Button>
+  );
+}
 
 /** The compact level badge + XP sliver. The profile page draws the full meter; this is the glance. */
 function LevelPip({ xp }: { xp: number }) {
@@ -55,7 +85,7 @@ export function TopBar() {
 
   return (
     <header className="border-bw-line bg-base-100/80 sticky top-0 z-20 border-b backdrop-blur">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6">
+      <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:px-10">
         {/* The sign, home. `end` so only the exact "/" is the active route, not every path. */}
         <NavLink to="/" className="shrink-0">
           <Wordmark size="sm" />
@@ -75,6 +105,9 @@ export function TopBar() {
 
         {/* Everything the player owns, pushed to the right. */}
         <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-2">
+          {/* Global, so it sits outside the signed-in block — a signed-out visitor can still mute. */}
+          <MuteToggle />
+
           {profile !== null && (
             <>
               <LevelPip xp={profile.xp} />

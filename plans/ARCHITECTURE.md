@@ -926,3 +926,47 @@ one — the CI browser guard Phases 1/3/5 all named remains the honest missing p
 guard that would have caught a shipped-broken game rather than a cosmetic. And the hand-deploy rules
 gap persists, though Phase 6 did not touch `database.rules.json` (Tic-Tac-Toe adds no new node — it
 lives under the existing `rooms/`/`state/` rules), so nothing new needs deploying for this game.
+
+### Phase 6 — Assets + Audio OS (Blackjack prep)
+
+2026-07-17. Before the first *betting* game, the two things the SDK still owed a card-and-chips
+casino: **sound**, and **card art**. `useAudio()` had been a promise in the hook table since the
+sketch; it is now `src/system/audio` — `sounds.ts` (a pure role→file registry), `audioStore.ts`
+(a Zustand mute flag, `localStorage`-persisted and cross-tab `storage`-synced), `engine.ts` (a
+guarded `HTMLAudioElement` cache with browser-unlock-on-first-gesture), and the `useAudio` hook —
+plus a top-bar mute toggle and `src/system/cards/cards.ts` (`cardSrc`). The card decks, chips and
+curated SFX were staged into `public/` from the CC0 Game-Shack trove. 271 tests (9 new); Blackjack
+is the caller that consumes it.
+
+Three things worth recording:
+
+- **A sound role is v1's `tracks` map made typed, and the win is the same as `gameId`.** v1's
+  `SystemUI.playSound('cardz')` failed silently — the string named nothing and nothing happened.
+  Here a game names a `SoundName`, so a typo is a compile error, and the filename is an asset detail
+  behind the role (a random take from a pool per play, which is what stops a rapid deal sounding
+  like a machine gun — v1 discovered that too, and arrayed `card`/`chipStack` for exactly it). The
+  registry being pure data is what lets `tests/audio.test.ts` prove every role resolves to a file
+  **on disk** — the `loadout.color` failure (a manifest entry read by, or pointing at, nothing)
+  caught for assets, which no type system sees because a filename is a string however wrong.
+
+- **A pure module that reads `import.meta.env` splits the two tsconfigs, and that is the tension in
+  miniature.** `cardSrc` builds a base-path-aware URL from `import.meta.env.BASE_URL`, so it is
+  browser-coupled — fine for system UI infra (it is *not* a game's `logic/`, which the impure-import
+  lint still fences). But a test importing it pulls it into `tsconfig.test.json`, the Node project,
+  which does not include `src/vite-env.d.ts` and so typed `import.meta.env` as absent — a phantom
+  error on code the app project checks clean. The fix is one line (`types: ['node', 'vite/client']`
+  on the test project), and the lesson is the repo's own `config.ts`-takes-`env` rule seen from the
+  other side: the moment a shared module reaches a build-time global, the Node test lane has to be
+  told the global's type, because vitest supplies its *value* at runtime but not its shape to `tsc`.
+
+- **Curated, not dumped — the checklist rule applied to assets.** The Game-Shack trove is ~18MB of
+  cards, chips, piece sprites, jingles and dice; committing it wholesale would be the asset form of
+  "port the rest of the games". Only the in-use subset is staged (a standard deck + backs, the UNO
+  set for its later game, chips, ~12 SFX), and next game's art arrives with next game. Everything is
+  CC0; `public/audio/CREDITS.md` records the provenance because credit is appreciated, not required.
+
+**The gap this step leaves.** Playback itself is not browser-verified end-to-end here — the tests
+prove the files exist and resolve, and a dev-server pass confirmed Vite serves every asset at the
+`/Boardwalk/` base with the right content-type and the top bar renders the toggle, but *hearing* a
+sound fire on a real gesture lands when Blackjack drives `play('deal')`. That is the browser pass
+the memory recipe calls for, owed at the game, not the infra.
