@@ -1,6 +1,7 @@
 import { Card } from '@/ui';
 import { PIERS, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
+import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
 
 /**
  * The hub — the boardwalk seen from the entrance. It renders the piers in order, and each
@@ -48,6 +49,8 @@ export function Hub() {
           game.
         </p>
       </header>
+
+      <DailyRewardCard />
 
       {PIERS.map((pier) => {
         const games = gamesOnPier(pier.id);

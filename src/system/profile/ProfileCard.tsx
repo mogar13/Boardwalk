@@ -1,28 +1,51 @@
-import { Button, Card } from '@/ui';
+import { useState } from 'react';
+import { Button, Card, Input, Modal } from '@/ui';
 import { useAuth, useIsAdmin } from '@/system/auth/useAuth';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
+import { useProfileEditor } from '@/system/profile/useProfileEditor';
 import { xpProgress } from '@/system/profile/xp';
 
 /**
  * The signed-in player, in full. The top bar (`src/shell/TopBar`) shows a compact version
  * of the same facts; this is the profile route's expanded card, with the XP meter the top
- * bar has no room for.
+ * bar has no room for — and, from Phase 4, the one editable thing: the display name.
  *
  * Phase 2's proof still holds here: the record came back from RTDB, through `ProfileRepo`,
  * into the store, and the bankroll below is real. What Phase 3 changed is `level` — it is
  * no longer a stored field, it is `xpProgress(profile.xp).level`, computed the same way
- * everywhere it appears so the badge and the bar can never disagree.
+ * everywhere it appears so the badge and the bar can never disagree. What Phase 4 adds is the
+ * writer: renaming goes through `useProfileEditor`, the same single `mutateProfile` path a bet
+ * or a purchase takes, so the top bar re-renders the new name the instant it saves.
  */
 export function ProfileCard() {
   const { session, signOut } = useAuth();
   const profile = useProfile();
   const isAdmin = useIsAdmin();
+  const { rename } = useProfileEditor();
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (session === null || profile === null) return null;
 
   const { level, into, needed, pct } = xpProgress(profile.xp);
 
+  const openEditor = () => {
+    setDraft(profile.name);
+    setEditing(true);
+  };
+
+  const save = () => {
+    setSaving(true);
+    void rename(draft).then((ok) => {
+      setSaving(false);
+      if (ok) setEditing(false);
+    });
+  };
+
   return (
+    <>
     <Card className="flex flex-col gap-6 px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -30,9 +53,16 @@ export function ProfileCard() {
             {profile.avatar}
           </span>
           <div className="flex flex-col gap-1">
-            <span className="font-display text-base-content text-lg font-semibold tracking-[0.08em]">
-              {profile.name}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-display text-base-content text-lg font-semibold tracking-[0.08em]">
+                {profile.name}
+              </span>
+              {/* The one editable thing. Quiet, next to the name, opening a real <Modal> — never
+                  a native prompt(), which is a lint error and cannot be themed or tested. */}
+              <Button variant="quiet" size="sm" onClick={openEditor}>
+                Edit
+              </Button>
+            </div>
             <span className="text-bw-muted text-xs">
               Level {level}
               {/* Hiding a badge is cosmetic. `admins/<uid>` and database.rules.json are
@@ -95,5 +125,33 @@ export function ProfileCard() {
         </div>
       </div>
     </Card>
+
+    <Modal
+      open={editing}
+      onClose={() => setEditing(false)}
+      title="Edit your name"
+      description="Your display name — not your login. It shows in the top bar and on the leaderboard."
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={save} disabled={saving}>
+            Save name
+          </Button>
+        </>
+      }
+    >
+      <Input
+        label="Display name"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+        }}
+        maxLength={40}
+        autoFocus
+      />
+    </Modal>
+    </>
   );
 }

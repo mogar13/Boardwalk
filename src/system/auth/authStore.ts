@@ -49,6 +49,22 @@ interface AuthState {
   readonly signUp: (input: SignUpInput) => Promise<RepoResult<Session>>;
   readonly signIn: (input: SignInInput) => Promise<RepoResult<Session>>;
   readonly signOut: () => Promise<void>;
+
+  /**
+   * Persist a mutated profile — THE single writer that moves money after sign-up, and the
+   * thing Phase 4's whole economy hangs off. It is deliberately not exported as a hook, and it
+   * is deliberately whole-profile-in, not a patch: the economy computes the next profile with
+   * pure logic (`applyResult`, `applyPurchase`, `claimDaily`) and hands the finished thing
+   * here. A game never sees this — it gets `useBet`/`reportResult`, which call it — so "there
+   * is no money setter a game can reach" stays true at the type level (`useBankroll` is a
+   * readonly number) AND at the module level (this is not on any game-facing surface).
+   *
+   * Optimistic: it sets the store first so the top bar ticks instantly, then persists, and
+   * REVERTS if the write is rejected — money is client-authoritative in v2, so the local value
+   * is the truth until the server disagrees, and a failed save must not leave the UI showing a
+   * balance the database does not hold. It rethrows so the caller can toast.
+   */
+  readonly mutateProfile: (next: Profile) => Promise<void>;
 }
 
 /**
@@ -78,7 +94,7 @@ async function loadOrCreateProfile(session: Session): Promise<Profile> {
   return fresh;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'unknown',
   session: null,
   profile: null,
@@ -117,6 +133,25 @@ export const useAuthStore = create<AuthState>((set) => ({
     // listener for who gets to write `null`, and the loser would be re-writing state the
     // winner had already moved past.
     await repos.auth.signOut();
+  },
+
+  async mutateProfile(next) {
+    const { session, profile: prev } = get();
+    // Signed out, or hydrating: there is nothing to save against, so this is a no-op rather
+    // than a throw — a stray economy call during a sign-out transition should be harmless.
+    if (session === null || prev === null) return;
+
+    set({ profile: next }); // optimistic — the top bar ticks now, not after the round-trip
+    try {
+      await repos.profile.save(session.uid, next);
+    } catch (error) {
+      // The write was rejected (offline, or the rules said no). Put the old profile back so the
+      // UI matches the database, and rethrow so the caller can say "couldn't save". Reverting
+      // to the exact `prev` we captured — not re-loading — keeps this synchronous and avoids a
+      // second round-trip that could also fail.
+      set({ profile: prev });
+      throw error;
+    }
   },
 }));
 

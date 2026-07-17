@@ -1,4 +1,5 @@
 import { firebaseAuthRepo } from '@/system/repo/firebase/authRepo';
+import { firebaseLeaderboardRepo } from '@/system/repo/firebase/leaderboardRepo';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
 import type { Repos } from '@/system/repo/types';
 
@@ -22,6 +23,7 @@ import type { Repos } from '@/system/repo/types';
 export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile: firebaseProfileRepo,
+  leaderboard: firebaseLeaderboardRepo,
 };
 
 /**
@@ -33,6 +35,8 @@ export { firebaseReady } from '@/system/repo/firebase/app';
 
 export type {
   AuthRepo,
+  LeaderboardEntry,
+  LeaderboardRepo,
   ProfileRepo,
   RepoResult,
   Repos,

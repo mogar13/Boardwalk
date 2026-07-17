@@ -28,16 +28,21 @@ export const DEFAULT_AVATAR = '👤';
  * WHAT IS NOT HERE, and why each absence is a decision rather than an omission:
  *
  *   • `isDev` — v2 does not store one at all. See Session.isAdmin.
- *   • `loadout` / `equippedCardBack` / `inventory` / `title` — the store is Phase 4.
- *     v1 shipped `loadout.color` written by the hub and read by nothing, which is a
- *     row in the defect table; a field with no reader is how that starts.
  *   • `chatColor` — chat is Phase 5.
- *   • `stats` / `achievements` / `rewards` — progress is Phase 4.
+ *   • `equippedCardBack` / `title` — a card back has no reader until a game draws one,
+ *     so it would be `loadout.color` reborn (written by the store, read by nothing). It
+ *     lands with the game that renders it. The store sells AVATARS in Phase 4 precisely
+ *     because an equipped avatar has a reader today — the top bar and the profile card.
  *
- * Each lands with its consumer, in the same commit, along with the `.validate` line
- * in database.rules.json that pins it. `$other: false` on the profile node means
- * adding a field here without that line fails at the server, loudly, which is the
- * enforcement making this comment true rather than aspirational.
+ * Phase 4 added `stats`, `achievements`, `inventory` and `daily` — each with the consumer
+ * that reads it, the `.validate` line in database.rules.json that pins it, and the pure
+ * module that writes it, all in the same commit. `$other: false` on the profile node means
+ * adding a field here without its rule fails at the server, loudly.
+ *
+ * The four progress fields start EMPTY, and three of them start as an empty object that RTDB
+ * will strip on write — which is exactly why `readProfile` defaults a missing one rather
+ * than trusting the wire. `daily` is the exception: `{ lastClaimDay: 0, streak: 0 }` is not
+ * empty, so it round-trips, and 0 is the honest "never claimed".
  */
 export function defaultProfile(rawUsername: string): Profile {
   return {
@@ -46,5 +51,9 @@ export function defaultProfile(rawUsername: string): Profile {
     bankrollCents: STARTING_BANKROLL_CENTS,
     // No `level`: it is derived from `xp` (0 → level 1) by `levelFromXp`, never stored.
     xp: 0,
+    stats: {},
+    achievements: {},
+    inventory: {},
+    daily: { lastClaimDay: 0, streak: 0 },
   };
 }

@@ -1,6 +1,14 @@
 import { get, ref, update } from 'firebase/database';
 import { DEFAULT_AVATAR, STARTING_BANKROLL_CENTS } from '@/system/profile/defaults';
-import type { Profile } from '@/system/profile/types';
+import type {
+  AchievementSet,
+  DailyState,
+  GameStat,
+  Inventory,
+  Profile,
+  Stats,
+} from '@/system/profile/types';
+import { totalWins } from '@/system/progress/stats';
 import { firebaseDb } from '@/system/repo/firebase/app';
 import type { ProfileRepo } from '@/system/repo/types';
 
@@ -37,6 +45,15 @@ interface ProfileWire {
   avatar?: unknown;
   bankrollCents?: unknown;
   xp?: unknown;
+  // Phase 4's four. Each is `unknown` because each is exactly the field RTDB is most likely
+  // to hand back in a shape the type does not promise: `stats`/`achievements`/`inventory` are
+  // objects that come back MISSING when empty (stripped on write), and a record written by an
+  // older version has whatever fields that version had. The readers below turn any of that
+  // into a valid domain value.
+  stats?: unknown;
+  achievements?: unknown;
+  inventory?: unknown;
+  daily?: unknown;
   // No `level`: it is derived from `xp` and never stored. A record written by Phase 2 may
   // still carry one on the wire; `readProfile` simply ignores it, and `$other: false` in
   // database.rules.json refuses a NEW write that includes it. See @/system/profile/xp.
@@ -58,6 +75,57 @@ const str = (v: unknown, fallback: string): string =>
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : fallback;
 
+/** A non-negative whole count, or 0. Every stat counter and streak passes through this. */
+const count = (v: unknown): number => Math.max(0, num(v, 0));
+
+/** Anything the wire might hand back as an object, as a safe record to iterate. */
+const asRecord = (v: unknown): Record<string, unknown> =>
+  typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+
+/**
+ * Per-game stats, coerced. RTDB returns a missing node for an empty `{}`, and a hand-edited or
+ * older record could carry a malformed entry — so each game's counts are read defensively into
+ * whole non-negative numbers rather than trusted. The result satisfies the same invariants
+ * `bumpStats` maintains, so nothing downstream can tell a loaded stat from a freshly bumped one.
+ */
+function readStats(wire: unknown): Stats {
+  const out: Record<string, GameStat> = {};
+  for (const [gameId, raw] of Object.entries(asRecord(wire))) {
+    const s = asRecord(raw);
+    out[gameId] = {
+      played: count(s.played),
+      won: count(s.won),
+      lost: count(s.lost),
+      pushed: count(s.pushed),
+    };
+  }
+  return out;
+}
+
+/** Unlocked achievements: keep only entries whose value is a real timestamp number. */
+function readAchievements(wire: unknown): AchievementSet {
+  const out: Record<string, number> = {};
+  for (const [id, raw] of Object.entries(asRecord(wire))) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) out[id] = raw;
+  }
+  return out;
+}
+
+/** Owned cosmetics: the set of ids whose value is `true`. Anything else is not ownership. */
+function readInventory(wire: unknown): Inventory {
+  const out: Record<string, true> = {};
+  for (const [id, raw] of Object.entries(asRecord(wire))) {
+    if (raw === true) out[id] = true;
+  }
+  return out;
+}
+
+/** The daily clock — two whole non-negative numbers, defaulting to "never claimed". */
+function readDaily(wire: unknown): DailyState {
+  const d = asRecord(wire);
+  return { lastClaimDay: count(d.lastClaimDay), streak: count(d.streak) };
+}
+
 /** The one place the wire becomes the domain. */
 function readProfile(wire: ProfileWire): Profile {
   return {
@@ -68,6 +136,10 @@ function readProfile(wire: ProfileWire): Profile {
     avatar: str(wire.avatar, DEFAULT_AVATAR),
     bankrollCents: Math.max(0, num(wire.bankrollCents, STARTING_BANKROLL_CENTS)),
     xp: Math.max(0, num(wire.xp, 0)),
+    stats: readStats(wire.stats),
+    achievements: readAchievements(wire.achievements),
+    inventory: readInventory(wire.inventory),
+    daily: readDaily(wire.daily),
   };
 }
 
@@ -75,15 +147,39 @@ function readProfile(wire: ProfileWire): Profile {
  * The public projection. Its field list is duplicated by `database.rules.json`, and that
  * duplication is the design: this is the writer's opinion of what is public, the rules are
  * the enforcement, and if they ever disagree the SERVER wins and the write fails loudly.
- * A projection built by spreading the profile would silently publish whatever Phase 4 adds
- * to it.
+ * A projection built by spreading the profile would silently publish whatever gets added to
+ * the private record — which is exactly why Phase 4 adds `wins` by NAME here and by a
+ * matching `.validate` in the rules, not by widening a spread.
+ *
+ * `wins` is `totalWins(p.stats)` — a DERIVED sum, never a stored counter. The full `stats`
+ * object stays private (it is the whole per-game record); only the one number the leaderboard
+ * ranks by is projected. Computing it here rather than storing it is the same call as deriving
+ * `level` from `xp`: one source of truth, so the ranking cannot drift from the record.
  */
 const publicProjection = (p: Profile) => ({
   name: p.name,
   avatar: p.avatar,
   bankrollCents: p.bankrollCents,
   xp: p.xp,
+  wins: totalWins(p.stats),
 });
+
+/**
+ * The multi-path write both `create` and `save` perform: the private record AND its public
+ * projection, in one `update`, so RTDB validates every path before applying any of it. A
+ * projection that violates the leaderboard pin therefore cannot leave a private record written
+ * and a public one missing — the whole write fails.
+ *
+ * `update` and not `set`: `set` on `users/<uid>/profile` replaces the node, which is fine here
+ * because we always hold the complete domain profile — but scoping the update to these two
+ * paths says exactly what it touches and leaves any future sibling of `profile` alone.
+ */
+function writeBoth(uid: string, profile: Profile): Promise<void> {
+  return update(ref(firebaseDb()), {
+    [PROFILE_NODE(uid)]: { ...profile },
+    [LEADERBOARD_NODE(uid)]: publicProjection(profile),
+  });
+}
 
 export const firebaseProfileRepo: ProfileRepo = {
   async load(uid): Promise<Profile | null> {
@@ -98,25 +194,17 @@ export const firebaseProfileRepo: ProfileRepo = {
   },
 
   async create(uid, profile): Promise<void> {
-    // ONE multi-path update, not two writes.
-    //
-    // Both nodes land or neither does — RTDB applies a multi-path update atomically, and
-    // it validates every path against the rules first. So a projection that violates
-    // `leaderboard`'s pinned field set cannot leave a private record written and a public
-    // one missing. v1 did these as two sequential `dbSet`s and could half-land.
-    //
-    // `update` and not `set`: `set` on `users/<uid>/profile` would be fine today and would
-    // silently delete Phase 4's siblings the moment they exist. The path-scoped update
-    // says what it touches.
-    await update(ref(firebaseDb()), {
-      // The private record gets the whole profile; the public one gets the projection.
-      // These are byte-identical TODAY, because Phase 2's Profile has exactly the five
-      // public fields — which is precisely why writing `publicProjection` to both would
-      // pass every test here and leak the first private field Phase 4 adds. The two
-      // expressions differ because the two nodes mean different things, not because the
-      // values differ yet.
-      [PROFILE_NODE(uid)]: { ...profile },
-      [LEADERBOARD_NODE(uid)]: publicProjection(profile),
-    });
+    // First write of a fresh record — both nodes at once. See `writeBoth`.
+    await writeBoth(uid, profile);
+  },
+
+  async save(uid, profile): Promise<void> {
+    // The mutation path — Phase 4's whole reason for existing. Every economy write (a bet, a
+    // payout, a purchase, a daily claim, an edit) computes the next profile with pure logic
+    // and persists the WHOLE thing here. Identical mechanism to `create` on purpose: the
+    // private record and its public projection move together or not at all, so a bet that
+    // bumps `wins` cannot update the private stat and leave the leaderboard behind — the exact
+    // "stat credited without the money, or the money without the stat" split that was v1's.
+    await writeBoth(uid, profile);
   },
 };
