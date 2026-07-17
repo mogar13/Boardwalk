@@ -61,6 +61,53 @@
           "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
           "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
           "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+
+          // ── Phase 4: progress ──────────────────────────────────────────────────────
+          // Each field below lands WITH its writer (src/system/economy, /progress, /store,
+          // /rewards) and its reader, in the same commit — the standing rule. `$other: false`
+          // at the end of `profile` is what made adding them a rules change on purpose: before
+          // this block, a write carrying `stats` was refused by the server, loudly.
+
+          // Per-game play record, keyed by gameId. Counts are whole and non-negative
+          // (isNumber can't say "integer"; the client rounds, like bankrollCents). `$other:
+          // false` inside a game's record pins it to these four counters — a stray field is
+          // refused, so `stats` cannot quietly grow a fifth key the leaderboard then leaks.
+          "stats": {
+            "$gameId": {
+              "played": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+              "won": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+              "lost": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+              "pushed": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+              "$other": { ".validate": false }
+            }
+          },
+
+          // Unlocked achievements: id -> epoch-ms unlock time. A timestamp, not a boolean,
+          // so "when" survives. Any id is allowed (the catalogue is client-side and grows),
+          // but the VALUE must be a number — a badge stored as a string is a malformed record.
+          "achievements": {
+            "$achId": { ".validate": "newData.isNumber() && newData.val() >= 0" }
+          },
+
+          // Owned cosmetics, as a set: id -> true. The value must be exactly `true` — a set
+          // membership, never `false` (which would be a not-owned flag masquerading as owned)
+          // and never a richer object. Ids are client-side (the catalogue), so they are open.
+          "inventory": {
+            "$itemId": { ".validate": "newData.isBoolean() && newData.val() == true" }
+          },
+
+          // The daily-reward clock. Two whole non-negative numbers and nothing else — a UTC day
+          // index and a streak. `$other: false` refuses anything the server does not expect,
+          // which matters here because this is the field a "give me free money" edit would aim
+          // at, and the shape is the only thing standing between a claim and a forged one.
+          // (Money is still client-authoritative in v2 — the rules bound the SHAPE, not the
+          // amount. BACKEND_PLAN.md is where the amount becomes server-authoritative.)
+          "daily": {
+            "lastClaimDay": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "streak": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "$other": { ".validate": false }
+          },
+
           // NO `level` field. It is DERIVED from `xp` (see src/system/profile/xp.ts),
           // never stored — so `$other: false` below now REFUSES a write that includes
           // one, which is what keeps "level is a function, not a fact" true at the
@@ -117,6 +164,12 @@
         "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
         "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
         "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        // Phase 4's projected field, added HERE with its writer — the `wins` the Phase 2
+        // comment promised would land in the same commit as the stat it ranks. It is a
+        // DERIVED sum (totalWins over the private per-game stats), projected as one number so
+        // the board can rank without reading `users/`. A sixth field beyond this set is still
+        // refused by `$other` below — the projection grew by exactly one, on purpose.
+        "wins": { ".validate": "newData.isNumber() && newData.val() >= 0" },
         // No `level` here either — it is derived, not projected. See users/$uid/profile.
         "$other": { ".validate": false }
       }

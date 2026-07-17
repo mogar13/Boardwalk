@@ -1,7 +1,7 @@
 # The Boardwalk
 
-**Status:** Phases 0–1 shipped 2026-07-16, Phase 2 (data layer) and Phase 3 (shell) shipped
-2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phases 4–6 are design.
+**Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell) and 4 (economy +
+progress) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phases 5–6 are design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -337,7 +337,7 @@ One phase per conversation. Each ends green and deployed.
 | 1 | ~~**Theme + kit**~~ ✅ | `@boardwalk/theme`, `src/ui` core (Button, Modal, Toast, Card, Input) + `useConfirm`. The look is decided: **Boardwalk at night**, dark only. |
 | 2 | ~~**Data layer**~~ ✅ | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 — posture unchanged, two departures, and a test that boots the emulator and proves them. |
 | 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
-| 4 | **Economy + progress** | `useBet`, `reportResult`, stats, achievements, store, daily rewards. |
+| 4 | ~~**Economy + progress**~~ ✅ | `useBet`, `reportResult`, stats, achievements, store (avatars), daily rewards, live leaderboard. |
 | 5 | **Multiplayer** | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests. |
 | 6 | **The five games** | See below. |
 
@@ -402,6 +402,11 @@ a CNAME, so this was not worth blocking Phase 0 on.
   `src/ui` exemption shipped in the same commit. Revisit at Phase 4/5, when there is evidence. If
   the answer is "token system", the honest follow-up is whether the ~25 lines of `@theme` that would
   replace it are worth the dependency at all.
+  **Phase 4 is a data point, and it leans the same way:** the store cards, the leaderboard rows, the
+  badge shelf and the daily card were all built from `src/ui` + Tailwind utilities and semantic
+  tokens, with **zero** DaisyUI component classes — no component has yet wanted a DaisyUI base. Still
+  not flipped, because Phase 5's lobby list is the first component that plausibly might, and that is
+  the evidence worth waiting for rather than deciding without.
 - **No browser test.** See the `<dialog>` story below. Every guard in the repo is static, and the
   worst bug in Phase 1 was not one a static guard could see. Phase 3 confirmed the shell the same
   way Phase 1 confirmed the kit — a Playwright screenshot of the built page across every route,
@@ -640,3 +645,110 @@ in CI" gap Phase 2 named. So the screenshots prove the shell renders a session *
 not prove production will *grant* one. Wiring the app to the local emulator behind a dev-only env
 flag would let the whole flow be driven without touching production — that is the honest next step,
 and it was not worth blocking the shell on.
+
+## Phase 4 — what actually shipped
+
+2026-07-17. The economy and progress: `src/system/economy` (`useBet`, `reportResult`, `GameShell`
+over pure `bet.ts`/`result.ts`), `src/system/progress` (`stats`, `achievements`, the leaderboard
+reader), `src/system/store` (avatars), `src/system/rewards` (daily), a `mutateProfile` writer on the
+auth store and a `save` on `ProfileRepo`, four new pinned profile fields plus `wins` on the
+leaderboard, and the four pages that were placeholders — with 67 new tests (180 total).
+
+### The scope call, made explicitly: build the game-facing economy now, or defer it with the games?
+
+`useBet` and `reportResult` have no runtime caller until the Phase 6 games, and this repo's whole
+temperament is against an interface built before its caller — it is why `RoomRepo` was kept out of
+Phase 2. The counter-argument won: Phase 4 is the *assigned* economy phase (Phase 5 multiplayer and
+Phase 6 games both sit on top of it), so building it here is on-schedule, not speculative — the
+`RoomRepo` case was *pulling future work early*, which is a different thing. The mistake to avoid is
+`validateAndCommit()`: shipping an unadopted interface. So the mitigation is structural, not a
+promise. **The correctness lives in pure, exhaustively-tested logic** (`applyResult`, `validateBet`,
+`bumpStats`, the achievement predicates, `claimDaily`, `applyPurchase`) — the part that is provably
+right without a game. **The write path gets real adopters in this very phase**: store purchases,
+the daily claim, and name edits all go through the same `mutateProfile` the game hooks use, so the
+writer is exercised by three shipped features, not zero. The hooks (`useBet`/`reportResult`) are thin
+wrappers over the tested logic, which is where the repo already puts correctness — pure modules,
+hookless.
+
+The one thing deliberately *not* pre-decided, held to Phase 6: how a manifest attaches to its
+component (`React.lazy`). `GameShell` provides the economy *context* from a manifest — which
+ARCHITECTURE.md already specified — but the play route still mounts "no such game", because the
+component *loader* is the abstraction whose caller does not exist yet. Context and loader are
+separable, and only the loader waits.
+
+### `reportResult` is one function you cannot split — the whole OS pointed at one bug
+
+v1's failure was structural: `recordWin(gameId)` took one argument, bankroll was a plain
+`SystemUI.money` setter, so 40+ sites did the money by hand and *then* recorded a win, and the payout
+handed to the record function fell on the floor. `applyResult` is the fix as a single return value:
+it computes the next bankroll, XP, stats and achievements together and hands them back as one object,
+and `mutateProfile` persists that object in one write. There is no intermediate state where three of
+the four moved. `big_win` — "win $1,000+ in one bet", which shipped in v1 with *zero* unlock
+sites because nothing ever knew a payout — has a real predicate and a test proving it fires on the
+$1,000th cent and, critically, on **net not gross**: a $600 payout on a $500 bet is a $100 win, and
+the test asserts it does *not* fire. That distinction is the exact thing v1 could not represent.
+
+Five things the build taught us, recorded because they cannot be re-derived from the tree:
+
+- **A cosmetic has to have a reader, or it is `loadout.color`.** The store sells avatars and nothing
+  else, because an equipped avatar is read *today* by the top bar and the profile card, while a card
+  back or a felt has no reader until a game draws one. Selling card backs now would rebuild the exact
+  dead cosmetic the v1 defect table catalogues — a field written by the store and read by nothing.
+  They land with the game that renders them. This is the same "reader with no reader is
+  `validateAndCommit()`" test the leaderboard passed and `RoomRepo` failed, pointed at cosmetics.
+
+- **The two-call money model needs the wager in both calls, and that is not redundancy.** `useBet`'s
+  `commit()` deducts the stake; `reportResult` credits the gross payout. So the net for `big_win` is
+  `payout − wager`, and `reportResult` is *told* the wager rather than inferring it from a coupling to
+  `useBet` — two explicit parameters, no hidden channel between the hooks. A non-betting game
+  (`{ outcome: 'win' }`) passes neither and still earns XP, a stat, and a non-money badge, which is
+  why it is `reportResult` and not `recordPayout`.
+
+- **`Date.now()` cannot run during render, and a `useState` initializer is the escape.** The new
+  `react-hooks` rules are strict: an impure call in the render body is an error, and so is a
+  synchronous `setState` in an effect. The daily card needs the current day to decide "claimable";
+  the clean answer was `useState(() => Date.now())` — a once-at-mount snapshot the linter accepts —
+  not an effect that sets state (which the *other* new rule forbids). Two rules that look like they
+  box you in actually point at the one correct pattern.
+
+- **A fire-and-forget action wants a `void` API, not a `Promise` one.** `useStore().buy` opens a
+  confirm and writes — genuinely async — but a click is not a thing a caller awaits, and typing it
+  `=> Promise<void>` made `no-misused-promises` fire the moment it was passed to `onClick`. Wrapping
+  the async work in an inner IIFE and returning `void` is not hiding the promise; it is stating that
+  the *public contract* is fire-and-forget, with every failure toasted so nothing is lost by not
+  returning one.
+
+- **`formatMoney` was mis-housed, and the economy's error messages found it.** It lived in
+  `useProfile.ts`, which imports the Zustand store — so pure `bet.ts` could not say "Table max is
+  $500" without dragging the store into a unit test. It never needed the store; it is arithmetic and
+  `toLocaleString`. Moving it to a pure `money.ts` (re-exported from `useProfile` so no caller
+  changed) is the same "pure logic lives in hookless modules" rule, discovered from the other end: a
+  formatter that a pure function wants to call is, by that fact, pure.
+
+**Client-authoritative money, and what the rules actually guarantee.** `mutateProfile` is optimistic
+— it sets the store, persists, and reverts on rejection — and the money is client-authoritative
+exactly as v1's was; the repo boundary is what keeps BACKEND_PLAN.md's server-authoritative version a
+change to `./firebase/*` rather than a rewrite. So the Phase 4 rules pin the *shape* of every new
+field (a stat is a whole non-negative number, an inventory entry is exactly `true`, `daily` has two
+keys and no third) but **not the amounts** — a determined client can still write itself a bigger
+bankroll, the same as v1. That is named here rather than papered over: the rules make a *malformed*
+economy record impossible; only the backend makes a *dishonest* one impossible, and that is a later
+phase. Phase 2's `REFUSES-A-SIXTH-FIELD` test predicted this moment — it asserted `wins` was refused
+*because it was not yet a field* — and Phase 4 flips that assertion in the same commit that adds the
+rule, which is the test staying honest about the node's real shape.
+
+**Not built, on purpose:** `useSeats`, `localSeatIds`, any `mode` branching — all Phase 5, and
+`GameShell`'s context carries the manifest and pointedly not an empty `seats: []`, which would be the
+interface-ahead-of-caller mistake in miniature. No card-back or felt cosmetics (no reader yet). No XP
+that scales with the wager — flat by outcome, so the casino is not the only source of levels and the
+no-stakes games are not second-class. The leaderboard reads the whole node and sorts client-side
+rather than an `orderByChild` server query, because the ranking has a tiebreak a single-child query
+cannot express; at this scale that is correct, and the honest note is that a large board wants an
+`.indexOn` and a server ordering — a change behind `LeaderboardRepo`, touching nothing else.
+
+**The gap Phase 4 leaves.** The same one Phases 2 and 3 named, now with more riding on it:
+`database.rules.json` is deployed by hand, and Phase 4 changed it — four new field validators and
+`wins`. The tests prove the file is *right*; they cannot prove it is *deployed*, and an economy
+governed by stale production rules is worse than one governed by none. Deploy the rules
+(`npm run rules:deploy`) in the same breath as shipping this, and if that is forgotten once, the
+CI-with-a-service-account step is the fix Phase 2 already argued for.

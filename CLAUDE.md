@@ -4,13 +4,17 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0 (scaffold), 1 (theme + kit), 2 (data layer) and 3 (shell) have shipped. Phases 4–6 have
-not.** There is a live routed app, a green pipeline, `@boardwalk/theme`, `src/ui` (Button, Card,
-Input, Modal, `useToast`, `useConfirm`), `src/system` — repo interfaces, one Firebase singleton,
-Auth, profile, and `database.rules.json` with a test that boots the emulator and proves it — and now
-`src/shell` (router, auth gate, top bar with bankroll + XP, the hub and its piers) and
-`src/games/registry.ts` (the typed catalogue, empty until Phase 6). `level` is derived from `xp`, not
-stored. There is still no economy, no rooms and no games. Start at
+**Phases 0–4 have shipped. Phases 5–6 have not.** There is a live routed app, a green pipeline,
+`@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
+repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
+the emulator and proves it — `src/shell` (router, auth gate, top bar with bankroll + XP, the hub and
+its piers), `src/games/registry.ts` (the typed catalogue, empty until Phase 6), and now the
+**economy**: `src/system/economy` (`useBet`, `reportResult`, `GameShell` over pure, unit-tested bet
+and payout logic), `src/system/progress` (per-game stats, achievements, the leaderboard reader),
+`src/system/store` (avatars) and `src/system/rewards` (daily). Money moves ONLY through
+`useBet`/`reportResult`/a store purchase/a daily claim, every one of them via a single internal
+`mutateProfile` writer — there is no bankroll setter anywhere. `level` is derived from `xp` and `wins`
+from `stats`, neither stored. There are still no rooms and no games. Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
@@ -67,12 +71,16 @@ lint rule that matches nothing reports success.
 
 ### Money
 
-- **`useBankroll()` returns a readonly balance. There is no setter.** Wagers go through `useBet()`,
-  payouts through `reportResult({outcome, payout})`. A game must not be able to spell `money += x`.
-- **`reportResult()` is one call** for bankroll + stats + XP + achievements. Do not split it back
-  apart. v1's split is why `big_win` has no unlock site.
-- **Money is integer cents.** v1's `setMoney` used `parseInt`, so blackjack's 3:2 natural silently
-  dropped a chip.
+- **`useBankroll()` returns a readonly balance. There is no setter.** ✅ Live. Wagers go through
+  `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase and
+  the daily claim, are the *only* callers of the one internal writer (`authStore.mutateProfile`). A
+  game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
+- **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
+  `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
+  back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
+- **Money is integer cents.** ✅ Live — `applyResult`/`applyPurchase`/`claimDaily` are all integer-cent,
+  and `bet.ts` *refuses* a fractional bet rather than rounding it. v1's `setMoney` used `parseInt`, so
+  blackjack's 3:2 natural silently dropped a chip.
 
 ### Games
 
@@ -141,6 +149,12 @@ lint rule that matches nothing reports success.
   determines, and the award site that writes one but not the other is the `recordWin` defect
   reborn. The curve lives in one pure module, `src/system/profile/xp.ts` — the badge and the bar
   both read the same `xpProgress(xp)`, so they cannot disagree.
+- **`wins` on the leaderboard is `totalWins(stats)`, derived — the same rule as `level`.** ✅ Live.
+  The private per-game `stats` are the source; the public projection carries one summed number
+  (`profileRepo.publicProjection`), so the ranking cannot drift from the record it ranks. The four
+  Phase 4 profile fields — `stats`, `achievements`, `inventory`, `daily` — are each pinned by
+  `.validate` (with `$other: false` on `stats` and `daily`), and `tests/database-rules.test.ts`
+  asserts a stray field in any of them, or a `wins` beyond the leaderboard's pinned set, is refused.
 
 ### UI
 
@@ -211,10 +225,14 @@ builds the thing it guards.
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
 | `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
-| The security rules do what they say | `tests/database-rules.test.ts` (28) — boots the RTDB emulator, loads the **real** `database.rules.json`; includes the refusal of a stored `level` |
+| The security rules do what they say | `tests/database-rules.test.ts` (35) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, and `wins` now allowed on the leaderboard but nothing beyond it |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
 | The level curve is exact at every boundary | `tests/xp.test.ts` (13) — every threshold and its neighbours, plus a brute-force oracle |
+| The economy is correct — limits, payouts, XP, unlocks | `tests/economy.test.ts` — `validateBet`/`clampBet`, and `applyResult` proving `big_win` fires on *net* not gross and never twice, money floored, input unmutated |
+| Stats count right; achievements fire at the boundary | `tests/progress.test.ts` — `bumpStats` immutability + per-game keys, every achievement predicate at its exact threshold |
+| Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (afford/own/buy/equip, unique catalogue ids and emoji) |
+| Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (36), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
@@ -276,5 +294,5 @@ Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile`
 `src/games/registry.ts`, which is empty until Phase 6.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 4 (economy + progress — `useBet`, `reportResult`, stats,
-achievements, store, daily rewards).**
+green and deployed. **Next: Phase 5 (multiplayer — `useRoom`, seats, `localSeatIds`, lobby, chat,
+presence, lifecycle tests).**

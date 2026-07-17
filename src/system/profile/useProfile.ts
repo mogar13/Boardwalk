@@ -2,6 +2,14 @@ import { useAuthStore } from '@/system/auth/authStore';
 import type { Profile } from '@/system/profile/types';
 
 /**
+ * Re-exported, not redefined. `formatMoney` moved to the pure `@/system/profile/money` so
+ * `economy/bet.ts` can format a bet-limit message without importing this store-coupled file;
+ * the components that already say `import { formatMoney } from '@/system/profile/useProfile'`
+ * keep working, because there is still exactly one definition and this is a pointer to it.
+ */
+export { formatMoney, formatDollars } from '@/system/profile/money';
+
+/**
  * The player, or `null` if nobody is signed in.
  *
  * A SELECTOR, NOT THE STORE. `useAuthStore((s) => s.profile)` re-renders only components
@@ -40,19 +48,4 @@ export function useProfile(): Profile | null {
  */
 export function useBankroll(): number {
   return useAuthStore((s) => s.profile?.bankrollCents ?? 0);
-}
-
-/**
- * Cents -> "$5,000.00". The ONLY place the integer becomes a decimal.
- *
- * Not in the theme and not in a component, because a second formatter is how one screen
- * says $5,000 and another says $5000.00. `data-money` in packages/theme handles the other
- * half — tabular figures, so a ticking balance does not reflow on every digit the way v1's
- * HUD does.
- */
-export function formatMoney(cents: number): string {
-  return `$${(cents / 100).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }

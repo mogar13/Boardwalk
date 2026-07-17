@@ -236,6 +236,80 @@ describe('users/<uid> — the private record', () => {
   });
 });
 
+describe('users/<uid>/profile — the Phase 4 progress fields', () => {
+  // The four fields Phase 4 added, and the shapes the server refuses. Money stays client-
+  // authoritative in v2, so these rules pin the SHAPE of the record, not the amounts in it —
+  // which is exactly why the shape has to be airtight: it is the only thing between a claim and
+  // a forged one until BACKEND_PLAN.md makes the amount server-authoritative.
+
+  it('accepts a well-formed stats / achievements / inventory / daily record', async () => {
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        stats: { blackjack: { played: 3, won: 1, lost: 2, pushed: 0 } },
+        achievements: { first_win: 1_700_000_000_000 },
+        inventory: { av_cowboy: true },
+        daily: { lastClaimDay: 100, streak: 4 },
+      })
+    );
+  });
+
+  it('refuses a stray counter inside a game stat — $other is false there too', async () => {
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        stats: { blackjack: { played: 1, won: 1, lost: 0, pushed: 0, streak: 5 } },
+      })
+    );
+  });
+
+  it('refuses a stat that is the wrong type or negative', async () => {
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        stats: { blackjack: { played: '1', won: 0, lost: 0, pushed: 0 } },
+      })
+    );
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        stats: { blackjack: { played: 1, won: -1, lost: 0, pushed: 0 } },
+      })
+    );
+  });
+
+  it('refuses an achievement stored as anything but a timestamp number', async () => {
+    // The value is the unlock time. A boolean here is the v1-shaped mistake — a set-of-flags
+    // where a set-with-timestamps was meant — and the rule refuses it rather than storing it.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        achievements: { first_win: true },
+      })
+    );
+  });
+
+  it('refuses an inventory entry that is not exactly true', async () => {
+    // Ownership is membership. `false` is not "owns it, disabled" — it is a not-owned flag
+    // pretending to be a member, and the set must not carry one.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        inventory: { av_cowboy: false },
+      })
+    );
+  });
+
+  it('refuses a stray field in the daily clock', async () => {
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        daily: { lastClaimDay: 1, streak: 1, bonus: 999 },
+      })
+    );
+  });
+});
+
 describe('usernames/ — the public index', () => {
   it('is readable by anyone, including signed-out', async () => {
     // It HAS to be: sign-in resolves a username to an account before anyone is
@@ -329,15 +403,28 @@ describe('leaderboard/<uid> — the public projection', () => {
     await assertFails(set(ref(asUser(STRANGER), `leaderboard/${ME}`), validProfile));
   });
 
-  it('REFUSES A SIXTH FIELD — the leak this pin exists to stop', async () => {
-    // The load-bearing line in the whole file. This node is world-readable, so anything
-    // that reaches it is public forever. Pinning the field set means a private field added
-    // in Phase 4 CANNOT be published here by a writer who forgot this node is public — the
-    // server refuses it. A projection built by spreading the profile would have shipped it.
+  it('now ALLOWS wins — Phase 4 grew the projection by exactly one', async () => {
+    // The prophecy from Phase 2's REFUSES-A-SIXTH-FIELD test, come due. That test asserted
+    // `wins: 3` was refused BECAUSE it was not yet a field; Phase 4 adds it here with its
+    // writer (profileRepo projects `totalWins`), so the same write now succeeds. Flipping this
+    // assertion in the same commit that adds the rule is what keeps the test honest about the
+    // node's actual shape instead of a stale one.
+    await assertSucceeds(set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 3 }));
+  });
+
+  it('STILL refuses a field beyond the pinned set — the leak this pin exists to stop', async () => {
+    // The load-bearing line survives the growth. This node is world-readable, so anything that
+    // reaches it is public forever; the projection grew by exactly one named field, and
+    // everything else is still refused. A private field added later CANNOT be published here by
+    // a writer who forgot this node is public — the server refuses it.
     await assertFails(
       set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, email: 'real@example.com' })
     );
-    await assertFails(set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 3 }));
+    await assertFails(
+      set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 3, sneaky: 'x' })
+    );
+    // ...and `wins` itself is pinned to a number: a string in the rank key is a malformed row.
+    await assertFails(set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 'lots' }));
   });
 });
 

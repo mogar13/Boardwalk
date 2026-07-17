@@ -130,6 +130,47 @@ export interface ProfileRepo {
    * which exist separately because `users/` is not world-readable and a leaderboard is.
    */
   create(uid: string, profile: Profile): Promise<void>;
+
+  /**
+   * Persist a MUTATED record — Phase 4's writer. The economy computes the whole next profile
+   * with pure logic (`applyResult`, `applyPurchase`, `claimDaily`) and hands it here; this is
+   * the only path money moves after sign-up. Same both-nodes-or-neither guarantee as `create`.
+   *
+   * It takes the whole profile, not a patch, because the domain object is small and always
+   * held complete in the store — and because a patch API is a setter with extra steps, and the
+   * design turns on there being no setter a game can reach. The economy hooks are the only
+   * callers; a game gets `useBet`/`reportResult`, never this.
+   */
+  save(uid: string, profile: Profile): Promise<void>;
+}
+
+/**
+ * One row of the public standings, read from `leaderboard/<uid>`. This is the public
+ * projection — the five fields the rules pin, plus the uid the node is keyed by — and nothing
+ * private: the leaderboard cannot show what `users/` holds, because it never reads it.
+ */
+export interface LeaderboardEntry {
+  readonly uid: string;
+  readonly name: string;
+  readonly avatar: string;
+  readonly bankrollCents: number;
+  readonly xp: number;
+  /** Total wins across every game — the rank key. Derived by the writer, never a stored counter. */
+  readonly wins: number;
+}
+
+/**
+ * The leaderboard reader. Designed HERE, in Phase 4, because Phase 4 is where the page that
+ * reads it finally exists — the same discipline that kept `RoomRepo` out of Phase 2. A reader
+ * with no reader is `validateAndCommit()`.
+ *
+ * `top(limit)` returns rows already ranked, because "ranked by wins" is the projection's whole
+ * purpose and every caller wants the same order — pushing the sort into each page is how two
+ * screens end up ranking differently. Reads are public (the node is world-readable), so this
+ * needs no auth.
+ */
+export interface LeaderboardRepo {
+  top(limit: number): Promise<readonly LeaderboardEntry[]>;
 }
 
 /**
@@ -142,6 +183,7 @@ export interface ProfileRepo {
 export interface Repos {
   readonly auth: AuthRepo;
   readonly profile: ProfileRepo;
+  readonly leaderboard: LeaderboardRepo;
 }
 
 /** Re-exported so a consumer never needs a second import to type an error branch. */
