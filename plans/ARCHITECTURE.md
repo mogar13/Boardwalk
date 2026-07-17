@@ -1,7 +1,7 @@
 # The Boardwalk
 
-**Status:** Phase 0 shipped 2026-07-16 — scaffold live at https://mogar13.github.io/Boardwalk/.
-Phases 1–6 are design.
+**Status:** Phases 0–1 shipped 2026-07-16 — theme + kit live at https://mogar13.github.io/Boardwalk/.
+Phases 2–6 are design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -169,9 +169,10 @@ bad shuffle.
 
 ```
 src/
-├── main.tsx, App.tsx, index.css
+├── main.tsx, App.tsx, index.css      ← index.css is TWO imports; keep it that way
 ├── shell/           router, top bar, nav, auth gate
-├── ui/              the kit — Button, Modal, Toast, Card, ChipRack, Seat…
+├── ui/              the kit ✅ — Button, Card, Input, Modal, UiRoot, useToast, useConfirm, cx
+│                    (ChipRack, Seat… when a game needs them, not before)
 ├── system/          Casino OS v2
 │   ├── profile/     bankroll, xp, level, loadout
 │   ├── economy/     bet math, payouts, the guard
@@ -191,7 +192,8 @@ src/
 │       ├── logic/             ← PURE TS. no DOM, no React, no imports from system/. unit-tested.
 │       └── components/
 packages/
-└── theme/           @boardwalk/theme — Tailwind + DaisyUI theme
+└── theme/           @boardwalk/theme ✅ — the ONLY file that may name a colour
+eslint-rules/        the local plugin ✅ — no-daisyui-classes, no-raw-palette
 ```
 
 Routes: `/` · `/play/:gameId` · `/store` · `/profile` · `/leaderboard`
@@ -331,8 +333,8 @@ One phase per conversation. Each ends green and deployed.
 
 | # | Phase | Ships |
 |---|---|---|
-| 0 | **Scaffold** | Vite + TS strict + ESLint + Prettier + filesize ratchet + Pages deploy. An empty page that's live. |
-| 1 | **Theme + kit** | `@boardwalk/theme`, `src/ui` core (Button, Modal, Toast, Card, Input). The look is decided here. |
+| 0 | ~~**Scaffold**~~ ✅ | Vite + TS strict + ESLint + Prettier + filesize ratchet + Pages deploy. An empty page that's live. |
+| 1 | ~~**Theme + kit**~~ ✅ | `@boardwalk/theme`, `src/ui` core (Button, Modal, Toast, Card, Input) + `useConfirm`. The look is decided: **Boardwalk at night**, dark only. |
 | 2 | **Data layer** | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 **unchanged**. |
 | 3 | **Shell** | Router, top bar with bankroll + XP, hub, `registry.ts`, piers. |
 | 4 | **Economy + progress** | `useBet`, `reportResult`, stats, achievements, store, daily rewards. |
@@ -386,7 +388,22 @@ a CNAME, so this was not worth blocking Phase 0 on.
 
 ## Open questions
 
-- None currently blocking. Phase 1 decides the look, which is the next real fork.
+- **Is DaisyUI a component library here, or just a token system?** Phase 1 found the kit uses
+  **zero** DaisyUI component classes — Button, Card, Input and Modal are built from Tailwind
+  utilities and semantic tokens, because every one of them needs the glow, the rim, the strike
+  easing and the desaturated disabled state that DaisyUI components do not have. So DaisyUI is
+  currently earning its place on the token system alone, while shipping its whole component library:
+  measured at **141kB of CSS, of which ~100kB is components** (`.menu` alone is 156 rules) that
+  `no-daisyui-classes` forbids everywhere except a kit that does not want them.
+  `@plugin "daisyui" { include: <matches-nothing>; }` cuts it to **41kB** with every token and
+  utility intact — verified, one line, reversible.
+  **Not decided in Phase 1**, deliberately: one phase of kit is not enough evidence that no future
+  component (a bet slider, a lobby list) wants a DaisyUI base, and flipping it would contradict the
+  `src/ui` exemption shipped in the same commit. Revisit at Phase 4/5, when there is evidence. If
+  the answer is "token system", the honest follow-up is whether the ~25 lines of `@theme` that would
+  replace it are worth the dependency at all.
+- **No browser test.** See the `<dialog>` story below. Every guard in the repo is static, and the
+  worst bug in Phase 1 was not one a static guard could see.
 
 ## Phase 0 — what actually shipped
 
@@ -407,3 +424,57 @@ Three things the build taught us, recorded because they cannot be re-derived fro
 - **Prettier does not touch `*.md`.** Run on the docs it rewrites `*emphasis*` to `_emphasis_` and
   reflows every table — 176 lines of churn here, no reader better off. This document is an argument,
   not output.
+
+## Phase 1 — what actually shipped
+
+2026-07-16. `@boardwalk/theme` (a workspace package), `src/ui` (Button, Card, Input, Modal,
+`useToast`, `useConfirm`, `UiRoot`), and the two lint rules this phase owed —
+`@boardwalk/no-daisyui-classes` and `@boardwalk/no-raw-palette` — with 26 fixtures asserting each
+fires on the bug and stays quiet on the sanctioned pattern.
+
+**The look: Boardwalk at night.** A dark room lit by two signs. Magenta says act, cyan says here,
+gold is money and nothing else. Dark only — a casino is a dark room, and that is the whole conceit.
+The restraint is the design: status colours are flat, surfaces never glow, and exactly two hues in
+the palette are allowed to. Neon only reads as neon when most of the page is off.
+
+Five things the build taught us, recorded because they cannot be re-derived from the tree:
+
+- **The palette was generated and measured, not picked.** Every value is OKLCH, and the first draft
+  was wrong in ways no eye would have caught in review: cyan at H199 was **outside sRGB** (browsers
+  clamp silently — you get a duller colour on every screen and no error anywhere), five `*-content`
+  darks clipped, and `accent` and `warning` came out **byte-identical gold**, which would have
+  quietly destroyed "gold means money" the first time a toast fired. They now sit 24° apart. The
+  final set: all 23 tokens inside sRGB, every foreground ≥4.5:1 on all three surfaces, every label
+  ≥4.5:1 on its own fill. A palette is a set of relationships — nudging one hue "to taste" breaks
+  the ones you weren't looking at, so re-run the checks.
+
+- **Real neon is four optical events, not a tinted drop shadow.** A tube edge, a core that is
+  *whiter* than the gas (light saturates — look at a real sign), a wide bloom at full hue, and a
+  very dim atmospheric wash. The last one is the one everyone omits and the one doing the work: it
+  is the sign lighting the *room* rather than being pasted onto it. Same logic in the page
+  background (two off-screen signs) and in the hero, where the letters are `base-content` and every
+  bit of magenta lives in `text-shadow`.
+
+- **`display: grid` on a `<dialog>` silently defeats the platform.** The UA closes a dialog with
+  `dialog:not([open]) { display: none }`; a bare `grid` utility beats it. Every closed modal became
+  a 1280×900 absolutely-positioned transparent element — ~965px of dead scroll on every route,
+  hit-testing clicks, invisible. It typechecked, it linted, it passed all 33 tests, and it rendered
+  correctly when open. **Only a screenshot of the built page found it.** `open:grid` hands display
+  back to the platform. This is the origin of the "no browser test" open question above.
+
+- **An object spread does not merge ESLint visitors, it replaces them.**
+  `{ ...classAttrVisitor(cb), JSXAttribute(n) {…} }` deleted the first handler, so `no-raw-palette`
+  shipped enforcing nothing but inline styles — while reporting success, which is this repo's
+  signature failure mode. The fixtures caught it on the first run; nothing else would have. The
+  helper that made it possible was then deleted rather than documented: it saved four lines and hid
+  a whole failure mode inside them.
+
+- **A rule that bans a word must be able to say the word.** `no-daisyui-classes` scans every string
+  for hyphenated component classes and promptly flagged its own error message, which explains the
+  ban by quoting `btn-primary`. `eslint-rules/` and `tests/` are exempt — neither renders UI, and
+  the alternative was the `eslint-disable` that would also hide the times the rule was right.
+
+**Not built, on purpose:** no router, no icon set, no `<Select>`/`<Tooltip>`/`<ChipRack>`. The page
+at the URL is a style guide, not a hub — the hub is Phase 3, and building it here would have been
+four phases of decisions made in one afternoon. The kit gets its next component when something
+actually needs one.

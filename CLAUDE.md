@@ -4,10 +4,11 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phase 0 (scaffold) has shipped. Phases 1–6 have not.** There is a live empty page, a green
-pipeline, and no Casino OS: no `src/system`, no `src/ui`, no games. Start at
-[plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
-everything below.
+**Phases 0 (scaffold) and 1 (theme + kit) have shipped. Phases 2–6 have not.** There is a live
+styled page, a green pipeline, `@boardwalk/theme`, and `src/ui` (Button, Card, Input, Modal,
+`useToast`, `useConfirm`). There is still no Casino OS: no `src/system`, no data layer, no router,
+no games. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains
+*why* for everything below.
 
 **Most rules below describe code that does not exist yet.** They are the contract for the phase that
 builds each thing, not a description of the tree. A rule marked *"Lint-enforced"* is only enforced if
@@ -110,13 +111,27 @@ lint rule that matches nothing reports success.
 
 ### UI
 
-- **Raw DaisyUI component classes are banned outside `src/ui`.** Lint rule lands in Phase 1, with
-  `src/ui`. This is the whole reason VS-Dashboard looks like one product — and a neon casino needs it
-  more than a dashboard does, not less. Neon without a system looks like a ransom note.
-- **Semantic tokens only** (`bg-base-200`, `text-primary-content`). Never a raw palette value.
-- **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live. One `<Modal>`, one
-  `useToast()` — both Phase 1; the ban came first so they are the only road when they arrive. v1 has
-  four ad-hoc modal systems and toasts that lazily self-inject an inline-styled container.
+- **Raw DaisyUI component classes are banned outside `src/ui`.** ✅ Live —
+  `@boardwalk/no-daisyui-classes`. This is the whole reason VS-Dashboard looks like one product — and
+  a neon casino needs it more than a dashboard does, not less. Neon without a system looks like a
+  ransom note.
+- **Semantic tokens only** (`bg-base-200`, `text-primary-content`). ✅ Live —
+  `@boardwalk/no-raw-palette`, and it has **no `src/ui` exemption**: the kit may spell `btn`, never
+  `#ff2c86`. `packages/theme/theme.css` is the only file in the repo that may name a colour, which is
+  what makes the look changeable in one place instead of drifting the way v1's `loadout.color` and
+  `profile.chatColor` did. Need a colour the theme lacks? Add a token, don't inline one.
+- **The glow budget is fixed, and it is nearly spent.** Magenta = act, cyan = here, gold = money,
+  and that's the lot. Status colours (info/success/warning/error) are flat on purpose — a neon
+  success toast is a slot machine telling you your form saved. If everything glows, nothing does.
+- **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live, and they now have a
+  destination: one `<Modal>` (native `<dialog>`), one `useToast()`, and `useConfirm()` for the
+  one-liner. v1 has four ad-hoc modal systems and toasts that lazily self-inject an inline-styled
+  container.
+- **`confirmLabel` cannot be "OK".** Type-enforced — `ActionLabel` resolves to `never` for `ok`,
+  `yes`, `confirm`, `continue`… A button that says OK next to a question you didn't read is why
+  people click through destructive dialogs. Name what it destroys: `'Forfeit $250'`.
+- **`<UiRoot />` mounts once at the app root.** Toasts and `confirm()` are dead without it (it says
+  so, loudly, rather than hanging the caller on a promise that never settles).
 
 ### Files
 
@@ -149,19 +164,29 @@ builds the thing it guards.
 
 | Live now | Guard |
 |---|---|
-| `alert`/`confirm`/`prompt` banned | `no-restricted-globals`, scope-aware — sees `confirm(msg)`, ignores `const { confirm } = useToast()` |
+| `alert`/`confirm`/`prompt` banned | `no-restricted-globals`, scope-aware — sees `confirm(msg)`, ignores `const { confirm } = useConfirm()` |
 | `@/` alias, no `../../` escapes | `no-restricted-imports`, pattern `../../**` |
-| 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` |
+| Raw DaisyUI classes banned outside `src/ui` | `@boardwalk/no-daisyui-classes` — hyphenated forms anywhere, bare words in `className` only |
+| Semantic tokens only, **`src/ui` included** | `@boardwalk/no-raw-palette` — scale, white/black, arbitrary values, and `style={{color}}` |
+| Vague confirm labels ("OK", "Yes") | `ActionLabel<S>` → `never`; fails at the call site |
+| 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
-| Every guard above actually fires | `tests/lint-rules.test.ts`, `tests/file-size-guard.test.ts` |
+| Every guard above actually fires | `tests/lint-rules.test.ts` (26), `tests/file-size-guard.test.ts` (7) |
 
 | Not yet enforced | Lands in |
 |---|---|
-| Raw DaisyUI classes banned outside `src/ui` | Phase 1 (needs `src/ui`) |
-| Semantic tokens only | Phase 1 |
 | `firebase/*` only under `src/system/repo/firebase/` | Phase 2 |
 | `logic/` is pure; no cross-game imports | Phase 6 (needs `src/games`) |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
+| The kit renders correctly in a real browser | unguarded — **see below** |
+
+**The gap Phase 1 leaves, named rather than papered over.** Every guard above is static. The worst
+bug in Phase 1 was not: a bare `grid` on `<dialog>` overrode the UA's `dialog:not([open]){display:none}`,
+so every closed modal was a 1280×900 invisible element adding ~965px of scroll and hit-testing clicks
+on every route. It typechecked, it linted, it passed all 33 tests, and it rendered correctly when
+*open*. Only screenshotting the built page in Chrome found it. There is no browser test here yet —
+so **when you touch the kit, look at it in a browser**, and if that starts costing more than it saves,
+that is the argument for adding one.
 
 Adding a rule means adding its guard **and a test that the guard fires**, in the same commit. Both
 test files exist to be copied from. Falsify a new guard before trusting it: break the thing on
@@ -187,4 +212,4 @@ Push to `main` deploys via `.github/workflows/deploy.yml` → https://mogar13.gi
 than merely existing.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 1 (theme + kit).**
+green and deployed. **Next: Phase 2 (data layer).**

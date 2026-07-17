@@ -1,0 +1,329 @@
+/* @boardwalk/theme — Boardwalk at night.
+ *
+ * THE LOOK, IN ONE LINE: a dark room lit by two signs. Magenta is the one that
+ * says ACT. Cyan is the one that says HERE. Gold is money and nothing else. The
+ * room itself never glows — if everything glows, nothing does, and CLAUDE.md's
+ * "neon without a system looks like a ransom note" has already happened.
+ *
+ * THIS IS THE ONLY FILE IN THE REPO ALLOWED TO SPELL A COLOUR. That is not a
+ * style preference, it is the enforcement boundary: `no-raw-palette` (see
+ * eslint-rules/) makes `bg-[#ff2c86]` and `text-pink-500` errors everywhere in
+ * TS/TSX, so the only way to change the look is to change this file, and the only
+ * way to change it is for every consumer at once. v1's cosmetics drifted into two
+ * parallel schemas (`loadout.color` written by the hub and read by nothing) because
+ * there was no such place.
+ *
+ * WHY OKLCH AND NOT HEX. DaisyUI 5 ships oklch and the reason outlives the fashion:
+ * `oklch(80% .13 211)` and `oklch(83% .17 86)` are the same perceived brightness,
+ * so cyan and gold sit on the page as equals. The hex twins (#31d4ed, #f8bd00) are
+ * not — sRGB lightness lies, and a palette built in it has one hue that always
+ * shouts. Every value below was generated and checked, not eyeballed:
+ *
+ *   • all 23 tokens verified inside sRGB (round 1 put cyan at H199 — outside it,
+ *     silently clamped to a duller colour by the browser, on every screen)
+ *   • every foreground ≥ 4.5:1 on all three base surfaces, WCAG 2.1
+ *   • every *-content label ≥ 4.5:1 on its own fill
+ *   • accent-gold H86 vs warning-amber H62 — round 1 generated them IDENTICAL,
+ *     which would have quietly broken "gold means money" the first time a toast
+ *     fired. 24° apart is the smallest gap that still reads as two colours.
+ *
+ * If you change a value here, re-check those four properties. A palette is a set
+ * of relationships; nudging one hue "to taste" breaks the ones you weren't looking
+ * at.
+ */
+
+@plugin "daisyui" {
+  /* No built-in themes. We ship exactly one look, and the other 35 are ~30kB of
+     CSS for `data-theme` values nothing sets. Deleting them is also what makes the
+     `no-raw-palette` rule honest — with `themes: all`, `data-theme="synthwave"` on
+     one <div> would smuggle in a whole second palette that no lint rule can see. */
+  themes: false;
+  logs: false;
+}
+
+@plugin "daisyui/theme" {
+  name: 'boardwalk';
+  default: true;
+  color-scheme: dark;
+
+  /* ── The room ──────────────────────────────────────────────────────────────
+     Tinted indigo, never neutral grey. A room lit by neon has no neutral
+     surfaces — the light has to land somewhere. One hue (284) for all of it, so
+     every surface reads as the same room at a different distance from the sign.
+     The steps are deliberately close (L15 → L20 → L24): on a dark UI, a big
+     lightness jump between surfaces reads as a seam, not as depth. Depth comes
+     from the top-edge highlight in --inset-shadow-rim below, which is how light
+     actually behaves. */
+  --color-base-100: oklch(15% 0.015 284); /* the room */
+  --color-base-200: oklch(20% 0.022 284); /* cards, rails, the felt */
+  --color-base-300: oklch(24% 0.028 284); /* raised: inputs, wells, hover */
+  --color-base-content: oklch(93% 0.011 284); /* 16:1 on base-100 */
+
+  /* ── The two signs ─────────────────────────────────────────────────────────
+     Exactly two hues glow, and they are 209° apart — near-opposite, so they never
+     compete for the same meaning. Magenta = act. Cyan = here / selected. */
+  --color-primary: oklch(66% 0.245 2); /* hot magenta — ACTION ONLY */
+  --color-primary-content: oklch(17% 0.04 2);
+  --color-secondary: oklch(80% 0.13 211); /* cyan — selection, focus, the counterweight */
+  --color-secondary-content: oklch(22% 0.04 211);
+
+  /* ── Money ─────────────────────────────────────────────────────────────────
+     Gold is the bankroll, the pot, the payout. It is NOT "a third brand colour"
+     and it is NOT `warning` — see the header. If gold appears on something you
+     cannot win or lose, that is the bug. */
+  --color-accent: oklch(83% 0.17 86);
+  --color-accent-content: oklch(24% 0.05 86);
+
+  --color-neutral: oklch(28% 0.03 284);
+  --color-neutral-content: oklch(89% 0.014 284);
+
+  /* ── Status ────────────────────────────────────────────────────────────────
+     Status colours do NOT glow. A neon success toast is a slot machine telling
+     you your form saved. They are flat, and that is what makes the glow mean
+     something when it does appear. */
+  --color-info: oklch(74% 0.13 232);
+  --color-info-content: oklch(22% 0.04 232);
+  --color-success: oklch(78% 0.15 165);
+  --color-success-content: oklch(22% 0.04 165);
+  --color-warning: oklch(79% 0.145 62); /* amber. NOT accent-gold — 24° clear of it */
+  --color-warning-content: oklch(22% 0.04 62);
+  --color-error: oklch(68% 0.2 18);
+  --color-error-content: oklch(18% 0.04 18);
+
+  /* The radius scale is NOT here — it is in the `@theme static` block below, which
+     is its single source. Setting it here too would put the same number in two
+     places, and "two schemas for one thing, one of them read by nothing" is
+     literally a row in the v1 defect table. */
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+
+  /* DaisyUI's own depth/noise: off. The kit draws its own (--inset-shadow-rim,
+     the body grain below) and two systems layering the same effect is how v1 got
+     four modal implementations. */
+  --depth: 0;
+  --noise: 0;
+}
+
+/* `static` — emitted whether or not Tailwind sees a utility using them.
+ *
+ * This block is the single source for the radius scale, and it has TWO consumers
+ * that cannot see each other: Tailwind generates `rounded-field` / `rounded-box`
+ * from it, and DaisyUI's own component CSS reads `var(--radius-field)` directly.
+ * Tailwind cannot see that second reference. Under normal (tree-shaken) `@theme`,
+ * these variables would vanish the moment the kit happened not to spell a
+ * `rounded-*` utility — and the failure is silent: every DaisyUI component just
+ * squares off, because an undefined var makes `border-radius` invalid, not red.
+ *
+ * Bent glass tubes, not cut card. Rounded — but never a pill. A pill button in a
+ * casino reads as a mobile game.
+ */
+@theme static {
+  --radius-selector: 0.5rem; /* checkbox, toggle, chip */
+  --radius-field: 0.625rem; /* button, input — the hand-sized things */
+  --radius-box: 1rem; /* card, modal — the room-sized things */
+}
+
+@theme {
+  /* ── Custom tokens DaisyUI has no equivalent for ──────────────────────────── */
+
+  /* Hairlines. A border on a dark UI must be lighter than its surface — a darker
+     one reads as a gap in the page, not an edge on the object. */
+  --color-bw-line: oklch(30% 0.025 284); /* card edges, table rules */
+  --color-bw-line-strong: oklch(40% 0.035 284); /* dividers, and the UNLIT TUBE (see Button) */
+
+  /* Secondary text. 6.3:1 on base-200 — muted is a hierarchy, not an excuse to
+     fail contrast. There is no third tier: if text is worth rendering it is worth
+     reading, and "even more muted" is how a disabled state and a caption become
+     indistinguishable. */
+  --color-bw-muted: oklch(68% 0.02 284);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Signage. Prefers a condensed grotesque where one is installed, because that
+     is what pier signs are set in; degrades to the system face, where the effect
+     is carried by case + tracking + glow instead. Swapping in a self-hosted face
+     later is a change to this one line. */
+  --font-display:
+    'Bahnschrift', 'DIN Alternate', 'Oswald', 'Archivo Narrow', 'Roboto Condensed', ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, monospace;
+
+  /* ── Neon ──────────────────────────────────────────────────────────────────
+   *
+   * A real tube is FOUR optical events, and skipping any one is what makes CSS
+   * neon look like a drop shadow someone tinted pink:
+   *
+   *   1. the tube edge      — a hard 1px line, the glass itself
+   *   2. the core           — tight and WHITER than the gas, because light
+   *                           saturates: look at a real sign and the centre of
+   *                           the tube is white, not pink
+   *   3. the bloom          — wide, and here the hue is at full strength
+   *   4. the atmosphere     — very wide, very dim. This is the one everyone
+   *                           leaves out, and it is the one doing the work: it
+   *                           is the sign lighting the ROOM rather than being
+   *                           pasted onto it.
+   *
+   * Negative spreads keep the bloom off the object's own edge, so the shape stays
+   * crisp while the light around it does not. `color-mix(… transparent)` rather
+   * than baked rgba: the layers stay tied to --color-primary, so the glow cannot
+   * drift from the fill the way v1's cosmetics drifted from each other.
+   */
+  --shadow-glow-primary:
+    0 0 0 1px color-mix(in oklch, var(--color-primary) 55%, transparent),
+    0 0 10px -1px color-mix(in oklch, var(--color-primary) 55%, transparent),
+    0 0 24px -3px color-mix(in oklch, var(--color-primary) 42%, transparent),
+    0 0 52px -8px color-mix(in oklch, var(--color-primary) 30%, transparent);
+  --shadow-glow-primary-hot:
+    0 0 0 1px color-mix(in oklch, var(--color-primary) 85%, transparent),
+    0 0 14px -1px color-mix(in oklch, var(--color-primary) 75%, transparent),
+    0 0 34px -3px color-mix(in oklch, var(--color-primary) 55%, transparent),
+    0 0 76px -8px color-mix(in oklch, var(--color-primary) 38%, transparent);
+
+  --shadow-glow-secondary:
+    0 0 0 1px color-mix(in oklch, var(--color-secondary) 55%, transparent),
+    0 0 10px -1px color-mix(in oklch, var(--color-secondary) 50%, transparent),
+    0 0 24px -3px color-mix(in oklch, var(--color-secondary) 38%, transparent),
+    0 0 52px -8px color-mix(in oklch, var(--color-secondary) 26%, transparent);
+  --shadow-glow-secondary-hot:
+    0 0 0 1px color-mix(in oklch, var(--color-secondary) 85%, transparent),
+    0 0 14px -1px color-mix(in oklch, var(--color-secondary) 70%, transparent),
+    0 0 34px -3px color-mix(in oklch, var(--color-secondary) 50%, transparent),
+    0 0 76px -8px color-mix(in oklch, var(--color-secondary) 34%, transparent);
+
+  /* Money glows differently: no hard tube edge, only bloom. Gold on this palette
+     is a lit surface (a chip, a stack), not a gas tube. */
+  --shadow-glow-accent:
+    0 0 12px -2px color-mix(in oklch, var(--color-accent) 45%, transparent),
+    0 0 40px -6px color-mix(in oklch, var(--color-accent) 28%, transparent);
+
+  --shadow-glow-error:
+    0 0 0 1px color-mix(in oklch, var(--color-error) 60%, transparent),
+    0 0 12px -1px color-mix(in oklch, var(--color-error) 50%, transparent),
+    0 0 34px -4px color-mix(in oklch, var(--color-error) 32%, transparent);
+
+  /* Ordinary drop shadow, for things that float above the room (modal, toast,
+     popover). It exists as a TOKEN so components never spell `shadow-black/60` —
+     which is the crack `no-raw-palette` would otherwise have to leave open, and a
+     rule with one sanctioned exception is a rule with an argument attached to it.
+     Black, not base-100: a shadow is the absence of light, not a darker indigo. */
+  --shadow-lift: 0 16px 40px -12px oklch(0% 0 0 / 60%), 0 4px 12px -4px oklch(0% 0 0 / 40%);
+
+  /* The rim: a 1px highlight on the TOP edge only. Light comes from above, so the
+     upper edge of a raised object catches it and the lower does not. This — not a
+     lighter fill — is what makes a card sit on the page instead of being a hole
+     cut in it. */
+  --inset-shadow-rim: inset 0 1px 0 0 oklch(100% 0 0 / 7%);
+  --inset-shadow-well: inset 0 1px 2px 0 oklch(0% 0 0 / 40%);
+
+  /* Signage text. Tight and white-cored, matching the tube logic above. */
+  --text-shadow-neon:
+    0 0 6px color-mix(in oklch, var(--color-primary) 60%, transparent),
+    0 0 18px color-mix(in oklch, var(--color-primary) 40%, transparent),
+    0 0 44px color-mix(in oklch, var(--color-primary) 25%, transparent);
+  --text-shadow-neon-cyan:
+    0 0 6px color-mix(in oklch, var(--color-secondary) 55%, transparent),
+    0 0 18px color-mix(in oklch, var(--color-secondary) 35%, transparent),
+    0 0 44px color-mix(in oklch, var(--color-secondary) 22%, transparent);
+
+  /* One easing for everything that lights up. A sign does not ease-in-out; the
+     gas strikes fast and settles. */
+  --ease-strike: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Things arrive from below, once, and do not bounce. `rise` is deliberately the
+     only entrance animation in the theme: a kit with five of them is a kit where
+     every component author picked one, which is how a UI ends up feeling assembled
+     rather than designed. (The @media reduced-motion block below neutralises it,
+     so this stays honest for anyone who asked the page to hold still.) */
+  --animate-rise: rise 200ms var(--ease-strike);
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-base-100);
+    color: var(--color-base-content);
+    font-family: var(--font-sans);
+
+    /* THE ROOM. Two signs off-screen — magenta above-left, cyan below-right —
+       lighting an otherwise flat surface. This is the cheapest thing in the whole
+       theme and it does more than any component: without it, base-100 is a dark
+       <div>; with it, it is a place, and the kit's glows have something to be
+       consistent WITH.
+       `fixed` because the signs are mounted to the pier — they must not scroll
+       away with the content. */
+    background-image:
+      /* Grain. Not texture-for-its-own-sake: two 60rem radial gradients at ~10%
+         opacity over a near-black base WILL band into visible rings on an 8-bit
+         panel, and a few percent of noise is the standard, cheap fix — it
+         dithers the ramp. Keep it under ~4% or it stops being a fix and starts
+         being a filter. */
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E"),
+      radial-gradient(
+        60rem 42rem at 8% -12%,
+        color-mix(in oklch, var(--color-primary) 13%, transparent),
+        transparent 68%
+      ),
+      radial-gradient(
+        52rem 38rem at 96% 112%,
+        color-mix(in oklch, var(--color-secondary) 10%, transparent),
+        transparent 68%
+      );
+    background-attachment: fixed, fixed, fixed;
+    background-repeat: repeat, no-repeat, no-repeat;
+  }
+
+  /* Focus is CYAN, always, everywhere, and never magenta. Magenta means "this is
+     the action"; cyan means "you are here". Collapsing the two would make the
+     focused button and the primary button the same object, which is precisely the
+     bug keyboard users report as "I can't tell where I am".
+     `:focus-visible`, not `:focus` — a ring on every mouse click is the noise that
+     gets focus styling deleted wholesale. */
+  :where(:focus-visible) {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
+    border-radius: var(--radius-field);
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--color-secondary) 35%, transparent);
+    color: var(--color-base-content);
+  }
+
+  /* Money never jitters. A bankroll that ticks $1,000 → $1,111 must not reflow,
+     and proportional digits are different widths. This is a one-line fix for a
+     bug v1 shipped on every HUD. */
+  :where([data-money]) {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /* Honour the OS setting. A neon UI is exactly the kind that hurts to look at if
+     you asked it to stop moving — every glow transition below is motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -41,7 +41,12 @@ const CEILING = 800;
 
 // Source we own. Tests and fixtures are excluded: a test is allowed to be long,
 // and a table-driven test of every legal chess move SHOULD be.
-const AREAS = ['src/', 'packages/', 'scripts/'];
+//
+// `eslint-rules/` joined this list in Phase 1, when it gained its first file. A
+// guard's own enforcement code is source like any other — and a 900-line lint rule
+// would be exactly the kind of thing nobody can hold in their head, which is the
+// failure this script exists to prevent.
+const AREAS = ['src/', 'packages/', 'scripts/', 'eslint-rules/'];
 const EXTS = ['.ts', '.tsx', '.js', '.mjs'];
 
 // Enumerate TRACKED files via git — it already honours .gitignore, so node_modules/

@@ -23,7 +23,18 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const FIXTURE_DIR = join(ROOT, 'src', '__lint_fixtures__');
+const SRC = join(ROOT, 'src');
+
+/**
+ * Fixture paths are relative to `src/`, not to one fixture directory.
+ *
+ * That indirection buys exactly one thing, and it is the thing Phase 1 needed: the
+ * DaisyUI ban is scoped BY PATH (`src/ui` may spell component classes, nothing else
+ * may), so proving it requires fixtures on both sides of that line. A single
+ * fixture directory can only ever test one side, and the side it tests is the one
+ * that passes.
+ */
+const FIXTURE_DIRS = [join(SRC, '__lint_fixtures__'), join(SRC, 'ui', '__lint_fixtures__')];
 
 /**
  * Every fixture, written to disk ONCE before any linting happens.
@@ -66,11 +77,15 @@ const FIXTURES: Record<string, string> = {
   'indirect.ts': `export function boom(msg: string): void {
   confirm(msg);
 }`,
-  'scoped.ts': `function useToast(): { confirm: (m: string) => boolean } {
+  // The kit's REAL shape, as of Phase 1 — `const { confirm } = useConfirm()` is
+  // how a game asks "leave the table?" now. This fixture is why the ban on the
+  // global is survivable, so it must keep passing: the day this goes red, every
+  // call site of the sanctioned replacement is an error and the rule gets deleted.
+  'scoped.ts': `function useConfirm(): { confirm: (m: string) => boolean } {
   return { confirm: (m: string) => m.length > 0 };
 }
 export function ok(): void {
-  const { confirm } = useToast();
+  const { confirm } = useConfirm();
   confirm('Leave the table?');
 }`,
   'deep/deeper/bad.ts': `import { thing } from '../../system/thing';
@@ -85,11 +100,115 @@ export const x = App;`,
 export function go(): void {
   work();
 }`,
+
+  // ── Phase 1: the DaisyUI ban ───────────────────────────────────────────────
+  'daisy-bare.tsx': `export function Bad(): null {
+  void (<button className="btn btn-primary">Deal</button>);
+  return null;
+}`,
+  // TIER 1: hyphenated forms are caught in ANY string, not just a className — this
+  // is what closes the "build the class list in a const, use it later" hole.
+  'daisy-indirect.ts': `export const CLASSES = 'modal-box';`,
+
+  // The exemption, and the reason FIXTURE_DIRS has two entries. Same code as
+  // daisy-bare.tsx, different directory, must be silent.
+  'ui/__lint_fixtures__/kit-ok.tsx': `export function Kit(): null {
+  void (<button className="btn btn-primary">Deal</button>);
+  return null;
+}`,
+
+  // THE FALSE-POSITIVE PROOF, and the whole reason the rule is scoped the way it
+  // is. This is an arcade: 'card' is a DaisyUI component AND a thing a card game
+  // says in every other line. A rule that fires here is a rule that gets disabled
+  // in week one, and then it guards nothing.
+  'daisy-domain-words.ts': `export const kind = 'card';
+export const seat = { chat: 'table', stack: 'avatar' };
+export function deal(): string { return 'card'; }`,
+
+  // Tailwind's `table`/`filter`/`collapse` are real utilities and must survive...
+  'daisy-collision-ok.tsx': `export function Ok(): null {
+  void (<div className="table filter collapse" />);
+  return null;
+}`,
+  // ...but their hyphenated DaisyUI forms are unambiguous and must not.
+  'daisy-collision-bad.tsx': `export function Bad(): null {
+  void (<div className="table-zebra" />);
+  return null;
+}`,
+
+  'daisy-semantic-ok.tsx': `export function Ok(): null {
+  void (<div className="bg-base-200 rounded-box border-bw-line p-4" />);
+  return null;
+}`,
+
+  // ── Phase 1: semantic tokens only ──────────────────────────────────────────
+  'palette-scale.tsx': `export function Bad(): null {
+  void (<div className="bg-pink-500" />);
+  return null;
+}`,
+  'palette-absolute.tsx': `export function Bad(): null {
+  void (<div className="text-white" />);
+  return null;
+}`,
+  'palette-arbitrary.tsx': `export function Bad(): null {
+  void (<div className="bg-[#ff2c86]" />);
+  return null;
+}`,
+  'palette-variant.tsx': `export function Bad(): null {
+  void (<div className="hover:bg-red-500" />);
+  return null;
+}`,
+  'palette-style.tsx': `export function Bad(): null {
+  void (<div style={{ color: '#ff2c86' }} />);
+  return null;
+}`,
+  // Built through cx()/clsx() — the subtree walk exists for exactly this, since the
+  // literal is a call argument rather than the attribute value.
+  'palette-nested.tsx': `declare function cx(...p: unknown[]): string;
+export function Bad(props: { on: boolean }): null {
+  void (<div className={cx('p-2', props.on && 'text-slate-300')} />);
+  return null;
+}`,
+
+  // NO src/ui EXEMPTION for this rule — the kit may spell 'btn', never '#ff2c86'.
+  // If this fixture ever goes green, a second palette has a home.
+  'ui/__lint_fixtures__/kit-palette-bad.tsx': `export function Bad(): null {
+  void (<div className="bg-[#ff2c86] text-white" />);
+  return null;
+}`,
+
+  // `neutral` is in BOTH the Tailwind ramp and the DaisyUI token set. The digits
+  // are the only thing telling them apart, so this pair is the rule's sharpest
+  // edge: get it wrong and the rule bans a token it is supposed to require.
+  'palette-neutral-ok.tsx': `export function Ok(): null {
+  void (<div className="bg-neutral text-neutral-content" />);
+  return null;
+}`,
+  'palette-neutral-bad.tsx': `export function Bad(): null {
+  void (<div className="bg-neutral-500" />);
+  return null;
+}`,
+
+  'palette-ok.tsx': `export function Ok(): null {
+  void (
+    <div className="bg-base-200 text-primary-content border-bw-line bg-primary/90 bg-transparent text-current shadow-glow-primary" />
+  );
+  return null;
+}`,
 };
+
+/**
+ * A fixture key is relative to `src/`, EXCEPT that the bare ones are sugar for
+ * `__lint_fixtures__/<key>` — most fixtures do not care where they live, and the
+ * two that do (the src/ui pair) say so explicitly.
+ */
+function fixturePath(rel: string): string {
+  return rel.startsWith('ui/') ? join(SRC, rel) : join(SRC, '__lint_fixtures__', rel);
+}
 
 beforeAll(() => {
   for (const [rel, code] of Object.entries(FIXTURES)) {
-    const abs = join(FIXTURE_DIR, rel);
+    const abs = fixturePath(rel);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, code);
   }
@@ -100,12 +219,12 @@ afterAll(() => {
   // untidy — it is a deliberate lint error and a type error inside the real tree,
   // so it would fail `npm run lint` and `tsc -b` for the next person, on a file
   // they never wrote.
-  rmSync(FIXTURE_DIR, { recursive: true, force: true });
+  for (const dir of FIXTURE_DIRS) rmSync(dir, { recursive: true, force: true });
 });
 
 /** Lint one fixture with the real config; return the rule ids that fired. */
 async function rulesFiredOn(rel: string): Promise<(string | null)[]> {
-  const abs = join(FIXTURE_DIR, rel);
+  const abs = fixturePath(rel);
   const eslint = new ESLint({ cwd: ROOT });
   const results = await eslint.lintFiles([abs]);
   const messages = results.flatMap((r) => r.messages);
@@ -156,6 +275,81 @@ describe('the @/ alias is enforced', () => {
 
   it('does NOT fire on the @/ alias itself', async () => {
     expect(await rulesFiredOn('ok-alias.ts')).not.toContain('no-restricted-imports');
+  });
+});
+
+describe('DaisyUI classes are unspellable outside src/ui', () => {
+  const RULE = '@boardwalk/no-daisyui-classes';
+
+  it('fires on a bare component class in a className', async () => {
+    expect(await rulesFiredOn('daisy-bare.tsx')).toContain(RULE);
+  });
+
+  it('fires on a hyphenated class in ANY string, not just a className', async () => {
+    // The "build the class list somewhere else" hole. `modal-box` is not a word
+    // any game says, so scanning every string here costs no false positives.
+    expect(await rulesFiredOn('daisy-indirect.ts')).toContain(RULE);
+  });
+
+  it('fires on a hyphenated form of a Tailwind-colliding root', async () => {
+    expect(await rulesFiredOn('daisy-collision-bad.tsx')).toContain(RULE);
+  });
+
+  it('does NOT fire inside src/ui — the kit is the one place allowed', async () => {
+    // Byte-for-byte the same JSX as daisy-bare.tsx. If this and that test do not
+    // disagree, the rule is not path-scoped at all and one of them is a lie.
+    expect(await rulesFiredOn('ui/__lint_fixtures__/kit-ok.tsx')).not.toContain(RULE);
+  });
+
+  it("does NOT fire on 'card' as a game-domain word — this is an ARCADE", async () => {
+    // The most important negative in the file. 'card', 'table', 'chat', 'stack'
+    // and 'avatar' are DaisyUI components AND ordinary nouns here. A rule that
+    // fires on `const kind = 'card'` gets disabled in week one by the first person
+    // writing Blackjack, and then it guards nothing at all.
+    expect(await rulesFiredOn('daisy-domain-words.ts')).not.toContain(RULE);
+  });
+
+  it('does NOT fire on table/filter/collapse — those are Tailwind utilities', async () => {
+    expect(await rulesFiredOn('daisy-collision-ok.tsx')).not.toContain(RULE);
+  });
+
+  it('does NOT fire on semantic utilities', async () => {
+    expect(await rulesFiredOn('daisy-semantic-ok.tsx')).not.toContain(RULE);
+  });
+});
+
+describe('semantic tokens only — no raw palette anywhere', () => {
+  const RULE = '@boardwalk/no-raw-palette';
+
+  it.each([
+    ['the Tailwind palette scale', 'palette-scale.tsx'],
+    ['absolute white/black', 'palette-absolute.tsx'],
+    ['an arbitrary hex value', 'palette-arbitrary.tsx'],
+    ['a variant-prefixed palette class', 'palette-variant.tsx'],
+    ['a colour literal in style={{}}', 'palette-style.tsx'],
+    ['a literal nested inside cx()', 'palette-nested.tsx'],
+    ['bg-neutral-500 — the ramp, not the token', 'palette-neutral-bad.tsx'],
+  ])('fires on %s', async (_label, fixture) => {
+    expect(await rulesFiredOn(fixture)).toContain(RULE);
+  });
+
+  it('fires INSIDE src/ui too — the kit gets no exemption from this one', async () => {
+    // The asymmetry between the two Phase 1 rules, asserted rather than trusted.
+    // src/ui may spell `btn`; it may not spell `#ff2c86`. If this ever goes green,
+    // a second palette has somewhere to live and the theme stops being the source
+    // of truth the moment someone is in a hurry.
+    expect(await rulesFiredOn('ui/__lint_fixtures__/kit-palette-bad.tsx')).toContain(RULE);
+  });
+
+  it('does NOT fire on bg-neutral / text-neutral-content — the DaisyUI token', async () => {
+    // `neutral` is in both the Tailwind ramp and the DaisyUI token set, so the
+    // digits are the entire distinction. Get this wrong and the rule bans a token
+    // it is supposed to require — which is a rule that argues with the theme.
+    expect(await rulesFiredOn('palette-neutral-ok.tsx')).not.toContain(RULE);
+  });
+
+  it('does NOT fire on tokens, opacity modifiers, transparent, or current', async () => {
+    expect(await rulesFiredOn('palette-ok.tsx')).not.toContain(RULE);
   });
 });
 

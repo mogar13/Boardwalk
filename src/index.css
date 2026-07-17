@@ -1,14 +1,24 @@
-/* Phase 0 has no design system, and this file must not grow one.
-   Tailwind v4 + DaisyUI and `@boardwalk/theme` arrive in Phase 1; every rule
-   here is expected to be deleted then. Semantic tokens only — from Phase 1. */
+/* The app's entire style entry. It is two imports, and it should stay two imports.
+ *
+ * Phase 0's version of this file said "every rule here is expected to be deleted
+ * in Phase 1" — this is that deletion. Nothing that follows is a rule, because a
+ * rule here would be a look decided outside @boardwalk/theme, which is the one
+ * thing the theme package exists to prevent. If you are about to add a selector
+ * below: it belongs in packages/theme/theme.css (if it is the look) or in a
+ * component under src/ui (if it is a component).
+ *
+ * ORDER IS LOAD-BEARING. `tailwindcss` first — it defines the @theme namespace and
+ * the layer order that @boardwalk/theme then extends. Flipping these two makes the
+ * theme's @theme block resolve against nothing, and the failure is quiet: you get
+ * a working page in the wrong colours.
+ */
+@import 'tailwindcss';
+@import '@boardwalk/theme';
 
-body {
-  margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #0b0b12;
-  color: #e8e8f0;
-}
-
-main {
-  padding: 2rem;
-}
+/* Tailwind auto-detects sources by walking up from this file, which finds the repo
+   root and then honours .gitignore. That is right for src/, and wrong for exactly
+   one thing: it cannot know about a class name that lives in a workspace package.
+   Declared explicitly so the kit's utilities survive a production build — an
+   undetected class is not an error, it is a missing rule, and it only shows up in
+   `npm run build` output, never in dev. */
+@source "../packages/theme";

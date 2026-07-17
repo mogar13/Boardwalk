@@ -4,6 +4,10 @@ import { fileURLToPath, URL } from 'node:url';
 // key this file adds.
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+// Tailwind v4 is a Vite plugin, not a PostCSS step, and there is no
+// tailwind.config.js by design — the whole configuration is CSS, and it lives in
+// packages/theme. See src/index.css for the two-line entry.
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   // GitHub Pages serves this repo at https://mogar13.github.io/Boardwalk/, so every
@@ -11,7 +15,7 @@ export default defineConfig({
   // because dev and preview would still resolve from the root.
   base: '/Boardwalk/',
 
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
 
   // The `@/` alias, decided on day one. VS-Dashboard has none and imports
   // '../../../actualLabor'; the depth of a relative path is not information anyone
