@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { Button, Card, Input, Modal, UiRoot, useToast, useConfirm } from '@/ui';
+import { AuthPanel } from '@/system/auth/AuthPanel';
+import { useAuth, useAuthBootstrap } from '@/system/auth/useAuth';
+import { ProfileCard } from '@/system/profile/ProfileCard';
+import { firebaseReady } from '@/system/repo';
 
 /**
- * Phase 1 ships the LOOK, so this page is the look — every kit component, on
- * screen, in the theme, at the URL. It is a style guide, not a hub: the hub, the
- * router and the top bar are Phase 3, and building them here would be four phases
- * of decisions made in one afternoon.
+ * Phase 1 shipped the LOOK, so this page was the look. Phase 2 makes the top of it real:
+ * the bankroll card is no longer a hardcoded 500_000, it is a record that came back from
+ * Firebase through `ProfileRepo`. The rest is still the style guide.
+ *
+ * It is still not a hub. The hub, the router and the top bar are Phase 3, and building
+ * them here would be four phases of decisions made in one afternoon.
  *
  * It is also the dog food. This file lives outside `src/ui`, so both Phase 1 lint
  * rules apply to it in full — it cannot spell `btn`, and it cannot spell a colour.
@@ -47,15 +53,47 @@ function Swatch({ token, label }: { token: string; label: string }) {
   );
 }
 
+/**
+ * No credentials, no app. The panel names every missing variable.
+ *
+ * This is the deliberate opposite of v1's failure mode. There, the config was inline in 32
+ * HTML files and a game discovered the database was missing by polling `window.db` every
+ * 50ms — forever, silently, with no error anywhere. Here the answer is on screen, in the
+ * theme, naming the fix. A production build never reaches this state at all: vite.config.ts
+ * fails the build. Only `npm run dev` on a fresh clone can, which is exactly when someone
+ * needs to be told what to do.
+ */
+function NotConfigured({ error }: { error: string }) {
+  return (
+    <Card className="flex flex-col gap-3 p-6">
+      <h2 className="font-display text-warning text-sm font-semibold tracking-[0.2em] uppercase">
+        Firebase is not configured
+      </h2>
+      <pre className="text-bw-muted overflow-x-auto font-mono text-xs whitespace-pre-wrap">
+        {error}
+      </pre>
+    </Card>
+  );
+}
+
+/** Signed in -> the player. Signed out -> the form. No config -> the panel that says so. */
+function Account() {
+  const ready = firebaseReady();
+  const { status } = useAuth();
+
+  if (!ready.ok) return <NotConfigured error={ready.error} />;
+  return status === 'signed-in' ? <ProfileCard /> : <AuthPanel />;
+}
+
 export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [bet, setBet] = useState('25');
   const toast = useToast();
   const { confirm } = useConfirm();
 
-  // The bankroll is integer cents, always — CLAUDE.md, and blackjack's 3:2 natural
-  // is why. Formatting is the only place it becomes a decimal.
-  const balanceCents = 500_000;
+  // The one session subscription, started once, torn down on unmount. Mounted here beside
+  // <UiRoot /> because both are app-root singletons; in Phase 3 both move into the shell.
+  useAuthBootstrap();
 
   return (
     <>
@@ -74,48 +112,22 @@ export default function App() {
             The Boardwalk
           </h1>
           <p className="text-bw-muted max-w-xl text-sm">
-            Phase 1 — the theme and the kit. Five games will run on this, and none of them are
-            written yet. The look is decided here so that nothing after this has to decide it again.
+            Phase 2 — the data layer. Five games will run on this, and none of them are written yet.
+            The look was decided in Phase 1; this phase decided where the money lives.
           </p>
         </header>
 
-        {/* ── Money ─────────────────────────────────────────────────────────
-            Gold appears exactly once on this page, and this is it. That is the
-            rule doing its job: if gold showed up on a heading too, it would stop
-            being the thing your eye finds when you want to know what you have. */}
-        <Card className="flex flex-wrap items-center justify-between gap-6 px-6 py-5">
-          <div className="flex flex-col gap-1">
-            <span className="font-display text-bw-muted text-[0.65rem] font-semibold tracking-[0.2em] uppercase">
-              Bankroll
-            </span>
-            <span
-              // data-money → tabular figures, from the theme. A ticking balance
-              // that reflows on every digit is v1's HUD, and it is one line to fix.
-              data-money
-              className="font-display text-accent text-4xl font-bold tracking-tight"
-            >
-              ${(balanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              onClick={() => {
-                toast.success('Paid $375 — blackjack, 3:2.');
-              }}
-            >
-              Deal
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                toast.info('Table minimum is $2.');
-              }}
-            >
-              Rules
-            </Button>
-          </div>
-        </Card>
+        {/* ── The account ───────────────────────────────────────────────────
+            Phase 1 had a hardcoded 500_000 here with two decorative buttons. This is
+            the same card with a database behind it — the bankroll below came out of
+            RTDB through ProfileRepo, and gold still appears exactly once on the page,
+            because it is still money and money is still the only thing it means. */}
+        <Section
+          title="Your account"
+          subtitle="Phase 2 — the data layer. Firebase Auth owns the password; this app never sees one. Sign up without an email and your account is a synthetic address that cannot receive mail, which is the trick that keeps real addresses out of a world-readable username index."
+        >
+          <Account />
+        </Section>
 
         <Section
           title="Buttons"
@@ -254,7 +266,8 @@ export default function App() {
         </Section>
 
         <footer className="border-bw-line text-bw-muted border-t pt-8 pb-4 text-center text-xs">
-          Phase 0 shipped a pipeline. Phase 1 shipped a look. Next: the data layer.
+          Phase 0 shipped a pipeline. Phase 1 shipped a look. Phase 2 shipped the data layer. Next:
+          the shell — router, top bar, hub.
         </footer>
       </div>
 

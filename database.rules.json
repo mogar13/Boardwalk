@@ -1,0 +1,141 @@
+// THE ENFORCEMENT BOUNDARY. Not the client. Not `isDev`. This file.
+//
+// Ported from The Game Shack v1 (../Game-Room/database.rules.json). ARCHITECTURE.md:
+// v1's security posture is the most mature thing in it and was paid for with two
+// shipped backdoors — carry it over unchanged. Read
+// plans/ARCHITECTURE.md#what-casino-os-v1-got-right before changing a line here.
+//
+// (Yes, comments in a .json file. Firebase's rules parser takes them, and rules
+// without reasoning attached is how the reasoning gets lost. It is in .prettierignore
+// for the same reason the docs are.)
+//
+// TWO DELIBERATE DEPARTURES FROM v1, both argued in ARCHITECTURE.md#phase-2:
+//
+//   1. v1's `chat`, `global_chat` and `$room` rules are NOT here. All three are
+//      world-writable (`".write": true`), and they would be guarding nodes this app
+//      does not have yet. A permissive rule for a node nothing writes is not
+//      neutral — it is an open door with nothing behind it. They land in Phase 5,
+//      WITH rooms and chat, and they get tightened on the way in. This is the same
+//      principle eslint.config.mjs already follows: a rule lands in the phase that
+//      creates its subject.
+//
+//   2. `usernames` is pinned to its exact field set. v1 pins `leaderboard` this way
+//      and not this node. CLAUDE.md already says to `.validate` the exact field set
+//      on public projections, and `usernames` is one — pinning it is what turns "real
+//      emails never enter the public index" from a convention into a guarantee.
+//
+// DEPLOY: `npm run rules:deploy`. NOTHING IN CI DOES THIS — see the honest gap noted
+// in ARCHITECTURE.md#phase-2. A rules file that does not match production is worse
+// than no rules file, because it reads like the truth.
+{
+  "rules": {
+    // Deny by default, at the root. Every node below is an explicit exception, so a
+    // node nobody wrote a rule for is closed rather than open. This pair is what
+    // makes departure #1 above safe rather than merely tidy.
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      // The private record. NOT world-readable — which is exactly why `leaderboard`
+      // has to exist below as a separate, rule-validated projection.
+      //
+      // Self or admin. `admins/<uid>` existing is the ONLY thing in this entire file
+      // that grants cross-user access.
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+
+        "profile": {
+          // Validated even though it is private: `bankrollCents` is the economy, and
+          // a write that puts a string there breaks every read of it forever.
+          //
+          // Money is INTEGER CENTS (CLAUDE.md — v1's `parseInt` in setMoney silently
+          // ate the fractional chip on blackjack's 3:2 natural). `isNumber()` cannot
+          // say "integer", so the FIELD NAME carries the unit and the client rounds.
+          // Money is client-authoritative here exactly as it was in v1; the repo
+          // boundary is what keeps BACKEND_PLAN.md's server-authoritative version a
+          // wiring change rather than a rewrite.
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+          },
+          "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
+          "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "level": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+          // NOTE there is deliberately no `isDev` field to validate. v2 does not
+          // store one. See `admins` below.
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "usernames": {
+      // The public username -> uid index. World-readable BY DESIGN: sign-in has to
+      // resolve a username to an account before anyone is authenticated.
+      //
+      // `viaEmail` IS A BOOLEAN AND NEVER AN EMAIL. That is the entire mechanism
+      // keeping real addresses out of a world-readable node — a reader learns WHICH
+      // sign-in mode an account uses, never the address. The `$other` line is what
+      // makes that a rule instead of a habit.
+      ".read": true,
+      "$username": {
+        // Claim-then-verify, from v1: writable if you already own it, or if it does
+        // not exist and you are claiming it for yourself. No transaction, on purpose.
+        // The REAL race-proof uniqueness is Firebase Auth rejecting a duplicate
+        // synthetic address with `auth/email-already-in-use` — this index is a lookup
+        // table, not the lock. See src/system/auth/credentials.ts.
+        ".write": "auth != null && (data.child('uid').val() === auth.uid || (!data.exists() && newData.child('uid').val() === auth.uid) || root.child('admins').child(auth.uid).exists())",
+        // The key shape is pinned too: the public index cannot be polluted with junk
+        // keys, and it agrees with USERNAME_RE in src/system/auth/credentials.ts.
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'viaEmail']) && $username.matches(/^[a-z0-9_]{2,16}$/))",
+        "uid": { ".validate": "newData.isString()" },
+        "viaEmail": { ".validate": "newData.isBoolean()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "leaderboard": {
+      // The public projection of a private record. It exists because `users/` is not
+      // readable, and it is the only place profile data is world-readable.
+      //
+      // `$other: false` is the load-bearing line. It pins the projection to exactly
+      // these five fields, so a field added to the private profile later CANNOT be
+      // leaked here by a writer who forgot this node is public. A sixth field is a
+      // rules change, on purpose. Phase 4 adds `wins` here, with its writer, in the
+      // same commit.
+      ".read": true,
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        ".validate": "!newData.exists() || newData.hasChildren(['name'])",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+        },
+        "avatar": { ".validate": "newData.isString() && newData.val().length <= 8" },
+        "bankrollCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "xp": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "level": { ".validate": "newData.isNumber() && newData.val() >= 1" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "admins": {
+      // THE ACTUAL PRIVILEGE BOUNDARY — and the reason `profile.isDev` does not exist
+      // in v2 at all.
+      //
+      // Read-only, self-only: you may ask whether YOU are an admin; you may not
+      // enumerate the list. There is no `.write` rule at any depth, so no client can
+      // ever grant it. Membership is set from the Firebase console and nowhere else.
+      //
+      // v1 shipped TWO backdoors against this exact surface — a hardcoded
+      // username+password granting `isDev` in public client source, and a second,
+      // console-reachable `authenticateDev()` in system_profile.js. Both worked
+      // because a client-side boolean was treated as authority. Here, the client's
+      // answer to "am I an admin" is a cache with no consumer that matters: admin
+      // actions attempt the write and let these rules judge it. The server is the
+      // only judge.
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    }
+  }
+}

@@ -4,11 +4,13 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0 (scaffold) and 1 (theme + kit) have shipped. Phases 2–6 have not.** There is a live
-styled page, a green pipeline, `@boardwalk/theme`, and `src/ui` (Button, Card, Input, Modal,
-`useToast`, `useConfirm`). There is still no Casino OS: no `src/system`, no data layer, no router,
-no games. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains
-*why* for everything below.
+**Phases 0 (scaffold), 1 (theme + kit) and 2 (data layer) have shipped. Phases 3–6 have not.**
+There is a live styled page, a green pipeline, `@boardwalk/theme`, `src/ui` (Button, Card, Input,
+Modal, `useToast`, `useConfirm`), and now `src/system` — repo interfaces, one Firebase singleton,
+Auth, profile, and `database.rules.json` with a test that boots the emulator and proves it. There is
+still no router, no hub, no economy, no rooms and no games. Start at
+[plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
+everything below.
 
 **Most rules below describe code that does not exist yet.** They are the contract for the phase that
 builds each thing, not a description of the tree. A rule marked *"Lint-enforced"* is only enforced if
@@ -97,17 +99,40 @@ lint rule that matches nothing reports success.
 
 ### Data
 
-- **`firebase/*` may only be imported inside `src/system/repo/firebase/`.** Lint-enforced. Everything
-  else talks to repo interfaces. This is what makes a future backend a one-line wiring change instead
-  of a rewrite.
-- **Firebase config is not committed.** It's injected at build time. (v1 has it inline in 32 HTML
-  files.)
+- **`firebase/*` may only be imported inside `src/system/repo/firebase/`.** ✅ Live —
+  `@boardwalk/no-firebase-imports`. It bans **two** things, because one alone is theatre: the SDK
+  (`firebase/*`, `@firebase/*`) outside that directory, and the concrete repos
+  (`@/system/repo/firebase/*`) outside `src/system/repo/` — a game that can't spell `onValue` but
+  can spell `firebaseProfileRepo` is welded to Firebase through a nicer-looking door. `src/system/repo/index.ts`
+  is the composition root and the only file that names an implementation.
+- **Firebase config is not committed.** It's injected at build time, and `npm run build` **fails** if
+  it's absent. Be precise about why, because the usual reason is wrong: a Firebase web config is *not*
+  a secret — it ships in the bundle and has to. `database.rules.json` is what stops a stranger reading
+  your data. Injection buys one home per environment instead of a checked-in copy. (v1 had it inline
+  in 32 HTML files, each free to drift.)
 - **The security posture is inherited from v1 unchanged — it's the most mature thing there, and it
   cost two shipped backdoors.** Firebase Auth owns credentials; never reintroduce client-side password
-  comparison. Dev rights come from `admins/<uid>`, enforced by database rules — `.dev-only` and
-  `profile.isDev` only *hide* UI and are not a boundary. Never gate a privilege on a hardcoded
-  username. Anything the browser can read, everyone can read.
-- **Rules are the enforcement boundary**, and `.validate` the exact field set on public projections.
+  comparison. Dev rights come from `admins/<uid>`, enforced by database rules — `.dev-only` only
+  *hides* UI and is not a boundary. Never gate a privilege on a hardcoded username. Anything the
+  browser can read, everyone can read.
+- **There is no `isDev` field.** v2 doesn't store one. v1's was self-writable and granted nothing —
+  and was *still* live, because chat trusted a client-asserted `isDev` and anyone could mint a dev
+  badge. A forgeable field that grants nothing is a thing the next feature will believe. `Session.isAdmin`
+  is a cache of `admins/<uid>`, it hides UI, and the server is the only judge.
+- **Rules are the enforcement boundary**, and `.validate` the exact field set on public projections
+  (`$other: false`) — `usernames/` and `leaderboard/` both. ✅ Live — `tests/database-rules.test.ts`
+  runs the real file against the emulator. **A rules file is prose that looks like enforcement:** no
+  compiler on this machine reads it, and a mistake in it reports success by doing nothing. It is the
+  one thing here where being wrong is most expensive and static guards are blindest.
+- **A username is an email address, and nobody is told which one.** `usernames/` must be world-readable
+  (sign-in resolves a name before anyone is authenticated), so accounts without an email get a
+  synthetic `@boardwalk.invalid` address — RFC 2606, unroutable *by construction*. The index stores
+  `viaEmail: boolean`, **never** an address.
+- **`auth/email-already-in-use` is the uniqueness guarantee.** The `usernames/` pre-check races; Auth
+  refusing a second account on one address does not. For a username sign-up that code *means* "username
+  taken". Don't tidy it away.
+- **Money is integer cents, and the field is named `bankrollCents`.** The name carries the unit
+  because RTDB's `isNumber()` can't say "integer".
 
 ### UI
 
@@ -171,22 +196,34 @@ builds the thing it guards.
 | Vague confirm labels ("OK", "Yes") | `ActionLabel<S>` → `never`; fails at the call site |
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
-| Every guard above actually fires | `tests/lint-rules.test.ts` (26), `tests/file-size-guard.test.ts` (7) |
+| `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
+| The security rules do what they say | `tests/database-rules.test.ts` (28) — boots the RTDB emulator, loads the **real** `database.rules.json` |
+| A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
+| Every guard above actually fires | `tests/lint-rules.test.ts` (36), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
-| `firebase/*` only under `src/system/repo/firebase/` | Phase 2 |
 | `logic/` is pure; no cross-game imports | Phase 6 (needs `src/games`) |
+| Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit renders correctly in a real browser | unguarded — **see below** |
 
-**The gap Phase 1 leaves, named rather than papered over.** Every guard above is static. The worst
+**The gap Phase 1 leaves, named rather than papered over.** Most guards above are static. The worst
 bug in Phase 1 was not: a bare `grid` on `<dialog>` overrode the UA's `dialog:not([open]){display:none}`,
 so every closed modal was a 1280×900 invisible element adding ~965px of scroll and hit-testing clicks
 on every route. It typechecked, it linted, it passed all 33 tests, and it rendered correctly when
 *open*. Only screenshotting the built page in Chrome found it. There is no browser test here yet —
 so **when you touch the kit, look at it in a browser**, and if that starts costing more than it saves,
-that is the argument for adding one.
+that is the argument for adding one. (Phase 2's rules test is that argument being won once, for the
+place it was most expensive to lose: `database.rules.json` had exactly the same shape of problem —
+prose that looks like enforcement, unreadable to every static tool here — and it now has a real test
+that boots a real emulator and runs the real file.)
+
+**The gap Phase 2 leaves.** `database.rules.json` is deployed by hand (`npm run rules:deploy`).
+Nothing in CI does it, so **the file in this repo can silently stop matching production** — which is
+worse than having no file, because it reads like the truth. The tests prove the file is right; they
+cannot prove it is *deployed*. If you change the rules, deploy them in the same breath, and if that
+ever gets forgotten once, that is the argument for a CI step with a service account.
 
 Adding a rule means adding its guard **and a test that the guard fires**, in the same commit. Both
 test files exist to be copied from. Falsify a new guard before trusting it: break the thing on
@@ -199,17 +236,24 @@ file-extension axis" failure the suite was written to prevent, landing on the su
 
 ```bash
 npm install
+cp .env.example .env.local   # then fill it from the Firebase console — dev works without it
 npm run dev            # vite, http://localhost:5173/Boardwalk/
-npm test               # vitest — the guard tests
+npm test               # vitest — the guard tests (boots the RTDB emulator; needs Java)
 npm run lint
-npm run format         # prettier; docs are .prettierignore'd on purpose
-npm run build          # prebuild (lint + filesize) → tsc -b → vite build
+npm run format         # prettier; docs and database.rules.json are .prettierignore'd on purpose
+npm run build          # prebuild (lint + filesize) → tsc -b → vite build. FAILS without Firebase config.
 npm run guard:filesize -- --init   # re-lock the ratchet after a file SHRANK
+npm run rules:test     # just the security rules, against the emulator
+npm run rules:deploy   # push database.rules.json to Firebase. NOTHING IN CI DOES THIS.
 ```
+
+`npm run dev` works on a fresh clone with no credentials — the page renders a panel naming the
+missing variables instead of a form. `npm run build` does not: a production build with no config
+fails rather than deploying a site whose only feature is that panel.
 
 Push to `main` deploys via `.github/workflows/deploy.yml` → https://mogar13.github.io/Boardwalk/.
 `npm run build` runs the guards through npm's `prebuild` lifecycle, so they gate the deploy rather
-than merely existing.
+than merely existing. The five `VITE_FIREBASE_*` values are GitHub Actions secrets.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 2 (data layer).**
+green and deployed. **Next: Phase 3 (shell — router, top bar, hub, `registry.ts`).**

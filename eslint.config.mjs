@@ -8,9 +8,9 @@
 //
 // WHAT IS AND ISN'T HERE YET. Only rules whose subject EXISTS are configured. The
 // DaisyUI-class ban and the semantic-token rule landed in Phase 1, WITH `src/ui`
-// and `packages/theme`. Still to come: the `firebase/*` import boundary needs
-// `src/system/repo` (Phase 2); the `logic/`-purity and cross-game import bans need
-// `src/games` (Phase 6). Each lands in the phase that creates the thing it guards,
+// and `packages/theme`. The `firebase/*` import boundary landed in Phase 2, WITH
+// `src/system/repo`. Still to come: the `logic/`-purity and cross-game import bans
+// need `src/games` (Phase 6). Each lands in the phase that creates the thing it guards,
 // because a rule written against a directory that does not exist yet matches
 // nothing — and a rule that matches nothing reports success. That is not a
 // hypothetical: VS-Dashboard's `check-native-dialogs.sh` reported "ok" for a month
@@ -108,6 +108,14 @@ export default tseslint.config(
       // eslint-rules/no-raw-palette.mjs.
       '@boardwalk/no-raw-palette': 'error',
       '@boardwalk/no-daisyui-classes': 'error',
+
+      // Phase 2. Firebase is reachable from src/system/repo/firebase and nowhere
+      // else — and the concrete repos only from the composition root above them.
+      // Note there is NO `files:` override for this anywhere below: the rule carries
+      // its own exemption path, so there is no config knob to get wrong. That is
+      // deliberate — see the header of eslint-rules/no-firebase-imports.mjs for why
+      // this is a local rule and not four lines of `no-restricted-imports`.
+      '@boardwalk/no-firebase-imports': 'error',
     },
   },
 

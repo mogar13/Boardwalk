@@ -1,7 +1,7 @@
 # The Boardwalk
 
-**Status:** Phases 0–1 shipped 2026-07-16 — theme + kit live at https://mogar13.github.io/Boardwalk/.
-Phases 2–6 are design.
+**Status:** Phases 0–1 shipped 2026-07-16, Phase 2 (data layer) shipped 2026-07-17 — live at
+https://mogar13.github.io/Boardwalk/. Phases 3–6 are design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -335,7 +335,7 @@ One phase per conversation. Each ends green and deployed.
 |---|---|---|
 | 0 | ~~**Scaffold**~~ ✅ | Vite + TS strict + ESLint + Prettier + filesize ratchet + Pages deploy. An empty page that's live. |
 | 1 | ~~**Theme + kit**~~ ✅ | `@boardwalk/theme`, `src/ui` core (Button, Modal, Toast, Card, Input) + `useConfirm`. The look is decided: **Boardwalk at night**, dark only. |
-| 2 | **Data layer** | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 **unchanged**. |
+| 2 | ~~**Data layer**~~ ✅ | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 — posture unchanged, two departures, and a test that boots the emulator and proves them. |
 | 3 | **Shell** | Router, top bar with bankroll + XP, hub, `registry.ts`, piers. |
 | 4 | **Economy + progress** | `useBet`, `reportResult`, stats, achievements, store, daily rewards. |
 | 5 | **Multiplayer** | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests. |
@@ -478,3 +478,95 @@ Five things the build taught us, recorded because they cannot be re-derived from
 at the URL is a style guide, not a hub — the hub is Phase 3, and building it here would have been
 four phases of decisions made in one afternoon. The kit gets its next component when something
 actually needs one.
+
+## Phase 2 — what actually shipped
+
+2026-07-17. `src/system/repo` (the seam), one Firebase singleton, `AuthRepo` + `ProfileRepo`, Auth and
+profile behind Zustand, `@boardwalk/no-firebase-imports`, and `database.rules.json` — with 61 new
+tests, including 28 that boot the RTDB emulator and run the real rules file against real clients.
+The Firebase project is `boardwalk-fca02`, its own, per the decision above.
+
+### The phase description said "rules ported from v1 unchanged". Two departures, argued
+
+The instruction is right about the thing it is protecting — v1's *posture* is the most mature part of
+it and was paid for with two shipped backdoors. It is not right as a literal instruction, because v1's
+rules file also contains its least mature parts.
+
+**1. v1's `chat`, `global_chat` and `$room` rules are not here.** All three are `".write": true`, and
+the `$room` wildcard (`/(_rooms|_hands|_hand_incoming)$/`) is world-readable and world-writable
+besides. Porting them "unchanged" would have shipped three open subtrees guarding nodes this app does
+not have. A permissive rule for a node nothing writes is not neutral — it is an open door with nothing
+behind it yet. They land in Phase 5, with rooms and chat, and get tightened on the way in. This is the
+principle `eslint.config.mjs` already follows (a rule lands in the phase that creates its subject),
+applied to the file where getting it wrong is most expensive. The root's `".read": false, ".write":
+false` is what makes "not written yet" and "locked" the same state, and there is now a test that says
+so rather than a comment.
+
+**2. `usernames/` is pinned to its exact field set.** v1 pins `leaderboard` with `$other: false` and
+does not pin this node — its `.validate` only requires `uid` to exist, so a client could write a real
+email address into a world-readable index and nothing would refuse it. The synthetic-address design
+exists precisely to keep addresses out of there. CLAUDE.md already said to validate the exact field
+set on public projections; `usernames/` is one, and v1 not pinning it is an inconsistency in v1
+rather than a decision. Pinning it is what makes "real emails never enter the public index" a
+guarantee instead of a habit.
+
+Both departures are strictly *more* closed than v1. Neither touches the posture: Auth owns
+credentials, `admins/<uid>` is the only privilege, `leaderboard/` is a rule-validated public
+projection of an unreadable private record, and no client-side password comparison exists to
+reintroduce.
+
+### Five things the build taught us, recorded because they cannot be re-derived from the tree
+
+- **A rules file is this repo's signature failure mode with a lock on it.** It is prose that looks
+  like enforcement. No compiler on this machine reads it, ESLint cannot see it, `tsc` cannot see it,
+  and a mistake in it reports success *by doing nothing*. It is simultaneously the one file where
+  being wrong is most expensive and the one where every existing guard is blind. So it got the
+  emulator test, loading the real file — and the test earned itself immediately: removing
+  `leaderboard`'s `$other: false` turns exactly two tests red, which is the falsification that makes
+  the other 26 worth believing. v1 has no test like this and shipped two backdoors.
+
+- **The `firebase/*` ban looked like four lines of `no-restricted-imports` and is a trap.** That rule
+  is already configured for the `../../**` alias ban, and ESLint replaces a rule's options wholesale
+  rather than merging them — so the directory exemption the boundary needs
+  (`{files: ['src/system/repo/firebase/**'], rules: {'no-restricted-imports': 'off'}}`) would have
+  silently switched the alias ban off in the directory doing the most import plumbing. That is Phase
+  1's "a spread replaces, it does not merge" defect wearing a config file as a costume. A local rule
+  cannot collide with another rule's options and carries its own exemption path, so there is no knob
+  to get wrong.
+
+- **Banning the SDK alone would have been theatre.** A game that cannot spell `onValue` can still
+  spell `firebaseProfileRepo` and be welded to Firebase just as hard, through a nicer-looking door.
+  So the rule bans two things, and the second needs real path resolution rather than a string match:
+  from `src/system/`, the escape is `../repo/firebase/profileRepo` — which contains no
+  `system/repo/firebase` substring and is *deliberately allowed* by the `../../**` ban, because one
+  `../` is a sibling and a sibling is a real relationship. A regex reads that as clean.
+
+- **`profile.isDev` is not a field v2 has.** v1's was self-writable and granted nothing, which reads
+  like "harmless" and was not: chat trusted a client-asserted `isDev` on every message, so anyone
+  could mint themselves a dev badge. A forgeable field that grants nothing is a thing the next
+  feature believes. Deleting the field — rather than documenting "don't trust it" — is what makes
+  that unspellable, and `$other: false` on the profile node means the server refuses one now.
+
+- **v1's worst rough edge cost three lines to fix, and the fix is a read.** Sign-up is four writes
+  (Auth user, `usernames/`, `users/`, `leaderboard/`) with no transaction spanning them, because none
+  is possible — RTDB rules cannot reach an Auth user, so a failure after step one cannot be rolled
+  back. v1's answer is an honest error and an account that stays broken forever. Ours heals: the
+  store recreates a missing record on the next sign-in. It is safe for exactly one reason, and it is
+  worth stating because it is the reason not to "simplify" it — `ProfileRepo.load` returns `null`
+  **only** on an authoritative "the node is not there". A network failure throws. A `null` that also
+  meant "offline" would overwrite a real account with a fresh $5,000 every time someone's wifi
+  dropped.
+
+**Not built, on purpose:** no `RoomRepo`, no `ChatRepo`. The repo-layout sketch above lists all three
+and writing the other two would have taken ten minutes. That is exactly v1's `validateAndCommit()` —
+an interface designed before a caller existed, still sitting there with zero adopters while all six
+betting games double-clamp by hand. `RoomRepo` gets designed by `useRoom` needing it in Phase 5,
+which is the only design input that has ever worked. Also absent: `stats`, `achievements`, `rewards`,
+`loadout`, `chatColor`. Each lands with its consumer and its `.validate` line in the same commit.
+
+**The gap Phase 2 leaves, named rather than papered over.** `database.rules.json` is deployed by hand.
+Nothing in CI does it, so the file in this repo can silently stop matching production — and a rules
+file that does not match production is worse than none, because it reads like the truth. The tests
+prove the file is *right*; they cannot prove it is *deployed*. Fixing it needs a service account in
+CI, which is a real secret (unlike the web config), and that was not worth blocking the phase on. If
+it is ever forgotten once, that is the argument.

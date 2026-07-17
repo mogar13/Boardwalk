@@ -4,6 +4,12 @@ coverage/
 package-lock.json
 scripts/file-size-baseline.json
 
+# Firebase's rules parser takes // comments, and this file is nothing but reasoning
+# attached to security decisions — Prettier's json parser reflows it into something
+# that still works and no longer reads as an argument. It is the enforcement
+# boundary; it gets the same treatment as the docs, and for the same reason.
+database.rules.json
+
 # Prose is hand-wrapped and stays that way. Prettier is here for uniformity in
 # CODE, where nobody should spend a thought on it. Run on the docs it rewrites
 # `*emphasis*` to `_emphasis_` and reflows every table — 176 lines of churn in

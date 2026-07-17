@@ -3,33 +3,65 @@ import { fileURLToPath, URL } from 'node:url';
 // `test` block below. Importing from 'vite' typechecks everything except the one
 // key this file adds.
 import { defineConfig } from 'vitest/config';
+// `loadEnv` from 'vite', not 'vitest/config': the latter re-exports `defineConfig`
+// (widened for the `test` block) but not the rest of Vite's API surface. Same package
+// underneath — this is a re-export gap, not two Vites.
+import { loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 // Tailwind v4 is a Vite plugin, not a PostCSS step, and there is no
 // tailwind.config.js by design — the whole configuration is CSS, and it lives in
 // packages/theme. See src/index.css for the two-line entry.
 import tailwindcss from '@tailwindcss/vite';
+// The SAME reader the browser uses, called here with Node's env instead of
+// import.meta.env. That is the entire reason src/system/repo/firebase/config.ts is pure
+// and takes `env` as an argument: the list of required keys has one home and two readers
+// that cannot see each other. A copy of the list here is the v1 defect in miniature —
+// its Firebase config lived inline in 32 HTML files, each free to drift from the others.
+import { readFirebaseConfig, missingConfigMessage } from './src/system/repo/firebase/config';
 
-export default defineConfig({
-  // GitHub Pages serves this repo at https://mogar13.github.io/Boardwalk/, so every
-  // asset URL is prefixed. A wrong `base` fails in exactly one place — production —
-  // because dev and preview would still resolve from the root.
-  base: '/Boardwalk/',
+export default defineConfig(({ command, mode }) => {
+  // A PRODUCTION BUILD WITH NO CREDENTIALS FAILS HERE, LOUDLY.
+  //
+  // The alternative is a green deploy of a site whose only feature is a panel explaining
+  // that it has no database — which is a failure discovered by a player rather than by
+  // CI. `npm run build` is what the deploy runs, so this gates the deploy the same way
+  // prebuild's lint and file-size guards do.
+  //
+  // `dev` is deliberately exempt: `npm run dev` must work on a fresh clone with no
+  // secrets, and it does — App.tsx renders the missing-variable panel instead of a form.
+  // Someone reading the code has no Firebase project and should not need one.
+  if (command === 'build') {
+    const env = loadEnv(mode, process.cwd(), 'VITE_');
+    const result = readFirebaseConfig(env);
+    if (!result.ok) {
+      throw new Error(`\n\n${missingConfigMessage(result.missing)}\n`);
+    }
+  }
 
-  plugins: [tailwindcss(), react()],
+  return {
+    // GitHub Pages serves this repo at https://mogar13.github.io/Boardwalk/, so every
+    // asset URL is prefixed. A wrong `base` fails in exactly one place — production —
+    // because dev and preview would still resolve from the root.
+    base: '/Boardwalk/',
 
-  // The `@/` alias, decided on day one. VS-Dashboard has none and imports
-  // '../../../actualLabor'; the depth of a relative path is not information anyone
-  // wants to maintain. Mirrored in tsconfig.app.json's `paths` — both must agree or
-  // the editor and the bundler disagree about what a module is.
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    plugins: [tailwindcss(), react()],
+
+    // The `@/` alias, decided on day one. VS-Dashboard has none and imports
+    // '../../../actualLabor'; the depth of a relative path is not information anyone
+    // wants to maintain. Mirrored in tsconfig.app.json's `paths` — both must agree or
+    // the editor and the bundler disagree about what a module is.
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
     },
-  },
 
-  test: {
-    include: ['tests/**/*.test.ts'],
-    // The guard tests shell out to node and git; the default 5s is not enough.
-    testTimeout: 30_000,
-  },
+    test: {
+      include: ['tests/**/*.test.ts'],
+      // The guard tests shell out to node and git; the default 5s is not enough. The
+      // rules test additionally boots the Firebase emulator (a JVM), which is slower
+      // still — see tests/database-rules.test.ts.
+      testTimeout: 120_000,
+    },
+  };
 });

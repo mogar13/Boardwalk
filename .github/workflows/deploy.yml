@@ -36,15 +36,48 @@ jobs:
           node-version: 24
           cache: npm
 
+      # The Firebase RTDB emulator is a JVM, and tests/database-rules.test.ts boots it to
+      # run the REAL database.rules.json against real clients. ubuntu-latest happens to
+      # ship a JDK, and depending on that is the kind of implicit dependency that breaks on
+      # an image update with an error naming Java rather than the thing that needed it.
+      # Pinned, so the failure — if there ever is one — is legible.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
       # `ci` not `install`: it fails on a package-lock.json that disagrees with
       # package.json instead of quietly resolving something the local tree never saw.
       - run: npm ci
 
+      # Includes the rules test, which is the only guard in this repo that can see a
+      # security rule — everything else here is static, and a security rule is not code
+      # that runs on this machine. It does not skip when the emulator is missing; it fails.
       - name: Test
         run: npm test
 
       # Runs prebuild → lint + guard:filesize → tsc -b → vite build.
+      #
+      # The Firebase config is injected HERE and is not in the repo — CLAUDE.md's rule.
+      # Worth being precise about what that rule buys, because the usual reason is wrong: a
+      # Firebase web config is NOT a secret. It ships inside the bundle these secrets build,
+      # readable by anyone with devtools, and it has to be — the browser needs it to make
+      # its first request. `database.rules.json` is what stops a stranger reading the data.
+      # What injection buys is that the value has ONE home per environment instead of a copy
+      # checked in, which is the v1 row this rule was bought by: the config was pasted inline
+      # into 32 HTML files, each free to drift, each game polling `window.db` to find out
+      # which had loaded.
+      #
+      # If any of these is unset, vite.config.ts FAILS THE BUILD by name rather than
+      # deploying a site whose only feature is a panel saying it has no database. A red
+      # deploy here means: set the secrets in Settings → Secrets and variables → Actions.
       - name: Build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
       - uses: actions/configure-pages@v5

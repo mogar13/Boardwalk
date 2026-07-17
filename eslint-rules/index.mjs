@@ -13,12 +13,14 @@
  * commit. A rule that matches nothing reports success.
  */
 import noDaisyuiClasses from './no-daisyui-classes.mjs';
+import noFirebaseImports from './no-firebase-imports.mjs';
 import noRawPalette from './no-raw-palette.mjs';
 
 export default {
   meta: { name: '@boardwalk/eslint-rules', version: '1.0.0' },
   rules: {
     'no-daisyui-classes': noDaisyuiClasses,
+    'no-firebase-imports': noFirebaseImports,
     'no-raw-palette': noRawPalette,
   },
 };

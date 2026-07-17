@@ -5,9 +5,11 @@ logic, drawing a component, and exporting a manifest.
 
 React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase
 
-> **Status: Phase 0 shipped** — the scaffold is live at https://mogar13.github.io/Boardwalk/ and the
-> pipeline is green. No Casino OS yet; that's Phases 1–6. The architecture was written down first, on
-> purpose. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
+> **Status: Phases 0–2 shipped** — live at https://mogar13.github.io/Boardwalk/. There is a scaffold
+> and a green pipeline (0), a theme and a UI kit (1), and a data layer — Firebase Auth, profiles, repo
+> interfaces and tested security rules (2). Still to come: the shell, the economy, multiplayer, and
+> the five games. The architecture was written down first, on purpose. Start at
+> [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
 
 ## What this is
 
@@ -54,15 +56,29 @@ forever. *"we have no `off()`"* rots the day someone adds one.
 
 ```bash
 npm install
+cp .env.example .env.local   # fill from the Firebase console — dev works without it
 npm run dev      # http://localhost:5173/Boardwalk/
-npm test         # the guards, proving they still fire
+npm test         # the guards, proving they still fire (boots the RTDB emulator — needs Java)
 npm run build    # prebuild (lint + file-size ratchet) → tsc -b → vite build
 ```
+
+`npm run dev` works on a fresh clone with no credentials: the page renders a panel naming the missing
+variables rather than a form. `npm run build` does not — a production build with no Firebase config
+**fails**, rather than deploying a site whose only feature is that panel.
 
 Push to `main` deploys to Pages. `npm run build` runs the guards via npm's `prebuild` lifecycle, so
 they gate the deploy rather than merely existing — a linter nobody runs is a convention, not a rule.
 
-Phase 0 shipped Vite 8 + React 19 + TS 6 strict, ESLint 10 flat (type-aware), Prettier, the 800-line
-ratchet, and the Pages deploy. **Next: Phase 1 — theme + kit, where the look gets decided.** Phases
-are one per conversation, each ending green and deployed; see
-[ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).
+### The security rules
+
+`database.rules.json` is the enforcement boundary — not the client, and not any `isDev` flag. It is
+the one file here that no static tool can check: ESLint can't see it, `tsc` can't see it, and a
+mistake in it reports success by doing nothing. So it has a real test.
+
+```bash
+npm run rules:test     # runs the REAL rules file against the RTDB emulator
+npm run rules:deploy   # push them to Firebase. NOTHING IN CI DOES THIS — do it in the same breath.
+```
+
+**Next: Phase 3 — the shell (router, top bar, hub).** Phases are one per conversation, each ending
+green and deployed; see [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).

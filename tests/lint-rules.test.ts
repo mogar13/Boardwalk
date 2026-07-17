@@ -34,7 +34,27 @@ const SRC = join(ROOT, 'src');
  * fixture directory can only ever test one side, and the side it tests is the one
  * that passes.
  */
-const FIXTURE_DIRS = [join(SRC, '__lint_fixtures__'), join(SRC, 'ui', '__lint_fixtures__')];
+const FIXTURE_DIRS = [
+  join(SRC, '__lint_fixtures__'),
+  join(SRC, 'ui', '__lint_fixtures__'),
+  // Phase 2. The Firebase boundary is scoped by path across THREE zones, not two — the
+  // SDK dir, its parent (the composition root), and everywhere else — so proving it needs
+  // a fixture in each. A fixture directory per zone is the only way to test a path-scoped
+  // rule; anything less tests the side that passes.
+  join(SRC, 'system', '__lint_fixtures__'),
+  join(SRC, 'system', 'repo', '__lint_fixtures__'),
+  join(SRC, 'system', 'repo', 'firebase', '__lint_fixtures__'),
+];
+
+/**
+ * Fixture keys that are LITERAL paths under `src/` rather than sugar for
+ * `src/__lint_fixtures__/<key>`.
+ *
+ * The bare keys do not care where they live. These do — they exist precisely to sit on a
+ * particular side of a path-scoped rule, and a fixture that cannot say where it lives
+ * cannot test one.
+ */
+const LITERAL_PREFIXES = ['ui/', 'system/'];
 
 /**
  * Every fixture, written to disk ONCE before any linting happens.
@@ -195,15 +215,69 @@ export function Bad(props: { on: boolean }): null {
   );
   return null;
 }`,
+
+  // ── Phase 2: the Firebase boundary ─────────────────────────────────────────
+  // Two bans, three zones. See eslint-rules/no-firebase-imports.mjs.
+
+  // BAN A — the SDK, outside src/system/repo/firebase/.
+  'fb-sdk-bad.ts': `import { getDatabase } from 'firebase/database';
+export const db = getDatabase;`,
+  // The scoped-package spelling. `@firebase/*` is the same SDK wearing its internal
+  // package names, and a rule that only knows the friendly one has a door open.
+  'fb-sdk-scoped-bad.ts': `import { FirebaseError } from '@firebase/util';
+export const E = FirebaseError;`,
+  // `export ... from` is an import with a re-export stapled to it — and it is the
+  // spelling that would let one file launder the SDK to every other.
+  'fb-sdk-reexport-bad.ts': `export { ref } from 'firebase/database';`,
+  // The one that does not LOOK like an import, which is exactly why it is listed.
+  'fb-sdk-dynamic-bad.ts': `export async function load(): Promise<unknown> {
+  return import('firebase/database');
+}`,
+
+  // BAN B — the IMPLEMENTATION, outside src/system/repo/.
+  // Without this the rule is theatre: a game cannot spell `onValue`, but it can spell
+  // `firebaseProfileRepo` and be welded to Firebase just as hard.
+  'fb-impl-bad.ts': `import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
+export const p = firebaseProfileRepo;`,
+
+  // The sanctioned road: the interface, from the composition root. Must stay silent or
+  // every consumer of the data layer is an error and the rule gets deleted.
+  'fb-interface-ok.ts': `import { repos } from '@/system/repo';
+export const p = repos.profile;`,
+
+  // ZONE: src/system/repo/firebase/ — the ONE place the SDK is allowed. Byte-identical
+  // import to fb-sdk-bad.ts. If this and that do not disagree, the rule is not
+  // path-scoped at all and one of the two tests is a lie.
+  'system/repo/firebase/__lint_fixtures__/sdk-ok.ts': `import { getDatabase } from 'firebase/database';
+export const db = getDatabase;`,
+
+  // ZONE: src/system/repo/ — the composition root. May name a concrete repo (that is its
+  // entire job) but may NOT touch the SDK itself.
+  'system/repo/__lint_fixtures__/impl-ok.ts': `import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
+export const p = firebaseProfileRepo;`,
+  'system/repo/__lint_fixtures__/sdk-bad.ts': `import { getDatabase } from 'firebase/database';
+export const db = getDatabase;`,
+
+  // THE RELATIVE ESCAPE. `src/system/` is one level above the composition root, so this
+  // must fire — and note the specifier contains no 'system/repo/firebase' substring. A
+  // rule that pattern-matched the string would read this as clean, because from where
+  // this file stands it looks it. Only resolving the path catches it. A single `../` is
+  // NOT banned by no-restricted-imports (a sibling is a real relationship), so this is a
+  // door that is genuinely open unless this rule closes it.
+  'system/__lint_fixtures__/relative-escape-bad.ts': `import { firebaseProfileRepo } from '../repo/firebase/profileRepo';
+export const p = firebaseProfileRepo;`,
 };
 
 /**
  * A fixture key is relative to `src/`, EXCEPT that the bare ones are sugar for
- * `__lint_fixtures__/<key>` — most fixtures do not care where they live, and the
- * two that do (the src/ui pair) say so explicitly.
+ * `__lint_fixtures__/<key>` — most fixtures do not care where they live, and the ones
+ * that do (the src/ui pair, and Phase 2's three Firebase zones) say so explicitly by
+ * starting with a LITERAL_PREFIX.
  */
 function fixturePath(rel: string): string {
-  return rel.startsWith('ui/') ? join(SRC, rel) : join(SRC, '__lint_fixtures__', rel);
+  return LITERAL_PREFIXES.some((p) => rel.startsWith(p))
+    ? join(SRC, rel)
+    : join(SRC, '__lint_fixtures__', rel);
 }
 
 beforeAll(() => {
@@ -350,6 +424,58 @@ describe('semantic tokens only — no raw palette anywhere', () => {
 
   it('does NOT fire on tokens, opacity modifiers, transparent, or current', async () => {
     expect(await rulesFiredOn('palette-ok.tsx')).not.toContain(RULE);
+  });
+});
+
+describe('Firebase is unreachable outside src/system/repo/firebase', () => {
+  const RULE = '@boardwalk/no-firebase-imports';
+
+  it.each([
+    ['a bare firebase/* import', 'fb-sdk-bad.ts'],
+    ['the @firebase/* scoped spelling of the same SDK', 'fb-sdk-scoped-bad.ts'],
+    ['export ... from — an import with a re-export stapled on', 'fb-sdk-reexport-bad.ts'],
+    ['a dynamic import() — the one that does not look like an import', 'fb-sdk-dynamic-bad.ts'],
+  ])('fires on %s', async (_label, fixture) => {
+    expect(await rulesFiredOn(fixture)).toContain(RULE);
+  });
+
+  it('does NOT fire inside src/system/repo/firebase — the one place allowed', async () => {
+    // Byte-for-byte the same import as fb-sdk-bad.ts, one directory apart. If this and
+    // that test do not disagree, the rule is not path-scoped and one of them is a lie.
+    expect(await rulesFiredOn('system/repo/firebase/__lint_fixtures__/sdk-ok.ts')).not.toContain(
+      RULE
+    );
+  });
+
+  it('fires on the SDK even in src/system/repo — the composition root is not exempt', async () => {
+    // The asymmetry, asserted rather than trusted: src/system/repo may NAME a concrete
+    // repo (that is its whole job) but may not touch the SDK. If this goes green, the two
+    // bans have collapsed into one and the seam is a directory rather than a boundary.
+    expect(await rulesFiredOn('system/repo/__lint_fixtures__/sdk-bad.ts')).toContain(RULE);
+  });
+
+  it('fires on importing the IMPLEMENTATION from outside src/system/repo', async () => {
+    // Ban A alone is theatre: a game that cannot spell `onValue` can still spell
+    // `firebaseProfileRepo` and be welded to Firebase through a nicer-looking door.
+    expect(await rulesFiredOn('fb-impl-bad.ts')).toContain(RULE);
+  });
+
+  it('does NOT fire on the composition root naming a concrete repo', async () => {
+    expect(await rulesFiredOn('system/repo/__lint_fixtures__/impl-ok.ts')).not.toContain(RULE);
+  });
+
+  it('fires on a single-../ relative escape — which a string match would miss', async () => {
+    // '../repo/firebase/profileRepo' contains no 'system/repo/firebase' substring, and a
+    // single '../' is deliberately allowed by no-restricted-imports (a sibling is a real
+    // relationship). So this door is open unless the rule RESOLVES the path rather than
+    // pattern-matching the specifier.
+    expect(await rulesFiredOn('system/__lint_fixtures__/relative-escape-bad.ts')).toContain(RULE);
+  });
+
+  it('does NOT fire on importing the interface from @/system/repo', async () => {
+    // The sanctioned road, and the load-bearing negative. Every consumer of the data layer
+    // spells this — if it ever goes red, the rule bans the thing it exists to require.
+    expect(await rulesFiredOn('fb-interface-ok.ts')).not.toContain(RULE);
   });
 });
 
