@@ -2,8 +2,8 @@
 
 **Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
-five games) is in progress: **Tic-Tac-Toe** (the SDK's smoke test) and **Blackjack** (the economy
-proof) shipped 2026-07-17; Chess, UNO and Solitaire remain.
+five games) is in progress: **Tic-Tac-Toe** (the SDK's smoke test), **Blackjack** (the economy
+proof) and **Chess** (the hot-seat proof) shipped 2026-07-17; UNO and Solitaire remain.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -354,7 +354,7 @@ keep the coverage or the OS ships untested.
 |---|---|---|
 | **Tic-Tac-Toe** ✅ | 530 | The SDK is cheap. If this isn't ~150 lines, the SDK is wrong. |
 | **Blackjack** ✅ | 966 | Betting, casino economy, `reportResult` payouts, dealer hole card. Shipped room-less — its coverage is the economy, not seats. |
-| **Chess** | 1,339 | Pure unit-tested `logic/`, hot-seat, 2-seat online, zero betting. |
+| **Chess** ✅ | 1,339 | Pure unit-tested `logic/`, hot-seat, 2-seat online, zero betting. |
 | **UNO** | 1,079 | Private hands, seq ordering, AI-as-occupant, 7 seats. *It already solved the hard problems — port the reasoning.* |
 | **Solitaire** | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
 
@@ -1038,3 +1038,84 @@ browser/integration guard Phases 1/3/5/6 all named is still unbuilt, and it is n
 would prove the *economy* keeps working without a person remembering to deal 14 hands. Blackjack adds
 no new node to `database.rules.json` (it writes only the existing profile, through the existing
 `mutateProfile`), so nothing new needs deploying for it.
+
+## Phase 6 — Chess (the hot-seat proof, and the SDK's biggest pure rulebook)
+
+2026-07-17. `src/games/chess` — a manifest, a pure `logic/chess.ts` (a full rulebook: legal-move
+generation, check, pins, castling, en passant, promotion, and the terminal states), a `Board` that
+draws it with Unicode glyphs, and a `ChessGame` that is the same dozen lines Tic-Tac-Toe took — with
+40 logic tests (337 total). Both modes were driven end-to-end in a real browser against the emulator:
+hot-seat played fool's mate from one screen, and two accounts played one side each with the guest's
+board correctly flipped, moves propagating both directions, zero console errors.
+
+### Chess's coverage was the seat ideas Phase 5 built and no game had spent
+
+Tic-Tac-Toe proved the SDK is cheap; Blackjack proved money moves; Chess's assigned job was the rest
+of the seat design — **hot-seat** (two humans, one screen, the first game to need it) and a **2-seat
+online** table — both with **zero betting**. The last is a real coverage point, not an omission: a
+game with no `betting` in its manifest reports `{ outcome }` and `reportResult` moves XP and a stat
+but never the bankroll, so the no-stakes path is exercised for the first time by a full game. There
+is deliberately **no AI**: perfect chess is a whole engine, and the house is Tic-Tac-Toe's coverage,
+so `modes` is `['hotseat', 'online']` and the board never computes a move for anyone.
+
+### The wire shape is a FEN string, because the null-drop bug is a rule now, not a surprise
+
+Tic-Tac-Toe found that RTDB drops null children and paid for it with a crash; Chess treated that as a
+known constraint from the first line. A chess position has empty squares, and a board serialized as an
+array of `Piece | null` would round-trip its empties to `undefined` — the exact bug, one game later.
+So the shared state (`ChessState`, the `TPublic` `useRoom` carries) is a **FEN string** plus a tiny
+envelope: `fen` is a non-empty string, `outcome` a non-empty object, and `lastFrom`/`lastTo` use the
+`-1` sentinel Tic-Tac-Toe's `EMPTY` established rather than `null`. FEN is chess's standard
+serialization and already carries placement, side to move, castling rights, the en-passant target and
+the halfmove clock — so the whole game state is one wire-safe string, and the rich 64-cell `Position`
+the move logic reasons over never touches the wire (`positionOf`/`toFen` are the one seam, the same
+domain/wire split `roomRepo` and `profileRepo` make). The browser pass confirmed it: the board
+rendered 32 pieces and every move round-tripped, where the null shape would have crashed on the first
+render exactly as Tic-Tac-Toe did.
+
+### Hot-seat forced the one seat gap the Tic-Tac-Toe write-up predicted — and it stayed in the OS
+
+Tic-Tac-Toe's notes flagged it precisely: the `SeatList` "Sit" button gates on `mySeatIndex === -1`,
+so one account cannot claim two seats, and "Chess is the design input" for seating a second local
+human. The fix is small and, deliberately, lives in the SDK rather than in the game — a per-game
+work-around would be v1's hot-seat-in-14-games all over again. `useRoom().claim(index, name?)` takes
+an optional display label (the seat's `uid` is still the writer's own, rule-pinned; only the label
+varies); `useSeats()` exposes the collapsed `sharedScreen` boolean; and `SeatList`, at that one call
+site, lifts the one-seat gate on a shared screen and auto-labels each extra local player "Player N".
+The board is untouched by all of it: it reads `localSeatIds`/`isMyTurn` and never learns the mode, so
+"both sides are local" (hot-seat) and "only my side" (online) are the *same* `localSeatIds` read — the
+whole point of Phase 5's collapse, finally exercised by a game. `mySeatIndex` returning the first
+owned seat means a hot-seat account records its White result once per game, the uniform per-seat rule
+with no special case. Teardown also just works: the lone hot-seat client is the host and the last one
+present, so leaving removes the whole room rather than orphaning a seat.
+
+### Chess found a second seat gap the same way — a bot no one drives
+
+The lobby's "Add CPU" offered a bot on any open chair, which is right for Tic-Tac-Toe and wrong for
+Chess: a CPU seat with no driver is an occupant whose turn never comes, and the table stalls at the
+first move that is "the computer's". The fix is the manifest telling the truth — `SeatList` takes an
+`allowAi` prop (`manifest.modes.includes('ai')`), so the CPU control appears only for a game that
+declares an `'ai'` mode and therefore ships a driver. It is the same shape as the lobby already
+filtering `'solo'` out of its mode buttons: the manifest's mode list is the authority on what a lobby
+may offer, and a control with no backing behaviour does not render. The browser pass asserted it —
+zero "Add CPU" buttons on the Chess lobby.
+
+### The house is absent on purpose, and so are the hardest chess corners
+
+`bestMove`/minimax is Tic-Tac-Toe's; Chess ships no engine, because a real one is a project of its own
+and adds no *seat* coverage the hot-seat/online table does not already give. Also not built, and
+noted rather than hidden: **threefold repetition** (it needs move history the wire FEN does not carry;
+the fifty-move rule still terminates a dead game, and a friendly game does without the rest), and a
+move-list/PGN or a clock (neither is coverage — they are a richer chess app, not a test of the SDK).
+Promotion defaults to a queen with a picker for the other three; castling is generated only when fully
+legal (the through-check squares are tested at generation, since the general legal filter only checks
+the landing square) — all of it pinned in `tests/chess.test.ts`.
+
+**The gap Chess leaves.** The same manual-browser-pass gap every game inherits — the CI
+browser/integration guard is still unbuilt, and Chess widened what it would protect (a wire-shape
+regression here is an illegal or unrenderable board, not a cosmetic). Chess adds no new node to
+`database.rules.json`: it lives under the existing `rooms/`/`state/` rules with a monotonic `seq`, so
+nothing new needs deploying for it. The hot-seat seat extensions (`claim` label, `sharedScreen`,
+`allowAi`) are verified by the browser pass and typecheck, not by a unit test — they are UI-level
+seams over the already-tested pure `seats.ts`, so the correctness that *could* be a unit test already
+is one, and what is new is wiring a browser proves.

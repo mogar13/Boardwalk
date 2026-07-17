@@ -4,15 +4,34 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0–5 have shipped. Phase 6 is in progress: Tic-Tac-Toe and Blackjack are live.**
-The registry now carries two real games and a `React.lazy` component loader (`RegisteredGame` =
+**Phases 0–5 have shipped. Phase 6 is in progress: Tic-Tac-Toe, Blackjack and Chess are live.**
+The registry now carries three real games and a `React.lazy` component loader (`RegisteredGame` =
 `{ manifest, Component }`), the play route mounts a game inside `<GameShell>` + `<Suspense>`, the
-`<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe), or a solo game
-renders its board straight into the shell with no room at all (Blackjack). Both games' rules are
+`<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe, Chess), or a solo game
+renders its board straight into the shell with no room at all (Blackjack). Every game's rules are
 pure unit-tested `logic/`. The two Phase-6 lint rules this phase owed —
 `@boardwalk/no-impure-logic` (a game's `logic/` imports nothing impure) and
 `@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live and their guards
-fire in `tests/lint-rules.test.ts`. **Three games remain: Chess, UNO, Solitaire.**
+fire in `tests/lint-rules.test.ts`. **Two games remain: UNO, Solitaire.**
+
+**Chess is the hot-seat proof, and the SDK's biggest pure `logic/` yet.** Its coverage is a full
+rulebook, **hot-seat** (two humans, one screen — the first game to need it), and a 2-seat online
+table with **zero betting** (no `betting` in its manifest → `reportResult` moves XP + stats, never
+the bankroll). No AI: a chess engine is a whole other thing, and the house is Tic-Tac-Toe's
+coverage. `src/games/chess/logic/chess.ts` is a pure, wire-safe rulebook — FEN as the shared state
+(a string round-trips through RTDB where a piece array's empty squares would hit Tic-Tac-Toe's
+null-drop bug), legal-move generation with check/pins, castling (incl. through-check), en passant,
+promotion, and checkmate/stalemate/fifty-move/insufficient-material — all in `tests/chess.test.ts`
+(40). Hot-seat forced the one SDK gap the Tic-Tac-Toe write-up flagged: one account seating **two
+local humans**. The fix is small and stays in the OS — `useRoom().claim(index, name?)` takes a
+display label, `useSeats()` exposes the collapsed `sharedScreen` boolean, and `SeatList` lifts its
+one-seat gate on a shared screen (each extra local player auto-named "Player N"). A game still reads
+only `localSeatIds`/`isMyTurn` and never a mode; hot-seat and online are the *same* board code.
+Chess also closed a second seat gap: the lobby's "Add CPU" now gates on `SeatList`'s `allowAi`
+(`manifest.modes.includes('ai')`), so a game with no AI driver — Chess — cannot seat a bot whose
+turn never comes and stalls the table. Both modes were driven end-to-end in a real browser against
+the emulator (hot-seat played fool's mate from one screen; two accounts played one side each with
+the guest's board flipped), the manual pass the memory recipe calls for at every game.
 
 **Blackjack is the economy proof, and a room-LESS game.** It opts out of multiplayer (its coverage
 is betting/payouts, not seats — those are UNO's and Solitaire's): `modes: ['solo']`, no lobby, no
@@ -40,7 +59,7 @@ There is a live routed app, a green pipeline,
 `@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
 repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
 the emulator and proves it — `src/shell` (router, auth gate, top bar with bankroll + XP, the hub and
-its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe + Blackjack registered, three to go), the **economy**
+its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe + Blackjack + Chess registered, two to go), the **economy**
 (`src/system/economy` — `useBet`, `reportResult`, `GameShell` over pure bet/payout logic —
 `src/system/progress`, `src/system/store`, `src/system/rewards`), and now **multiplayer**:
 `src/system/room` (`useRoom`, `useSeats`, seats as the universal primitive, `localSeatIds`,
@@ -49,11 +68,12 @@ uid-pinned messages), over `RoomRepo`/`ChatRepo` and pure, unit-tested seat/orde
 logic. `database.rules.json` now governs `rooms/`, `hands/` (owner-only hidden information) and
 `chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase/a
 daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
-derived from `xp`, `wins` from `stats`, neither stored. There are now **two games** — Tic-Tac-Toe
+derived from `xp`, `wins` from `stats`, neither stored. There are now **three games** — Tic-Tac-Toe
 (how the SDK first got exercised end-to-end, and where RTDB's drop-null-children bug was found — the
-`-1` sentinel) and Blackjack (the economy proof: betting, the 3:2 natural, `reportResult` payouts,
-a room-less solo game) — each ~1 file of glue plus a pure, unit-tested `logic/`, which is the whole
-claim the SDK exists to make. Start at
+`-1` sentinel), Blackjack (the economy proof: betting, the 3:2 natural, `reportResult` payouts,
+a room-less solo game), and Chess (the hot-seat proof: a full wire-safe rulebook, two humans on one
+screen, a 2-seat online table, zero betting) — each ~1 file of glue plus a pure, unit-tested
+`logic/`, which is the whole claim the SDK exists to make. Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
@@ -328,6 +348,7 @@ builds the thing it guards.
 | No game imports a sibling game's folder | `@boardwalk/no-cross-game-imports` — resolves specifiers (a single-`../` escape fires); the registry is exempt |
 | Tic-Tac-Toe's rules are correct | `tests/ticTacToe.test.ts` (18) — every win line, draw-vs-win, `play` immutability + illegal-move no-op, and the house: takes a win, blocks a loss, opens centre, perfect-vs-perfect draws |
 | Blackjack's rules + casino payout are correct | `tests/blackjack.test.ts` (26) — ace-soft `handValue`, natural-vs-3-card-21, dealer stands-on-all-17s at the boundary, the full settle matrix, the **integer-safe 3:2 payout on an odd wager** (the v1 `parseInt` chip), and the pure reducer (deal/hit-bust/stand/double/no-op) |
+| Chess's rules are correct | `tests/chess.test.ts` (40) — FEN round-trip, 20 opening moves, piece movement + blocking, check/pin/out-of-check, castling (both sides, out-of/through-check, blocked, rights bookkeeping incl. captured-rook), en passant (set/capture/expiry), promotion (four pieces, chosen + default), fool's/scholar's mate + winner seat, stalemate-not-mate, insufficient-material + fifty-move draws, and `playMove` totality (illegal/finished → unchanged) + input immutability |
 | The security rules do what they say | `tests/database-rules.test.ts` (53) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins` allowed but nothing beyond it, and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
@@ -406,6 +427,6 @@ to play a real game against the emulator). The flag is dev-only and points the a
 instead of production.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Phase 6 in progress: Tic-Tac-Toe and Blackjack shipped; three remain — Chess
-(pure `logic/`, hot-seat, 2-seat online, zero betting), UNO (private hands, seq ordering, AI-as-occupant,
-7 seats), and Solitaire (opts out of rooms, like Blackjack did). Independent units, any order.**
+green and deployed. **Phase 6 in progress: Tic-Tac-Toe, Blackjack and Chess shipped; two remain — UNO
+(private hands, seq ordering, AI-as-occupant, 7 seats) and Solitaire (opts out of rooms, like Blackjack
+did). Independent units, any order.**

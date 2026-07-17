@@ -236,7 +236,7 @@ function LobbyRoom({
               </Card>
             ))
           ) : (
-            <SeatList />
+            <SeatList allowAi={manifest.modes.includes('ai')} />
           )}
           {meta !== null && (
             <p className="text-bw-muted text-xs">Hosted by {isHost ? 'you' : 'another player'}.</p>

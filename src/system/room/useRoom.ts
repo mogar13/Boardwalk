@@ -32,7 +32,15 @@ export interface RoomApi<TPublic> {
    */
   readonly patch: (produce: (prev: TPublic | null) => TPublic) => Promise<void>;
   readonly setStatus: (status: RoomMeta['status']) => Promise<void>;
-  readonly claim: (index: number) => Promise<RepoResult<void>>;
+  /**
+   * Take a seat. `name` defaults to this account's display name — the ordinary case, one account one
+   * seat. It is a parameter (not always the profile name) for the ONE case that needs it: a hot-seat
+   * table, where a single account seats several LOCAL humans on one screen and each wants its own
+   * label ("Player 2"). The seat's `uid` is still this account's — the rules pin it — so the SDK's
+   * "a uid you write must be your own" guarantee holds; only the display label varies. Chess is the
+   * first caller, the design input the Tic-Tac-Toe write-up flagged this seam waiting for.
+   */
+  readonly claim: (index: number, name?: string) => Promise<RepoResult<void>>;
   readonly release: (index: number, fallback: 'ai' | 'open') => Promise<void>;
   /** Host action: drop a bot into an open seat (`name`) or clear one back to open (`null`). */
   readonly setAi: (index: number, name: string | null) => Promise<void>;
@@ -55,7 +63,8 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     [gameId, roomId]
   );
   const claim = useCallback(
-    (index: number) => repos.room.claimSeat(gameId, roomId, index, { uid: myUid, name: myName }),
+    (index: number, name?: string) =>
+      repos.room.claimSeat(gameId, roomId, index, { uid: myUid, name: name ?? myName }),
     [gameId, roomId, myUid, myName]
   );
   const release = useCallback(

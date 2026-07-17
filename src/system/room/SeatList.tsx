@@ -12,16 +12,27 @@ import { useSeats } from '@/system/room/useSeats';
 const seatLabel = (kind: 'open' | 'human' | 'ai'): string =>
   kind === 'open' ? 'Open' : kind === 'ai' ? 'CPU' : 'Player';
 
-export function SeatList() {
+/**
+ * `allowAi` — whether this game can be played against the house. A CPU seat is only ever legal for a
+ * game that declares an `'ai'` mode and therefore ships a driver for it; adding a bot to a game with
+ * no driver (Chess) would seat an occupant whose turn never comes and stall the table. So the lobby
+ * gates its "Add CPU" control on the manifest, the same way it filters `'solo'` out of its mode
+ * buttons — the fix Chess surfaced, kept in the OS rather than worked around per game.
+ */
+export interface SeatListProps {
+  readonly allowAi: boolean;
+}
+
+export function SeatList({ allowAi }: SeatListProps) {
   const { seats, claim, release, setAi, isHost, myId, status } = useRoom();
-  const { mySeatIndex } = useSeats();
+  const { mySeatIndex, sharedScreen } = useSeats();
   const toast = useToast();
   const inLobby = status === 'waiting';
 
   // Claiming can lose a race for an open chair; the repo returns `{ ok: false, 'Seat taken.' }`.
   // Without this the click did nothing visible — the whole ClaimResult had no consumer.
-  const sit = (index: number): void => {
-    void claim(index).then((r) => {
+  const sit = (index: number, name?: string): void => {
+    void claim(index, name).then((r) => {
       if (!r.ok) toast.error(r.error);
     });
   };
@@ -49,12 +60,15 @@ export function SeatList() {
             </span>
 
             <span className="flex gap-2">
-              {seat.kind !== 'human' && mySeatIndex === -1 && (
+              {/* Online/vs-AI: one account, one seat (`mySeatIndex === -1`). Hot-seat: one screen
+                  seats several LOCAL humans, so the one-seat gate lifts and each extra local player
+                  gets its own label. `sharedScreen` is the collapsed mode-boolean (see `useSeats`). */}
+              {seat.kind !== 'human' && (sharedScreen || mySeatIndex === -1) && (
                 <Button
                   size="sm"
                   variant="primary"
                   onClick={() => {
-                    sit(i);
+                    sit(i, sharedScreen ? `Player ${String(i + 1)}` : undefined);
                   }}
                 >
                   Sit
@@ -71,7 +85,7 @@ export function SeatList() {
                   Leave
                 </Button>
               )}
-              {isHost && inLobby && seat.kind === 'open' && (
+              {allowAi && isHost && inLobby && seat.kind === 'open' && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -82,7 +96,7 @@ export function SeatList() {
                   Add CPU
                 </Button>
               )}
-              {isHost && inLobby && seat.kind === 'ai' && (
+              {allowAi && isHost && inLobby && seat.kind === 'ai' && (
                 <Button
                   size="sm"
                   variant="quiet"

@@ -25,6 +25,13 @@ export interface SeatsApi {
   readonly mySeatIndex: number;
   /** Given the game's current seat, is it one I control? `localSeatIds.includes(currentSeat)`. */
   readonly isMyTurn: (currentSeat: number) => boolean;
+  /**
+   * Whether one screen drives every human seat (hot-seat). This is the single mode-string collapsed
+   * to a boolean — a GAME never reads it (it reads `localSeatIds`/`isMyTurn`), but the seat list
+   * does, at exactly one place, to decide whether ONE account may fill several local seats. That is
+   * the sanctioned "mode disappears into a boolean at one call site" pattern, not a game branch.
+   */
+  readonly sharedScreen: boolean;
 }
 
 export function useSeats(): SeatsApi {
@@ -38,5 +45,6 @@ export function useSeats(): SeatsApi {
     localSeatIds: local,
     mySeatIndex: mySeatIndex(seats, identity.myUid),
     isMyTurn: (currentSeat: number) => isMyTurnPure(local, currentSeat),
+    sharedScreen,
   };
 }
