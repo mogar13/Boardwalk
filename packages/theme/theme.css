@@ -1,7 +1,7 @@
 /* @boardwalk/theme — Boardwalk at night.
  *
- * THE LOOK, IN ONE LINE: a dark room lit by two signs. Magenta is the one that
- * says ACT. Cyan is the one that says HERE. Gold is money and nothing else. The
+ * THE LOOK, IN ONE LINE: a dark room lit by two signs. Electric blue is the one
+ * that says ACT. Cyan is the one that says HERE. Gold is money and nothing else. The
  * room itself never glows — if everything glows, nothing does, and CLAUDE.md's
  * "neon without a system looks like a ransom note" has already happened.
  *
@@ -60,10 +60,18 @@
   --color-base-content: oklch(93% 0.011 284); /* 16:1 on base-100 */
 
   /* ── The two signs ─────────────────────────────────────────────────────────
-     Exactly two hues glow, and they are 209° apart — near-opposite, so they never
-     compete for the same meaning. Magenta = act. Cyan = here / selected. */
-  --color-primary: oklch(66% 0.245 2); /* hot magenta — ACTION ONLY */
-  --color-primary-content: oklch(17% 0.04 2);
+     Exactly two hues glow: electric blue = act, cyan = here / selected. They are
+     ~53° apart, NOT the near-opposite pair the original hot-magenta made — blue was
+     chosen over magenta deliberately, and the cost of that choice is exactly this:
+     act and here now sit at the same cool end of the wheel, so they are told apart
+     by depth and brightness (blue is deep and saturated at L58, cyan is bright and
+     light at L80), not by hue. That is why the focus ring (cyan) and a primary
+     button (blue) must never be allowed to converge in lightness — see the focus
+     block below, which matters MORE now than it did with magenta.
+     Re-verified when the hue changed: #366df6 is inside sRGB, and its content pair
+     clears 4.5:1 on the fill. */
+  --color-primary: oklch(58% 0.213 264); /* electric blue — ACTION ONLY */
+  --color-primary-content: oklch(13% 0.05 264);
   --color-secondary: oklch(80% 0.13 211); /* cyan — selection, focus, the counterweight */
   --color-secondary-content: oklch(22% 0.04 211);
 
@@ -261,7 +269,7 @@
     color: var(--color-base-content);
     font-family: var(--font-sans);
 
-    /* THE ROOM. Two signs off-screen — magenta above-left, cyan below-right —
+    /* THE ROOM. Two signs off-screen — electric blue above-left, cyan below-right —
        lighting an otherwise flat surface. This is the cheapest thing in the whole
        theme and it does more than any component: without it, base-100 is a dark
        <div>; with it, it is a place, and the kit's glows have something to be
@@ -289,10 +297,12 @@
     background-repeat: repeat, no-repeat, no-repeat;
   }
 
-  /* Focus is CYAN, always, everywhere, and never magenta. Magenta means "this is
-     the action"; cyan means "you are here". Collapsing the two would make the
-     focused button and the primary button the same object, which is precisely the
-     bug keyboard users report as "I can't tell where I am".
+  /* Focus is CYAN, always, everywhere, and never the primary. The primary (blue)
+     means "this is the action"; cyan means "you are here". Collapsing the two would
+     make the focused button and the primary button the same object, which is
+     precisely the bug keyboard users report as "I can't tell where I am" — and with
+     a blue action colour, cyan and blue being the same cool family, this separation
+     is doing more work than it did when the action was magenta.
      `:focus-visible`, not `:focus` — a ring on every mouse click is the noise that
      gets focus styling deleted wholesale. */
   :where(:focus-visible) {

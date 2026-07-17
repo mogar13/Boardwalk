@@ -459,8 +459,12 @@ Three things the build taught us, recorded because they cannot be re-derived fro
 `@boardwalk/no-daisyui-classes` and `@boardwalk/no-raw-palette` — with 26 fixtures asserting each
 fires on the bug and stays quiet on the sanctioned pattern.
 
-**The look: Boardwalk at night.** A dark room lit by two signs. Magenta says act, cyan says here,
-gold is money and nothing else. Dark only — a casino is a dark room, and that is the whole conceit.
+**The look: Boardwalk at night.** A dark room lit by two signs. Blue says act, cyan says here,
+gold is money and nothing else. (The act colour was originally hot magenta; it was changed to
+electric blue by preference. The cost, recorded because it is a real trade: act and here now share
+the cool end of the wheel — ~53° apart, not the near-opposite magenta/cyan pair — so they lean on
+lightness and chroma to stay distinct, which is why the cyan focus ring is guarded harder than
+before.) Dark only — a casino is a dark room, and that is the whole conceit.
 The restraint is the design: status colours are flat, surfaces never glow, and exactly two hues in
 the palette are allowed to. Neon only reads as neon when most of the page is off.
 
@@ -480,7 +484,7 @@ Five things the build taught us, recorded because they cannot be re-derived from
   very dim atmospheric wash. The last one is the one everyone omits and the one doing the work: it
   is the sign lighting the *room* rather than being pasted onto it. Same logic in the page
   background (two off-screen signs) and in the hero, where the letters are `base-content` and every
-  bit of magenta lives in `text-shadow`.
+  bit of the glow colour lives in `text-shadow`.
 
 - **`display: grid` on a `<dialog>` silently defeats the platform.** The UA closes a dialog with
   `dialog:not([open]) { display: none }`; a bare `grid` utility beats it. Every closed modal became

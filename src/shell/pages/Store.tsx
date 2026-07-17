@@ -12,7 +12,7 @@ import { useStore } from '@/system/store/useStore';
  * nothing, a row in the defect table. Card backs and felts land with the game that draws them.
  *
  * Dog food, like every file outside `src/ui`: the kit and semantic tokens only. Gold is the price
- * and nothing else on this page; the Buy button is magenta (the action), Equip is a quiet unlit
+ * and nothing else on this page; the Buy button is the lit primary blue (the action), Equip is a quiet unlit
  * tube until you touch it, and the one you are wearing is cyan (= here).
  */
 

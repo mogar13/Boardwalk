@@ -7,9 +7,9 @@ import { useDailyReward } from '@/system/rewards/useDailyReward';
  *
  * It lives on the hub, not the store, because it is the first thing a returning player should
  * see, and the money it grants is what the store then spends — the reward opens the day, the
- * store closes it. The claim button is `primary` (magenta = act) because on a fresh day it is
+ * store closes it. The claim button is `primary` (blue = act) because on a fresh day it is
  * the one thing to do here; once claimed, the card goes quiet and says come back tomorrow, so
- * the magenta is never competing with a pier for attention.
+ * the lit primary is never competing with a pier for attention.
  */
 export function DailyRewardCard() {
   const { status, claim } = useDailyReward();

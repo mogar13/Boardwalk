@@ -230,8 +230,9 @@ lint rule that matches nothing reports success.
   `#ff2c86`. `packages/theme/theme.css` is the only file in the repo that may name a colour, which is
   what makes the look changeable in one place instead of drifting the way v1's `loadout.color` and
   `profile.chatColor` did. Need a colour the theme lacks? Add a token, don't inline one.
-- **The glow budget is fixed, and it is nearly spent.** Magenta = act, cyan = here, gold = money,
-  and that's the lot. Status colours (info/success/warning/error) are flat on purpose — a neon
+- **The glow budget is fixed, and it is nearly spent.** Blue = act, cyan = here, gold = money,
+  and that's the lot. (Act and here are both cool now — blue sits ~53° from cyan, told apart by
+  depth and brightness, not hue — so keeping the focus ring exclusively cyan matters more, not less.) Status colours (info/success/warning/error) are flat on purpose — a neon
   success toast is a slot machine telling you your form saved. If everything glows, nothing does.
 - **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live, and they now have a
   destination: one `<Modal>` (native `<dialog>`), one `useToast()`, and `useConfirm()` for the

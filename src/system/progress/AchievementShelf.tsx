@@ -7,7 +7,7 @@ import { useProfile } from '@/system/profile/useProfile';
  * ones show in full colour with the date they fired. `big_win` sits here with a real unlock path
  * for the first time in this project's lineage.
  *
- * No glow. An achievement is a moment, not a sign, and the glow budget is magenta/cyan/gold — so
+ * No glow. An achievement is a moment, not a sign, and the glow budget is blue/cyan/gold — so
  * earned-vs-locked is carried by colour-vs-grayscale and a faint border, never by lighting a badge
  * up. The theme keeps the room dark; the furniture does not shine.
  */
