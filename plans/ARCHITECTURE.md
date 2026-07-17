@@ -1,7 +1,8 @@
 # The Boardwalk
 
-**Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell) and 4 (economy +
-progress) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phases 5–6 are design.
+**Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
+and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
+five games) is design.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -338,7 +339,7 @@ One phase per conversation. Each ends green and deployed.
 | 2 | ~~**Data layer**~~ ✅ | One typed Firebase singleton, repo interfaces, the `firebase/*` import lint rule. Auth + profile. Rules ported from v1 — posture unchanged, two departures, and a test that boots the emulator and proves them. |
 | 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
 | 4 | ~~**Economy + progress**~~ ✅ | `useBet`, `reportResult`, stats, achievements, store (avatars), daily rewards, live leaderboard. |
-| 5 | **Multiplayer** | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests. |
+| 5 | ~~**Multiplayer**~~ ✅ | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests, and the `rooms/`/`hands/`/`chat/` rules Phase 2 deferred. |
 | 6 | **The five games** | See below. |
 
 Phases 0→5 are sequential. Phase 6 is five independent units.
@@ -407,6 +408,13 @@ a CNAME, so this was not worth blocking Phase 0 on.
   tokens, with **zero** DaisyUI component classes — no component has yet wanted a DaisyUI base. Still
   not flipped, because Phase 5's lobby list is the first component that plausibly might, and that is
   the evidence worth waiting for rather than deciding without.
+  **Phase 5 is that evidence, and it settles the lean:** the lobby, the seat list and the chat panel —
+  the components singled out above as the ones most likely to want a DaisyUI base — were built from
+  `src/ui` + tokens with **zero** DaisyUI component classes, and none wanted one. Across five phases
+  of real UI, DaisyUI has earned its place on the token system alone and shipped ~100kB of components
+  the ban forbids everywhere. The honest recommendation is now "token system": the one-line
+  `include: <matches-nothing>` cut to 41kB, or the ~25 lines of `@theme` that would replace the
+  dependency entirely. Left for a phase that is about the bundle, not bolted onto multiplayer.
 - **No browser test.** See the `<dialog>` story below. Every guard in the repo is static, and the
   worst bug in Phase 1 was not one a static guard could see. Phase 3 confirmed the shell the same
   way Phase 1 confirmed the kit — a Playwright screenshot of the built page across every route,
@@ -415,6 +423,13 @@ a CNAME, so this was not worth blocking Phase 0 on.
   not a guard that fails the build. The bundle also crossed **500kB** at Phase 3 (react-router +
   firebase in one chunk) — not acted on, because `React.lazy` per game in Phase 6 is the code-split
   that answers it, and splitting before there is a second route worth splitting would be guesswork.
+  **Phase 5 closed the half of this gap it could.** Phase 3 verified a *mocked* session because
+  production refused the sign-up write; Phase 5 built the honest fix it named — `VITE_USE_EMULATOR=1`
+  points the app at the local emulators, and `/_dev/lobby` (dev-only) mounts the lobby against a stub
+  manifest. The whole room flow — real sign-up, create, seat, AI-fill, chat, leave — was driven
+  end-to-end through the emulator with a Playwright pass (zero console errors, `scrollHeight ===
+  clientHeight`), which is strictly more than any prior phase verified. It is still a manual pass, not
+  a build guard, and that remains the open half.
 
 ## Phase 0 — what actually shipped
 
@@ -752,3 +767,83 @@ cannot express; at this scale that is correct, and the honest note is that a lar
 governed by stale production rules is worse than one governed by none. Deploy the rules
 (`npm run rules:deploy`) in the same breath as shipping this, and if that is forgotten once, the
 CI-with-a-service-account step is the fix Phase 2 already argued for.
+
+## Phase 5 — what actually shipped
+
+2026-07-17. Multiplayer: `src/system/room` (`useRoom`, `useSeats`, `<RoomProvider>`, the lobby, and
+the pure `seats`/`ordering`/`lifecycle` logic), `src/system/chat` (`useChat`, `messageKey`), the
+`RoomRepo`/`ChatRepo` interfaces and their Firebase implementations, the `rooms/`/`hands/`/`chat/`
+security rules Phase 2 deferred, an emulator-in-dev flag, and a dev-only lobby harness — with 56 new
+tests (236 total), all of which ran green, plus a real end-to-end browser pass against the emulator.
+
+### The interface-ahead-of-caller tension, resolved the Phase 4 way
+
+Multiplayer is built a phase before any game consumes it, which is exactly the shape this repo keeps
+refusing (`validateAndCommit()`, `RoomRepo`-in-Phase-2). It is allowed here for the same reason Phase
+4's economy was: this is the *assigned* phase, not work pulled early. The mitigation is structural,
+not a promise — **the correctness lives in pure, exhaustively-tested logic** (`claimSeat`,
+`releaseSeat`, `localSeatIds`, `aiSeatsToDrive`, the seq reconcile, `teardownPlan`, `messageKey`),
+the part provably right without a game — and **every repo method has a caller in this same commit**:
+the lobby creates, seats, chats, starts and leaves, so `RoomRepo`/`ChatRepo` were designed by the
+hooks that needed them, the only design input that has ever worked here.
+
+### Five things the build taught us, recorded because they cannot be re-derived from the tree
+
+- **RTDB rule cascade is the trap that shaped the whole node layout.** The first-draft rules put
+  hidden hands under `rooms/.../private/<seat>` with an owner-only `.read`, and a broad `.write` at
+  the room for the host. Both were wrong for the same reason, and the emulator test caught both:
+  **read and write access CASCADE downward and cannot be revoked deeper.** A room is
+  signed-in-readable so participants can see the board — which means a private node *under* it is
+  readable by every signed-in user, owner-only `.read` or not. And a host with a broad room `.write`
+  can write every seat and every presence marker, turning the tight child rules into dead letters. So
+  hidden information moved to a **separate top-level `hands/`** node with no permissive ancestor, and
+  the room-level write became **delete-only** (`!newData.exists()`) — it authorises exactly one thing,
+  the host removing an emptied room, and grants nothing that leaves data behind. Create became a
+  multi-path *leaf* write, each field authorised by its own rule. Two tests went red on the first run
+  ("expected to fail, but it succeeded"), which is the cascade being discovered the only way a static
+  tool here could not have shown it.
+
+- **`seq` had to move atomically with the state it orders, and that decided where it lives.**
+  `patchState` bumps state and seq together, and the only atomic tool is a transaction — but a
+  transaction reads the node it writes, and a client CANNOT read another seat's private data. A
+  transaction over the whole room would read others' hidden state as absent and write it back as
+  deleted. So the transaction is scoped to `state`, and seq lives *inside* that scope (`state = { seq,
+  data }`) rather than in `meta`, so it can move with the data. `readRoom` lifts it back into
+  `meta.seq` so the domain type still reads the way the OS describes it. The rules then validate
+  `state/seq` strictly-increasing, so UNO's clock-skew fix is enforced at the server, not just
+  observed by the client.
+
+- **Defense in depth hid a falsification.** Breaking the chat `uid` `.validate` did not turn the
+  forged-author test red — because the `$msgId` `.write` *also* pins `uid === auth.uid`, so the write
+  is refused before validation runs. That is the right design (two independent gates on the one thing
+  that must not be forgeable), but it means "falsify the guard" needs both broken. The single-gated
+  `seq` monotonic rule was the honest falsification target, and breaking it turned exactly its test
+  red.
+
+- **`useSeats` does not invent `currentSeat`, and that is the interface-ahead-of-caller rule applied
+  to our own SDK.** ARCHITECTURE.md's hook sketch lists `currentSeat`, but whose turn it is is GAME
+  state (`TPublic`) — every game tracks it differently and some have no turn at all. So `useSeats`
+  ships the local-attribution logic (the actual OS value) and exposes `isMyTurn` as a PREDICATE the
+  game calls with its own current seat, rather than baking a turn-cursor convention into room infra
+  before a game needs one. The first game to want a shared cursor is the design input for adding it.
+
+- **The emulator-in-dev flag is the honest fix Phase 3 named, and it verified more than any phase
+  before.** Phase 3 could only screenshot a *mocked* session because production refused the sign-up.
+  `VITE_USE_EMULATOR=1` + `/_dev/lobby` let the whole flow run against a real emulated backend — real
+  auth, real rule-checked create/seat/chat, real presence and teardown — driven with Playwright to
+  zero console errors and no dead-scroll. The lobby also settled the DaisyUI open question: the
+  component most likely to want a DaisyUI base used none.
+
+**Not built, on purpose:** no game (Phase 6), and no generic board-game engine — five games is still
+not enough evidence to know what they share, and here there are zero. No server-arbitrated seats or
+server-authoritative state: money and rooms stay client-authoritative, the claim-then-verify race is
+detected not arbitrated, and BACKEND_PLAN.md's Phase C is where that changes — a rewrite of
+`./firebase/*`, touching no hook. The dev harness's stub manifest is a fixture, not a registry entry:
+the registry stays empty until a real game lands.
+
+**The gap Phase 5 leaves.** The same hand-deploy gap Phases 2–4 named, now with the most riding on it
+yet: `database.rules.json` grew three whole subtrees (`rooms/`, `hands/`, `chat/`), and a room whose
+rules are stale in production is a hidden-information leak, not just a malformed record. Deploy the
+rules (`npm run rules:deploy`) in the same breath as shipping this. And the browser verification,
+though it now runs against a real backend, is still a manual pass a person must remember — a real
+browser/integration guard in CI remains unbuilt.

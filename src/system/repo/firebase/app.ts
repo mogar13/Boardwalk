@@ -1,7 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
-import { getDatabase, type Database } from 'firebase/database';
-import { readFirebaseConfig, missingConfigMessage } from '@/system/repo/firebase/config';
+import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
+import { connectDatabaseEmulator, getDatabase, type Database } from 'firebase/database';
+import {
+  readFirebaseConfig,
+  missingConfigMessage,
+  type FirebaseConfig,
+} from '@/system/repo/firebase/config';
 
 /**
  * The one Firebase app. One `initializeApp`, one `Auth`, one `Database`, for the
@@ -41,6 +45,30 @@ interface Wiring {
 let wiring: Wiring | null = null;
 let failure: string | null = null;
 
+/**
+ * DEV ONLY, and opt-in. When `VITE_USE_EMULATOR=1` in a dev build, the app points at the local
+ * Firebase emulators instead of production — the "wire the app to the emulator behind a dev flag"
+ * step Phase 3's gap named, which is what lets the whole room flow (sign-in, create, claim, chat,
+ * teardown) be driven locally without touching `boardwalk-fca02`. `import.meta.env.DEV` gates it
+ * so it can never be true in a production bundle, no matter what a stray env var says.
+ */
+const useEmulator = import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === '1';
+
+/**
+ * A throwaway config for the emulator path, so the harness runs on a fresh clone with no
+ * `.env.local`. The emulator ignores the API key and the project is `demo-` prefixed (matching the
+ * rules test), so it refuses to touch any real project. When the flag is on this is used
+ * REGARDLESS of any real `.env.local`, so the app and the emulator agree on one project namespace
+ * — pointing a `boardwalk-fca02` app at the `demo-boardwalk` emulator would mismatch.
+ */
+const EMULATOR_CONFIG: FirebaseConfig = {
+  apiKey: 'demo-key',
+  authDomain: 'localhost',
+  databaseURL: 'http://127.0.0.1:9000?ns=demo-boardwalk',
+  projectId: 'demo-boardwalk',
+  appId: 'demo-app',
+};
+
 function connect(): Wiring {
   // `import.meta.env` is Vite's, and it is why config.ts takes `env` as a parameter
   // rather than reaching for this — vite.config.ts calls the same reader from Node,
@@ -52,10 +80,24 @@ function connect(): Wiring {
   // typo'd variable name, which is exactly the bug the declaration exists to catch.
   const result = readFirebaseConfig(import.meta.env);
 
-  if (!result.ok) throw new Error(missingConfigMessage(result.missing));
+  // With the emulator flag on, the demo config is used regardless (app and emulator must share one
+  // project namespace). Otherwise the real config is required — a missing one is still the loud
+  // failure it has always been.
+  const config = useEmulator ? EMULATOR_CONFIG : result.ok ? result.config : null;
+  if (config === null) throw new Error(missingConfigMessage(result.ok ? [] : result.missing));
 
-  const app = initializeApp(result.config);
-  return { auth: getAuth(app), db: getDatabase(app) };
+  const app = initializeApp(config);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+
+  if (useEmulator) {
+    // Ports match firebase.json. `disableWarnings` silences the loud dev banner the auth emulator
+    // prints — expected here, since being on the emulator is the whole point of the flag.
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectDatabaseEmulator(db, '127.0.0.1', 9000);
+  }
+
+  return { auth, db };
 }
 
 /**

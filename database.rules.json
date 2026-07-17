@@ -193,6 +193,148 @@
       "$uid": {
         ".read": "auth != null && auth.uid === $uid"
       }
+    },
+
+    "rooms": {
+      // DEPARTURE #1 FROM PHASE 2, NOW LANDED. Phase 2 deliberately left v1's room/chat rules out
+      // ("a permissive rule for a node nothing writes is an open door with nothing behind it") and
+      // promised they would arrive in Phase 5, WITH rooms and chat, tightened on the way in. This
+      // is that. It is strictly MORE closed than v1, whose room nodes were world-readable AND
+      // world-writable: here a room is readable only by a SIGNED-IN user, and every write is
+      // scoped.
+      //
+      // `rooms/<gameId>/<roomId>` — see src/system/repo/firebase/roomRepo.ts for the wire layout.
+      "$gameId": {
+        "$roomId": {
+          // Readable by any signed-in user — you must be able to read a room to join it. NOT
+          // world-readable (v1 was), so a signed-out stranger cannot enumerate tables. The
+          // per-seat private read below is tighter still.
+          ".read": "auth != null",
+
+          // ROOM-LEVEL WRITE IS DELETE-ONLY, and that restriction is load-bearing. RTDB write
+          // rules CASCADE: a write to any descendant is granted if an ANCESTOR grants it. So a
+          // broad `.write` here would let the host write every seat, every presence marker, and
+          // every private hand, turning the tight child rules below into dead letters. Requiring
+          // `!newData.exists()` means this authorises exactly ONE thing — the host (or an admin)
+          // REMOVING an emptied room — and grants nothing for any write that leaves data behind.
+          // CREATE and every field write are authorised by the child rules, never by this.
+          ".write": "auth != null && !newData.exists() && (data.child('meta').child('host').val() === auth.uid || root.child('admins').child(auth.uid).exists())",
+
+          "meta": {
+            // Create and status changes are authorised HERE (room-level write is delete-only). On
+            // create the writer must name themselves host; thereafter only the host, or an admin.
+            ".write": "auth != null && ((!data.exists() && newData.child('host').val() === auth.uid) || data.child('host').val() === auth.uid || root.child('admins').child(auth.uid).exists())",
+            "host": { ".validate": "newData.isString()" },
+            "status": {
+              ".validate": "newData.isString() && (newData.val() === 'waiting' || newData.val() === 'playing' || newData.val() === 'finished')"
+            },
+            "createdAt": { ".validate": "newData.isNumber()" },
+            // No `seq` here — it lives under `state` so it can move atomically with the state it
+            // orders (see roomRepo's header). A `seq` written into meta is a stray field.
+            "$other": { ".validate": false }
+          },
+
+          "seats": {
+            "$seatIndex": {
+              // Claim-then-verify, plus host AI management. You may write a seat that is NOT
+              // currently a human (claim an open/ai chair), OR one you already own (leave/change
+              // yours), OR any seat if you are the host (fill/clear AI). This is what stops one
+              // player evicting another — a rule v1 lacked, where any client could overwrite any
+              // seat.
+              ".write": "auth != null && (data.child('kind').val() !== 'human' || data.child('uid').val() === auth.uid || root.child('rooms').child($gameId).child($roomId).child('meta').child('host').val() === auth.uid)",
+              ".validate": "newData.hasChildren(['kind'])",
+              "kind": {
+                ".validate": "newData.val() === 'open' || newData.val() === 'human' || newData.val() === 'ai'"
+              },
+              "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+              // A uid, when written, MUST be the writer's own — you cannot seat someone else in a
+              // human chair. AI/open seats carry no uid, so this validator simply does not run for
+              // them.
+              "uid": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+              "$other": { ".validate": false }
+            }
+          },
+
+          "state": {
+            // Any participant may advance the shared state — the economy-style client-authoritative
+            // posture (BACKEND_PLAN.md arbitrates later). The ordering guarantee is not left to the
+            // client, though:
+            ".write": "auth != null",
+            "seq": {
+              // MONOTONIC, ENFORCED AT THE SERVER. A write that does not strictly increase seq is
+              // refused — so UNO's clock-skew bug (a stale write clobbering a newer one) cannot
+              // happen even if a client tries. `!data.exists()` allows the first write.
+              ".validate": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+            }
+            // `data` (the game's TPublic) is intentionally unvalidated — its shape is the game's.
+          },
+
+          // HIDDEN INFORMATION IS NOT HERE — it is the top-level `hands` node below. It CANNOT
+          // live under this room, because `.read: auth != null` above cascades to every descendant
+          // and READ cascade cannot be revoked deeper: a child `.read` can only ADD access, never
+          // remove it. A private node under a signed-in-readable room would be readable by every
+          // signed-in user, which is the exact opposite of its purpose. So it lives in a sibling
+          // subtree with no permissive ancestor, where its owner-only read actually holds.
+
+          "presence": {
+            // Self-only, and always the value `true` — presence is a set membership, not data. The
+            // server clears it via onDisconnect (a delete, which skips this validator).
+            "$uid": {
+              ".write": "auth != null && $uid === auth.uid",
+              ".validate": "newData.isBoolean() && newData.val() === true"
+            }
+          }
+        }
+      }
+    },
+
+    "hands": {
+      // HIDDEN INFORMATION — the half of v1's privacy design v1's rules could not express. v1's UNO
+      // wrote hands to a separate node so a bystander was never SENT opponents' cards; a determined
+      // one could still READ the node (BACKEND_PLAN.md: "the data layout is privacy, not security").
+      // Here the read is a RULE: only the account sitting in the seat may read its hand. It is a
+      // TOP-LEVEL node, deliberately not under `rooms/`, because a room is signed-in-readable and
+      // read access cascades down un-revokably — see the note where `private` used to be.
+      //
+      // `hands/<gameId>/<roomId>/<seatIndex>` — mirrors the room path so a hand maps to its seat.
+      "$gameId": {
+        "$roomId": {
+          "$seatIndex": {
+            // Read ONLY by the account in that seat — resolved against the room's seat array.
+            ".read": "auth != null && root.child('rooms').child($gameId).child($roomId).child('seats').child($seatIndex).child('uid').val() === auth.uid",
+            // Written by the seat's owner OR the host — the dealer deals each player their hand.
+            ".write": "auth != null && (root.child('rooms').child($gameId).child($roomId).child('seats').child($seatIndex).child('uid').val() === auth.uid || root.child('rooms').child($gameId).child($roomId).child('meta').child('host').val() === auth.uid)"
+          }
+        }
+      }
+    },
+
+    "chat": {
+      // The other half of departure #1. v1's `chat`/`global_chat` were `".write": true` — anyone
+      // could write anything, including a forged author. Here a signed-in user reads a room's
+      // chat, and a message's `uid` is PINNED to the sender: the exact fix for v1's bug, where
+      // chat trusted a client-asserted identity (and the dev badge riding alongside it).
+      "$gameId": {
+        "$roomId": {
+          ".read": "auth != null",
+          // Room-level write is the host's: it authorises `clear` (removing the whole node). A
+          // non-host never writes here directly — they write a single message below, whose own
+          // rule grants it.
+          ".write": "auth != null && root.child('rooms').child($gameId).child($roomId).child('meta').child('host').val() === auth.uid",
+          "$msgId": {
+            // An author may write their own message. (Host deletion is covered by the room-level
+            // write above.)
+            ".write": "auth != null && newData.child('uid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['uid', 'name', 'text', 'key'])",
+            // THE PIN. The author cannot be forged.
+            "uid": { ".validate": "newData.val() === auth.uid" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
+            "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+            "key": { ".validate": "newData.isString()" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
     }
   }
 }

@@ -20,6 +20,12 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_PROJECT_ID?: string;
   readonly VITE_FIREBASE_APP_ID?: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
+  /**
+   * DEV-ONLY opt-in: `'1'` points the app at the local Firebase emulators (see
+   * `@/system/repo/firebase/app`). Gated by `import.meta.env.DEV` there, so it is inert in a
+   * production build. This is how the Phase 5 lobby harness drives a real room flow locally.
+   */
+  readonly VITE_USE_EMULATOR?: string;
 }
 
 interface ImportMeta {

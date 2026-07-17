@@ -1,6 +1,8 @@
 import { firebaseAuthRepo } from '@/system/repo/firebase/authRepo';
+import { firebaseChatRepo } from '@/system/repo/firebase/chatRepo';
 import { firebaseLeaderboardRepo } from '@/system/repo/firebase/leaderboardRepo';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
+import { firebaseRoomRepo } from '@/system/repo/firebase/roomRepo';
 import type { Repos } from '@/system/repo/types';
 
 /**
@@ -24,6 +26,8 @@ export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile: firebaseProfileRepo,
   leaderboard: firebaseLeaderboardRepo,
+  room: firebaseRoomRepo,
+  chat: firebaseChatRepo,
 };
 
 /**
@@ -35,13 +39,17 @@ export { firebaseReady } from '@/system/repo/firebase/app';
 
 export type {
   AuthRepo,
+  ChatRepo,
   LeaderboardEntry,
   LeaderboardRepo,
   ProfileRepo,
   RepoResult,
   Repos,
+  RoomRepo,
   SignInInput,
   SignUpInput,
   Unsubscribe,
 } from '@/system/repo/types';
+export type { ChatMessage } from '@/system/chat/types';
 export type { Profile, Session } from '@/system/profile/types';
+export type { RoomMeta, RoomSnapshot, Seat, SeatOccupant } from '@/system/room/types';

@@ -1,5 +1,7 @@
 import type { IdentityMode } from '@/system/auth/credentials';
+import type { ChatMessage } from '@/system/chat/types';
 import type { Profile, Session } from '@/system/profile/types';
+import type { RoomSnapshot, Seat, SeatOccupant } from '@/system/room/types';
 
 /**
  * The seam. Everything above this line talks to these interfaces; exactly one
@@ -13,17 +15,15 @@ import type { Profile, Session } from '@/system/profile/types';
  * rewriting `./firebase/*` and changing which object `./index.ts` exports. Not
  * touching a game. `@boardwalk/no-firebase-imports` is what keeps that sentence true.
  *
- * WHAT IS DELIBERATELY NOT HERE: `RoomRepo` and `ChatRepo`.
- *
- * ARCHITECTURE.md's repo-layout sketch lists all three, and writing the other two now
- * would take ten minutes and be exactly the mistake this codebase was founded to
- * avoid. v1's defect table leads with `validateAndCommit()` — written to end
- * hand-rolled bet math, ZERO adopters, all six betting games still double-clamping by
- * hand — and `SystemProfile`, "the source of truth", called by no game for money. Both
- * are interfaces designed before their callers existed, and both were wrong in ways
- * nobody found until the callers arrived and went around them. Rooms are Phase 5.
- * `RoomRepo` gets designed by `useRoom` needing it, which is the only design input
- * that has ever worked.
+ * PHASE 5 ADDED `RoomRepo` AND `ChatRepo`, and it did so the only way that has ever worked
+ * here: designed by the hooks that needed them. Phase 2 pointedly LEFT them out — "writing the
+ * other two now would take ten minutes and be exactly the mistake this codebase was founded to
+ * avoid" (v1's `validateAndCommit()`: written to end hand-rolled bet math, ZERO adopters). The
+ * difference in Phase 5 is that `useRoom`/`useSeats`/`useChat` and the lobby are being built in
+ * the same phase, so every method below has a caller in this same commit. The shapes are what
+ * those callers asked for — a subscription that hands back its own teardown (so a game cannot
+ * leak a listener), a seq-bumping state write (so no game re-derives UNO's ordering fix), and a
+ * per-seat private channel (so hidden information is a data-layout guarantee, not a UI trick).
  */
 
 /**
@@ -174,6 +174,162 @@ export interface LeaderboardRepo {
 }
 
 /**
+ * The realtime room, behind the seam. This is the interface `useRoom<T>()` is built on, and its
+ * shape is the whole answer to v1's largest duplication: the same 20-line `listenToRoom()` in 27
+ * games, 22 of them leaking the listener (ARCHITECTURE.md). Two properties every method here is
+ * designed to guarantee:
+ *
+ *   • EVERY SUBSCRIBE HANDS BACK ITS OWN TEARDOWN (`Unsubscribe`), so the caller's cleanup is a
+ *     one-liner it cannot forget — the same reason `AuthRepo.onSessionChanged` does.
+ *   • THE OS OWNS ORDERING. `patchState` is a seq-bumping transaction, so a game never re-derives
+ *     UNO's `stateSeq` fix and never orders by wall-clock.
+ *
+ * Generic over `TPublic` — the game's shared state, whose shape is the game's business. The repo
+ * moves it around opaquely; only the game and its `logic/` ever look inside it.
+ */
+export interface RoomRepo {
+  /**
+   * Create a room and return its short join code. The repo mints the code (a room id a human can
+   * read aloud), seats the host, and stamps `createdAt`/`seq`. `RepoResult` because a code
+   * collision — two rooms minted the same instant — is contention the lobby renders ("try
+   * again"), not a crash; a broken database still throws.
+   */
+  create(
+    gameId: string,
+    init: { seatCount: number; host: SeatOccupant }
+  ): Promise<RepoResult<string>>;
+
+  /**
+   * Subscribe to the PUBLIC room — meta, seats, state, presence — firing immediately with the
+   * current value and on every change, `null` once the room is gone. Returns the teardown. This
+   * is the subscription 27 v1 games hand-rolled and the OS now owns exactly once.
+   */
+  subscribe<TPublic>(
+    gameId: string,
+    roomId: string,
+    listener: (snapshot: RoomSnapshot<TPublic> | null) => void
+  ): Unsubscribe;
+
+  /**
+   * Take a seat. Claim-then-verify (ARCHITECTURE.md — "write, re-read, confirm, else SEAT
+   * TAKEN"): the repo writes optimistically then re-reads, and `ok: false` means another client
+   * won the race. No transaction, on purpose — the re-read is cheaper and the seat rules already
+   * refuse an illegal claim.
+   */
+  claimSeat(
+    gameId: string,
+    roomId: string,
+    index: number,
+    who: SeatOccupant
+  ): Promise<RepoResult<void>>;
+
+  /** Leave a seat, turning it into an AI (game in progress) or an open chair (lobby). */
+  releaseSeat(
+    gameId: string,
+    roomId: string,
+    index: number,
+    fallback: 'ai' | 'open'
+  ): Promise<void>;
+
+  /**
+   * Drop a bot into an open seat, or clear one back to open. The lobby's "fill with AI" — an AI is
+   * an occupant KIND, not a mode, so seating one is a seat write like any other, and the host uses
+   * it to complete a table (vs-AI) or leave chairs open (online). `name` is the bot's label.
+   */
+  setAi(gameId: string, roomId: string, index: number, name: string | null): Promise<void>;
+
+  /**
+   * Advance the shared state. `produce` receives the current state (or `null` before start) and
+   * returns the next; the repo applies it inside a transaction that bumps `seq`, so concurrent
+   * patches serialize and the ordering key can never skip or repeat. The producer must be pure —
+   * a transaction can retry it — which is exactly the discipline `logic/` already enforces.
+   */
+  patchState<TPublic>(
+    gameId: string,
+    roomId: string,
+    produce: (prev: TPublic | null) => TPublic
+  ): Promise<void>;
+
+  /** Move the room through its lifecycle. Host-gated by the rules. */
+  setStatus(
+    gameId: string,
+    roomId: string,
+    status: RoomSnapshot<unknown>['meta']['status']
+  ): Promise<void>;
+
+  /**
+   * HIDDEN INFORMATION. Write a seat's private state (`rooms/.../private/<idx>`), and subscribe to
+   * it — but a client only ever subscribes to ITS OWN seat's node, and `database.rules.json`
+   * refuses a read of anyone else's. This is what makes "a bystander never receives opponents'
+   * cards" a data-layout-and-rule guarantee rather than a UI trick (v1's UNO did the layout half;
+   * Phase 5 adds the rule half). Writing another seat's private node is allowed only for the host
+   * — the dealer deals.
+   */
+  writePrivate<TPrivate>(
+    gameId: string,
+    roomId: string,
+    index: number,
+    data: TPrivate
+  ): Promise<void>;
+  subscribePrivate<TPrivate>(
+    gameId: string,
+    roomId: string,
+    index: number,
+    listener: (data: TPrivate | null) => void
+  ): Unsubscribe;
+
+  /**
+   * Mark this uid present and arm `onDisconnect` cleanup, so a closed tab or dropped connection
+   * clears presence server-side without the client having to run any code. Returns the teardown
+   * that clears it on a clean unmount. v1 leaked presence because nothing armed the disconnect
+   * handler; here it is the only way presence is ever written.
+   */
+  trackPresence(gameId: string, roomId: string, uid: string): Unsubscribe;
+
+  /**
+   * Remove the whole room node. Host-only (rule-enforced), and called by the hook only when the
+   * pure planner (`@/system/room/lifecycle`) says the last participant is leaving — a granular
+   * step the hook maps a `{ target: 'room' }` teardown step to, alongside `releaseSeat` for a
+   * seat step and the presence unsubscribe for a presence step. Uses the `remove` → `set(null)`
+   * fallback v1 needed for the case where a plain remove is refused mid-teardown.
+   */
+  remove(gameId: string, roomId: string): Promise<void>;
+}
+
+/**
+ * Room chat, behind the seam. Separate from `RoomRepo` because chat and game state have different
+ * shapes, different lifetimes, and different rules (a message's author is pinned to `auth.uid`;
+ * game state is not), and v1's single god-object conflating them is part of what this project
+ * escapes.
+ */
+export interface ChatRepo {
+  /**
+   * Send a message. The repo stamps the ordering key (`messageKey`) and the author's `uid`, which
+   * the rules pin to `auth.uid` — so a forged author is refused at the server. `RepoResult`
+   * because a rejected send (rate-limited, offline) is something the composer shows, not a throw.
+   */
+  send(
+    gameId: string,
+    roomId: string,
+    message: { uid: string; name: string; text: string }
+  ): Promise<RepoResult<void>>;
+
+  /**
+   * Subscribe to the last `limit` messages, already in send order (the key sorts them), firing on
+   * every new message. Returns the teardown.
+   */
+  subscribe(
+    gameId: string,
+    roomId: string,
+    listener: (messages: readonly ChatMessage[]) => void,
+    limit: number
+  ): Unsubscribe;
+
+  /** Wipe the room's chat. HOST ONLY — the same "only the host clears remote chat" rule as v1. */
+  clear(gameId: string, roomId: string): Promise<void>;
+}
+
+/**
  * The set of repos the app runs on. `@/system/repo` exports one of these and it is the
  * only wiring that names an implementation.
  *
@@ -184,7 +340,9 @@ export interface Repos {
   readonly auth: AuthRepo;
   readonly profile: ProfileRepo;
   readonly leaderboard: LeaderboardRepo;
+  readonly room: RoomRepo;
+  readonly chat: ChatRepo;
 }
 
 /** Re-exported so a consumer never needs a second import to type an error branch. */
-export type { IdentityMode, Profile, Session };
+export type { ChatMessage, IdentityMode, Profile, RoomSnapshot, Seat, SeatOccupant, Session };
