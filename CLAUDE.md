@@ -13,6 +13,18 @@ this phase owed — `@boardwalk/no-impure-logic` (a game's `logic/` imports noth
 `@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live and their guards
 fire in `tests/lint-rules.test.ts`. **Four games remain: Blackjack, Chess, UNO, Solitaire.**
 
+**Blackjack prep shipped: the Audio OS and the shared card art the SDK still owed.** `useAudio()`
+was a promise in the hook table through five phases; it is now real — `src/system/audio`
+(`sounds.ts` a pure role→file registry, `audioStore.ts` a Zustand mute flag persisted + cross-tab
+synced, `engine.ts` the guarded `HTMLAudioElement` cache with browser-unlock-on-first-gesture, and
+`useAudio` the game-facing hook), plus a mute toggle in the top bar. A game names a **role**
+(`play('deal')`), never a filename. Card art is staged under `public/cards/` (a standard 52-deck +
+backs, the UNO set) and chips under `public/chips/`, all **CC0** (`public/audio/CREDITS.md`); the
+curated casino SFX are under `public/audio/`. `src/system/cards/cards.ts` maps a card to its image
+(`cardSrc`), and both registries have a test that resolves every entry to a file **actually on
+disk** — the `loadout.color` guard pointed at assets. Deck/shuffle/scoring logic is NOT here: it
+stays in a game's `logic/` until a second card game repeats it. Blackjack now consumes all this.
+
 There is a live routed app, a green pipeline,
 `@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
 repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
@@ -231,6 +243,30 @@ lint rule that matches nothing reports success.
 - **`<UiRoot />` mounts once at the app root.** Toasts and `confirm()` are dead without it (it says
   so, loudly, rather than hanging the caller on a promise that never settles).
 
+### Audio & assets
+
+- **A game plays a role, never a filename.** ✅ Live — `useAudio().play('deal')`. `sounds.ts` is a
+  pure role→file registry (`'deal'` → a pool of card-slide takes); the engine picks a random take so
+  a fast deal does not machine-gun, and a misspelled role is a compile error, not v1's silent
+  `play('cardz')`. Add a role in the commit that first plays it — a role with no caller is
+  `loadout.color`.
+- **The audio registry resolves to real files, or it is a dead reference.** ✅ Lint-of-assets —
+  `tests/audio.test.ts` checks every file `sounds.ts` names exists in `public/audio/`. A filename is
+  a string and typechecks however wrong it is; only a disk check catches an un-staged sound. Same for
+  card art: `tests/cards.test.ts` resolves all 52 `cardSrc` paths against `public/cards/standard/`.
+- **Mute is the OS's, and it is global.** ✅ Live — `audioStore.ts` (Zustand, persisted to
+  `localStorage`, cross-tab `storage`-synced), a top-bar toggle shown signed-out too. The engine
+  unlocks the browser's autoplay gate on the first gesture (v1's primer). A game never touches an
+  `HTMLAudioElement` or a storage key, the same way it never touches a Firebase listener.
+- **Assets are curated into the repo, not dumped.** ✅ `public/cards/` (standard 52 + backs, UNO
+  set), `public/chips/`, `public/audio/` — the in-use subset of the CC0 Game-Shack trove, not the
+  whole thing. A staged asset with no reader is the asset form of the game checklist; bring next
+  game's art when that game is built. Licence note lives in `public/audio/CREDITS.md` (all CC0).
+- **The card *art* is shared; the card *logic* is not.** ✅ `src/system/cards/cards.ts` owns
+  `cardSrc`/`cardBackSrc` and the `Suit`/`Rank`/`Card` types the mapping needs — nothing more. Deck
+  construction, shuffling and a game's scoring stay in that game's `logic/` and get hoisted only when
+  a second card game repeats them. The art is what repeats now; the rules do not yet.
+
 ### Files
 
 - **800-line ratchet, enforced on `prebuild`.** ✅ Live — `scripts/check-file-size.mjs`. A new file at
@@ -289,6 +325,8 @@ builds the thing it guards.
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
+| Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
+| Every card maps to art that is on disk | `tests/cards.test.ts` (5) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, `cardBackSrc` clamp, `isRed` |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |

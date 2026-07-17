@@ -10,7 +10,12 @@
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    /* `vite/client` alongside `node` because a test may import a browser-side src module that
+       reads `import.meta.env` — `cards.ts` maps a card to a base-path-aware URL, and without this
+       the test project (which does not include src/vite-env.d.ts) sees `import.meta.env` as
+       untyped and reports a phantom error on code the app project checks fine. It types the Vite
+       globals only; vitest supplies their values at runtime (`BASE_URL` is `/` under test). */
+    "types": ["node", "vite/client"],
 
     "noEmit": true,
     "isolatedModules": true,

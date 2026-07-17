@@ -26,7 +26,7 @@ export function Shell() {
       <AuthGate>
         <div className="flex min-h-dvh flex-col">
           <TopBar />
-          <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
+          <main className="mx-auto w-full max-w-[110rem] flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-10">
             <Outlet />
           </main>
         </div>
