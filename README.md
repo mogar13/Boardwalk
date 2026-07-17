@@ -37,13 +37,20 @@ fixes the three things that generated most of its bugs:
 The theme running through all three: **fix it by type, not by convention.** Make the wrong thing
 unspellable rather than documenting "don't."
 
-## Plans
+## Docs
 
 | Doc | What |
 |---|---|
-| [ARCHITECTURE.md](plans/ARCHITECTURE.md) | The design. Stack, SDK, data model, phases. Read this first. |
-| [BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | 🔒 Later. Node + SQLite, server-authoritative economy. Not scheduled. |
+| [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
+| [CLAUDE.md](CLAUDE.md) | The rules, and what enforces each one. Short on purpose — every rule is paid for by a specific v1 bug. |
+| [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | 🔒 Later. Node + SQLite, server-authoritative economy. Not scheduled. |
+
+Two tiers, deliberately: rules live in `CLAUDE.md` in present tense and must have a guard behind them;
+history lives in `ARCHITECTURE.md` in past tense, where it can't rot. *"v1 had no `off()`"* stays true
+forever. *"we have no `off()`"* rots the day someone adds one.
 
 ## Develop
 
-Nothing to run yet. Phase 0 sets up Vite, the theme, and a live empty page.
+Nothing to run yet. Phase 0 sets up Vite + TS strict + ESLint + Prettier + the file-size ratchet +
+Pages deploy, and ships a live empty page. Phases are one per conversation, each ending green and
+deployed.
