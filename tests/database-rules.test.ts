@@ -28,7 +28,7 @@ import {
   type RulesTestContext,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { get, ref, set, update } from 'firebase/database';
+import { get, ref, remove as dbRemove, set, update } from 'firebase/database';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
@@ -161,16 +161,16 @@ describe('the root denies by default', () => {
     await assertFails(set(ref(asUser(ME), 'something_nobody_planned'), { x: 1 }));
   });
 
-  it("refuses v1's world-writable room and chat nodes — they are NOT ported yet", async () => {
-    // DEPARTURE #1 FROM v1, ASSERTED. v1's rules end with a `$room` wildcard matching
-    // /(_rooms|_hands|_hand_incoming)$/ at `".read": true, ".write": true`, plus `chat` and
-    // `global_chat` at `".write": true`. Porting those "unchanged" into Phase 2 would have
-    // shipped three world-writable subtrees guarding nodes this app does not have. They
-    // land in Phase 5, with rooms and chat, and get tightened on the way in. Until then
-    // they are closed, and this is the test that says so rather than the comment.
+  it("refuses v1's FLAT room/chat node names — they have no home in v2", async () => {
+    // The prophecy from Phase 2, half come due. v1's rules end with a `$room` wildcard matching
+    // /(_rooms|_hands|_hand_incoming)$/ at `".read": true, ".write": true`, plus a top-level
+    // `global_chat` at `".write": true`. Phase 5 ports the CONCEPTS (rooms, chat) under NESTED
+    // nodes (`rooms/<gameId>/<roomId>`, `chat/<gameId>/<roomId>`) with tight rules — see the
+    // blocks below — but v1's flat names still match nothing, so the root's deny-by-default keeps
+    // them closed. `chat/room1/messages/m1` is NOT tested here anymore: under the new schema it
+    // resolves to a real chat path and is (correctly) judged by the chat rules — see that block.
     await assertFails(set(ref(asUser(ME), 'blackjack_rooms/room1'), { x: 1 }));
     await assertFails(set(ref(asUser(ME), 'uno_hands/room1'), { x: 1 }));
-    await assertFails(set(ref(asUser(ME), 'chat/room1/messages/m1'), { text: 'hi' }));
     await assertFails(set(ref(asUser(ME), 'global_chat/m1'), { text: 'hi' }));
   });
 });
@@ -473,6 +473,187 @@ describe('admins/ — the actual privilege boundary', () => {
     );
     // ...and a non-admin still cannot, which is what makes the line above mean something.
     await assertFails(get(ref(asUser(STRANGER), `users/${ME}/profile`)));
+  });
+});
+
+// Phase 5's nodes. A game id and a room code the room tests share.
+const GID = 'ttt';
+const RID = 'ROOM';
+const ROOM_PATH = `rooms/${GID}/${RID}`;
+const CHAT_PATH = `chat/${GID}/${RID}`;
+const HANDS_PATH = `hands/${GID}/${RID}`;
+
+/** Seed a room past the rules (host = ME, seat 0 = ME, seat 1 open), overridable. */
+async function seedRoom(over: Record<string, unknown> = {}): Promise<void> {
+  await seed(async (db) => {
+    await set(ref(db, ROOM_PATH), {
+      meta: { host: ME, status: 'waiting', createdAt: 1 },
+      seats: [{ kind: 'human', name: 'Me', uid: ME }, { kind: 'open' }],
+      ...over,
+    });
+  });
+}
+
+describe('rooms/<gameId>/<roomId> — Phase 5, and strictly more closed than v1', () => {
+  it('lets the host create a room naming themselves host', async () => {
+    // Create is a multi-path LEAF update, exactly as roomRepo does it — the room-level `.write` is
+    // delete-only, so a whole-node `set` at the room would be refused; each leaf is authorised by
+    // its own rule (`meta/*` by the meta rule, `seats/i` by the seat rule).
+    await assertSucceeds(
+      update(ref(asUser(ME)), {
+        [`${ROOM_PATH}/meta/host`]: ME,
+        [`${ROOM_PATH}/meta/status`]: 'waiting',
+        [`${ROOM_PATH}/meta/createdAt`]: 1,
+        [`${ROOM_PATH}/seats/0`]: { kind: 'human', name: 'Me', uid: ME },
+        [`${ROOM_PATH}/seats/1`]: { kind: 'open' },
+      })
+    );
+  });
+
+  it('refuses creating a room that names someone else host', async () => {
+    // The meta create branch requires newData.host === auth.uid, so you cannot mint a room owned
+    // by another account.
+    await assertFails(
+      update(ref(asUser(STRANGER)), {
+        [`${ROOM_PATH}/meta/host`]: ME,
+        [`${ROOM_PATH}/meta/status`]: 'waiting',
+        [`${ROOM_PATH}/meta/createdAt`]: 1,
+        [`${ROOM_PATH}/seats/0`]: { kind: 'open' },
+      })
+    );
+  });
+
+  it('is readable by a signed-in stranger but NOT by the signed-out — v1 was world-readable', async () => {
+    await seedRoom();
+    await assertSucceeds(get(ref(asUser(STRANGER), ROOM_PATH)));
+    await assertFails(get(ref(asAnon(), ROOM_PATH)));
+  });
+
+  it('lets a stranger claim an OPEN seat with their own uid', async () => {
+    await seedRoom();
+    await assertSucceeds(
+      set(ref(asUser(STRANGER), `${ROOM_PATH}/seats/1`), {
+        kind: 'human',
+        name: 'S',
+        uid: STRANGER,
+      })
+    );
+  });
+
+  it('refuses evicting a human from their seat', async () => {
+    // The rule v1 lacked: any client could overwrite any seat. Here seat 0 is a human (ME), and a
+    // stranger cannot write it.
+    await seedRoom();
+    await assertFails(
+      set(ref(asUser(STRANGER), `${ROOM_PATH}/seats/0`), {
+        kind: 'human',
+        name: 'S',
+        uid: STRANGER,
+      })
+    );
+  });
+
+  it('refuses seating SOMEONE ELSE in an open chair (uid must be your own)', async () => {
+    await seedRoom();
+    await assertFails(
+      set(ref(asUser(STRANGER), `${ROOM_PATH}/seats/1`), { kind: 'human', name: 'x', uid: ME })
+    );
+  });
+
+  it('lets the host remove the room, and refuses a non-host', async () => {
+    await seedRoom();
+    await assertFails(dbRemove(ref(asUser(STRANGER), ROOM_PATH)));
+    await assertSucceeds(dbRemove(ref(asUser(ME), ROOM_PATH)));
+  });
+
+  it('ENFORCES a monotonic seq — a stale state write is refused at the server', async () => {
+    // UNO's clock-skew bug, made unspellable. Seed a room at seq 5; a write that does not strictly
+    // advance seq is refused, which is what makes ordering the OS's guarantee rather than the
+    // client's discipline.
+    await seedRoom({ state: { seq: 5, data: { turn: 0 } } });
+    await assertSucceeds(set(ref(asUser(ME), `${ROOM_PATH}/state`), { seq: 6, data: { turn: 1 } }));
+    await assertFails(set(ref(asUser(ME), `${ROOM_PATH}/state`), { seq: 5, data: { turn: 9 } }));
+    await assertFails(set(ref(asUser(ME), `${ROOM_PATH}/state`), { seq: 4, data: { turn: 9 } }));
+  });
+
+  it('scopes hidden information: only the seat owner may READ its hand', async () => {
+    // THE PRIVACY GUARANTEE, now a rule and in its own top-level subtree (a private node UNDER the
+    // signed-in-readable room would be readable by everyone — read cascade cannot be revoked). Seat
+    // 0 is ME; hands/…/0 is my hand. I can read it; a stranger cannot — not "is not sent it",
+    // cannot read it.
+    await seedRoom();
+    await seed(async (db) => {
+      await set(ref(db, `${HANDS_PATH}/0`), { hand: ['A', 'K'] });
+    });
+    await assertSucceeds(get(ref(asUser(ME), `${HANDS_PATH}/0`)));
+    await assertFails(get(ref(asUser(STRANGER), `${HANDS_PATH}/0`)));
+  });
+
+  it('lets the host write another seat’s hand (the dealer deals), but not a bystander', async () => {
+    // host = ME, seat 1 = STRANGER. ME (host) may deal into hands/…/1; a third party may not.
+    await seedRoom({
+      seats: [
+        { kind: 'human', name: 'Me', uid: ME },
+        { kind: 'human', name: 'S', uid: STRANGER },
+      ],
+    });
+    await assertSucceeds(set(ref(asUser(ME), `${HANDS_PATH}/1`), { hand: ['Q'] }));
+    await assertFails(set(ref(asAdmin(), `${HANDS_PATH}/1`), { hand: ['Q'] }));
+  });
+
+  it('lets you write only your OWN presence', async () => {
+    await seedRoom();
+    await assertSucceeds(set(ref(asUser(ME), `${ROOM_PATH}/presence/${ME}`), true));
+    await assertFails(set(ref(asUser(ME), `${ROOM_PATH}/presence/${STRANGER}`), true));
+    // Presence is a membership marker — `false` is not a member.
+    await assertFails(set(ref(asUser(ME), `${ROOM_PATH}/presence/${ME}`), false));
+  });
+});
+
+describe('chat/<gameId>/<roomId> — the author cannot be forged', () => {
+  const msg = (over: Record<string, unknown> = {}) => ({
+    uid: ME,
+    name: 'Me',
+    text: 'gg',
+    key: '000000000001000000',
+    ...over,
+  });
+
+  it('lets an author post their own message', async () => {
+    await assertSucceeds(set(ref(asUser(ME), `${CHAT_PATH}/m1`), msg()));
+  });
+
+  it('REFUSES a forged author — the v1 bug this pin exists to stop', async () => {
+    // v1 trusted a client-asserted identity on every message (and a dev badge with it). Here uid
+    // must equal auth.uid, so a message claiming to be from someone else is refused.
+    await assertFails(set(ref(asUser(ME), `${CHAT_PATH}/m1`), msg({ uid: STRANGER })));
+  });
+
+  it('refuses a message missing a required field', async () => {
+    await assertFails(set(ref(asUser(ME), `${CHAT_PATH}/m1`), { uid: ME, text: 'hi' }));
+  });
+
+  it('refuses over-long or empty text, and a stray field', async () => {
+    await assertFails(set(ref(asUser(ME), `${CHAT_PATH}/m1`), msg({ text: 'x'.repeat(501) })));
+    await assertFails(set(ref(asUser(ME), `${CHAT_PATH}/m1`), msg({ text: '' })));
+    await assertFails(set(ref(asUser(ME), `${CHAT_PATH}/m1`), msg({ extra: 'nope' })));
+  });
+
+  it('is readable by a signed-in user, not the signed-out', async () => {
+    await seed(async (db) => {
+      await set(ref(db, `${CHAT_PATH}/m1`), msg());
+    });
+    await assertSucceeds(get(ref(asUser(STRANGER), CHAT_PATH)));
+    await assertFails(get(ref(asAnon(), CHAT_PATH)));
+  });
+
+  it('lets ONLY the host clear the chat', async () => {
+    await seedRoom(); // host = ME
+    await seed(async (db) => {
+      await set(ref(db, `${CHAT_PATH}/m1`), msg());
+    });
+    await assertFails(dbRemove(ref(asUser(STRANGER), CHAT_PATH)));
+    await assertSucceeds(dbRemove(ref(asUser(ME), CHAT_PATH)));
   });
 });
 

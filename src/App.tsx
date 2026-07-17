@@ -6,6 +6,7 @@ import { Leaderboard } from '@/shell/pages/Leaderboard';
 import { Profile } from '@/shell/pages/Profile';
 import { Play } from '@/shell/pages/Play';
 import { NotFound } from '@/shell/pages/NotFound';
+import { LobbyHarness } from '@/shell/pages/LobbyHarness';
 
 /**
  * The router root. Phase 1 and 2 made this file the style guide, with a comment on every
@@ -41,6 +42,10 @@ export default function App() {
           <Route path="store" element={<Store />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="profile" element={<Profile />} />
+          {/* DEV ONLY: the Phase 5 multiplayer verification surface. `import.meta.env.DEV` is
+              statically false in a production build, so Vite tree-shakes this route and the
+              harness page out of the bundle entirely — it cannot be reached in prod. */}
+          {import.meta.env.DEV && <Route path="_dev/lobby" element={<LobbyHarness />} />}
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

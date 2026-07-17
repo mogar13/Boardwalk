@@ -4,17 +4,20 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Read this first
 
-**Phases 0–4 have shipped. Phases 5–6 have not.** There is a live routed app, a green pipeline,
+**Phases 0–5 have shipped. Phase 6 has not.** There is a live routed app, a green pipeline,
 `@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
 repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
 the emulator and proves it — `src/shell` (router, auth gate, top bar with bankroll + XP, the hub and
-its piers), `src/games/registry.ts` (the typed catalogue, empty until Phase 6), and now the
-**economy**: `src/system/economy` (`useBet`, `reportResult`, `GameShell` over pure, unit-tested bet
-and payout logic), `src/system/progress` (per-game stats, achievements, the leaderboard reader),
-`src/system/store` (avatars) and `src/system/rewards` (daily). Money moves ONLY through
-`useBet`/`reportResult`/a store purchase/a daily claim, every one of them via a single internal
-`mutateProfile` writer — there is no bankroll setter anywhere. `level` is derived from `xp` and `wins`
-from `stats`, neither stored. There are still no rooms and no games. Start at
+its piers), `src/games/registry.ts` (the typed catalogue, empty until Phase 6), the **economy**
+(`src/system/economy` — `useBet`, `reportResult`, `GameShell` over pure bet/payout logic —
+`src/system/progress`, `src/system/store`, `src/system/rewards`), and now **multiplayer**:
+`src/system/room` (`useRoom`, `useSeats`, seats as the universal primitive, `localSeatIds`,
+seq-ordered state, the lobby, presence, lifecycle teardown) and `src/system/chat` (`useChat`,
+uid-pinned messages), over `RoomRepo`/`ChatRepo` and pure, unit-tested seat/ordering/lifecycle/key
+logic. `database.rules.json` now governs `rooms/`, `hands/` (owner-only hidden information) and
+`chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase/a
+daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
+derived from `xp`, `wins` from `stats`, neither stored. There are still **no games**. Start at
 [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
@@ -99,13 +102,21 @@ lint rule that matches nothing reports success.
 
 ### Multiplayer
 
-- **`useRoom<TState>()` owns the subscription.** A game never registers a listener, so it can't forget
-  to tear one down. In v1, 22 of 25 games leaked a live Firebase listener per lobby close.
-- **Hot-seat is not a mode.** `localSeatIds: number[]` — AI is `[1]`, online is `[myId]`, hot-seat is
-  every human seat. `isMyTurn = localSeatIds.includes(currentSeat)`. **No game branches on a mode
-  string.**
-- **Never order by wall-clock time.** Clocks aren't comparable across machines; v1 silently dropped
-  opponents' moves until UNO added a `seq`. Ordering is the OS's job now, not each game's.
+- **`useRoom<TState>()` owns the subscription.** ✅ Live — `src/system/room`. A game never registers
+  a listener; `<RoomProvider>` holds the one subscription and runs teardown on unmount and on
+  `pagehide`/`beforeunload`. In v1, 22 of 25 games leaked a live Firebase listener per lobby close.
+- **Hot-seat is not a mode.** ✅ Live — `localSeatIds({seats, myUid, sharedScreen})` in
+  `src/system/room/seats.ts`. Online → `[mySeat]`, hot-seat → every human seat, AI/solo → `[mySeat]`;
+  the mode string collapses to `sharedScreen` at one call site (`useSeats`) and a game reads only
+  `localSeatIds`/`isMyTurn`. AI-driving is `aiSeatsToDrive` (host-only), a separate concern from local
+  attribution. **No game branches on a mode string.** (`useSeats` deliberately does NOT invent a
+  `currentSeat` — turn-tracking is game state; `isMyTurn` is a predicate the game calls.)
+- **Never order by wall-clock time.** ✅ Live — room state carries a monotonic `seq`
+  (`src/system/room/ordering.ts`), enforced **in the rules** (`state/seq` must strictly increase), and
+  chat carries an ASCII-sortable `messageKey`. v1 silently dropped opponents' moves until UNO added a
+  `seq`. Ordering is the OS's job now, not each game's.
+- **AI is an occupant kind, not a mode.** ✅ Live — a leaving human's seat can be handed *back* to an
+  AI (`releaseSeat(…, 'ai')`) so the table stays alive, v1's best drop-in/drop-out idea.
 
 ### Data
 
@@ -155,6 +166,16 @@ lint rule that matches nothing reports success.
   Phase 4 profile fields — `stats`, `achievements`, `inventory`, `daily` — are each pinned by
   `.validate` (with `$other: false` on `stats` and `daily`), and `tests/database-rules.test.ts`
   asserts a stray field in any of them, or a `wins` beyond the leaderboard's pinned set, is refused.
+- **Rooms are signed-in-readable, never world-readable; a chat message's author cannot be forged; a
+  private hand is readable only by its seat's owner.** ✅ Live — Phase 5's `rooms/`, `hands/` and
+  `chat/` nodes, emulator-tested. The room-level write is **delete-only** on purpose: a broad room
+  `.write` would CASCADE (RTDB grants a descendant write if any ancestor does), making every tight
+  child rule a dead letter — so create is a multi-path *leaf* write and each field is authorised by
+  its own rule. For the same cascade reason, hidden information lives in a **separate top-level
+  `hands/`** node, not under the readable room: read access cascades down un-revokably, so a private
+  node under a signed-in-readable room would be readable by everyone. `chat` pins `uid === auth.uid`
+  (v1 trusted a client-asserted author, and the dev badge riding with it); `state/seq` must strictly
+  increase (UNO's clock-skew fix, at the server).
 
 ### UI
 
@@ -225,7 +246,7 @@ builds the thing it guards.
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
 | `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
-| The security rules do what they say | `tests/database-rules.test.ts` (35) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, and `wins` now allowed on the leaderboard but nothing beyond it |
+| The security rules do what they say | `tests/database-rules.test.ts` (52) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins` allowed but nothing beyond it, and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
 | The level curve is exact at every boundary | `tests/xp.test.ts` (13) — every threshold and its neighbours, plus a brute-force oracle |
@@ -233,6 +254,8 @@ builds the thing it guards.
 | Stats count right; achievements fire at the boundary | `tests/progress.test.ts` — `bumpStats` immutability + per-game keys, every achievement predicate at its exact threshold |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (afford/own/buy/equip, unique catalogue ids and emoji) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
+| Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
+| Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (36), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
@@ -240,7 +263,7 @@ builds the thing it guards.
 | `logic/` is pure; no cross-game imports | Phase 6 (needs `src/games`) |
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
-| The kit renders correctly in a real browser | unguarded — **see below** |
+| The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
 
 **The gap Phase 1 leaves, named rather than papered over.** Most guards above are static. The worst
 bug in Phase 1 was not: a bare `grid` on `<dialog>` overrode the UA's `dialog:not([open]){display:none}`,
@@ -289,10 +312,14 @@ Push to `main` deploys via `.github/workflows/deploy.yml` → https://mogar13.gi
 `npm run build` runs the guards through npm's `prebuild` lifecycle, so they gate the deploy rather
 than merely existing. The five `VITE_FIREBASE_*` values are GitHub Actions secrets.
 
-Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile`. The shell
-(`src/shell`) owns the router, the auth gate and the top bar; the game hub reads
-`src/games/registry.ts`, which is empty until Phase 6.
+Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile` · `/_dev/lobby`
+(**DEV only** — the Phase 5 multiplayer harness; tree-shaken from prod). The shell (`src/shell`) owns
+the router, the auth gate and the top bar; the game hub reads `src/games/registry.ts`, which is empty
+until Phase 6.
+
+To drive the room flow locally: `npx firebase emulators:start --only auth,database`, then
+`VITE_USE_EMULATOR=1 npm run dev`, and open `/Boardwalk/_dev/lobby`. The flag is dev-only and points
+the app at the emulators instead of production.
 
 Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
-green and deployed. **Next: Phase 5 (multiplayer — `useRoom`, seats, `localSeatIds`, lobby, chat,
-presence, lifecycle tests).**
+green and deployed. **Next: Phase 6 (the five games — Tic-Tac-Toe first, the SDK's smoke test).**
