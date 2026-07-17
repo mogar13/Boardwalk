@@ -116,6 +116,17 @@ export default tseslint.config(
       // deliberate — see the header of eslint-rules/no-firebase-imports.mjs for why
       // this is a local rule and not four lines of `no-restricted-imports`.
       '@boardwalk/no-firebase-imports': 'error',
+
+      // Phase 6. The games arrive, and with them the two boundaries their independence
+      // rests on. `no-impure-logic`: a game's logic/ imports nothing impure, so it stays
+      // unit-testable and server-portable. `no-cross-game-imports`: no game reaches into
+      // a sibling game, so each stays a unit you can build, test and delete on its own.
+      // Both carry their own path scoping (like no-firebase-imports) rather than a `files:`
+      // override, so there is no config knob to get wrong — the games tree did not exist
+      // until this phase, and a rule aimed at a directory that does not exist matches
+      // nothing and reports success.
+      '@boardwalk/no-impure-logic': 'error',
+      '@boardwalk/no-cross-game-imports': 'error',
     },
   },
 

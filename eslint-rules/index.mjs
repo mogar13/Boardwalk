@@ -12,15 +12,19 @@
  * adding a rule means adding its guard and a test that the guard fires, in the same
  * commit. A rule that matches nothing reports success.
  */
+import noCrossGameImports from './no-cross-game-imports.mjs';
 import noDaisyuiClasses from './no-daisyui-classes.mjs';
 import noFirebaseImports from './no-firebase-imports.mjs';
+import noImpureLogic from './no-impure-logic.mjs';
 import noRawPalette from './no-raw-palette.mjs';
 
 export default {
   meta: { name: '@boardwalk/eslint-rules', version: '1.0.0' },
   rules: {
+    'no-cross-game-imports': noCrossGameImports,
     'no-daisyui-classes': noDaisyuiClasses,
     'no-firebase-imports': noFirebaseImports,
+    'no-impure-logic': noImpureLogic,
     'no-raw-palette': noRawPalette,
   },
 };

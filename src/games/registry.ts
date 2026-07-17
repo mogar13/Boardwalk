@@ -1,3 +1,6 @@
+import { lazy, type ComponentType } from 'react';
+import { ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
+
 /**
  * The registry — what `games.json` was in v1, made typed, and the place `gameId` is
  * defined ONCE so it cannot drift.
@@ -19,13 +22,35 @@
  * both forbid — a rendered list of five promises is a checklist whether it is called one or
  * not. A game appears here in the same commit that builds it, and not before.
  *
- * WHAT IS DELIBERATELY NOT HERE: any component-loading machinery. ARCHITECTURE.md describes
- * `React.lazy` + `<Suspense>` per game, and that is right — but a lazy loader with no
- * component to load is the `validateAndCommit()` mistake in miniature, an abstraction built
- * before its caller. How a manifest attaches to its component gets decided by the first
- * game needing it in Phase 6, which is the only design input that has ever worked here. So
- * the registry is manifests today; the play route reads them and, finding none, says so.
+ * HOW A MANIFEST ATTACHES TO ITS COMPONENT — the question Phases 0–5 deferred to "the first
+ * game needing it", now answered by Tic-Tac-Toe. A `RegisteredGame` is a manifest plus a
+ * `Component`: a `React.lazy` wrapper built ONCE here at module load, so each game's code is a
+ * SEPARATE chunk pulled only when someone opens it. That is the code-split ARCHITECTURE.md's
+ * Phase-3 note wanted (the bundle crossed 500kB with router + firebase in one chunk, and
+ * "React.lazy per game in Phase 6 is the answer") — and it is the smallest thing that works: the
+ * manifest is imported eagerly (it is tiny, and the hub and the play route both need it before any
+ * component loads), the component is imported lazily.
+ *
+ * WHY `lazy(...)` LIVES HERE AND NOT IN THE PLAY ROUTE. `react-hooks/static-components` forbids
+ * calling `lazy` inside a component's render — a lazy wrapper minted per render is a new component
+ * type each time, which remounts and resets state (here: tears down the room subscription on every
+ * tick). Building it once, at module scope, is the fix the rule points at, and the registry is the
+ * one module that already runs exactly once and already names every game.
  */
+
+/**
+ * The one prop a game receives. CLAUDE.md's rule, made a type: "a game receives `{ onExit }` and
+ * nothing else — everything else is a hook." A `system` prop would rebuild the `window.SystemUI`
+ * god-object this project exists to escape, so the surface is deliberately this small: a game
+ * learns how to LEAVE and nothing about how it was reached. Its manifest comes from `useGame()`,
+ * its room from `useRoom()`, its bankroll from `useBankroll()` — each imported exactly where used.
+ */
+export interface GameProps {
+  readonly onExit: () => void;
+}
+
+/** A game's mountable component — the default export of its `*Game.tsx`, taking only `GameProps`. */
+export type GameComponent = ComponentType<GameProps>;
 
 /**
  * A pier is an area of the boardwalk — the hub's information architecture, decided by
@@ -125,17 +150,29 @@ export interface GameManifest {
 }
 
 /**
- * A registered game: its manifest, and (from Phase 6) whatever the shell needs to mount it.
- * Today that is just the manifest — see the header on why the component loader is not here
- * yet. Kept as a named alias so Phase 6 widens it in one place.
+ * A registered game: its manifest, and the lazy component that mounts it. `Component` is a
+ * `React.lazy` wrapper around a dynamic `import()` of the game's `*Game.tsx`, so a game's code
+ * lives in its own chunk, fetched only when the play route renders it. The manifest, by contrast,
+ * is a static import (see `registry` below): the hub needs every game's name and pier to draw the
+ * cards before any component is fetched.
  */
-export type RegisteredGame = GameManifest;
+export interface RegisteredGame {
+  readonly manifest: GameManifest;
+  readonly Component: GameComponent;
+}
 
 /**
- * The catalogue. Empty until Phase 6 — see the header. When a game is built, its manifest
- * is added here in the same commit, and `as const` on each manifest keeps `id` a literal.
+ * The catalogue. A game is added here in the same commit that builds it — Tic-Tac-Toe is the
+ * first, the SDK's smoke test. `as const satisfies GameManifest` on each manifest keeps `id` a
+ * literal, so `registry`, the stats key, the room path and the `/play/:gameId` route are the same
+ * string by construction — there is nowhere for a second spelling to live.
  */
-export const registry: readonly RegisteredGame[] = [];
+export const registry: readonly RegisteredGame[] = [
+  {
+    manifest: ticTacToeManifest,
+    Component: lazy(() => import('@/games/tic-tac-toe/TicTacToeGame')),
+  },
+];
 
 /**
  * Resolve a `/play/:gameId` param to a game, or `undefined` if no such id is registered.
@@ -144,10 +181,10 @@ export const registry: readonly RegisteredGame[] = [];
  */
 export function findGame(id: string | undefined): RegisteredGame | undefined {
   if (id === undefined) return undefined;
-  return registry.find((game) => game.id === id);
+  return registry.find((game) => game.manifest.id === id);
 }
 
 /** The games standing on a given pier, in registry order. Empty piers render an empty state. */
 export function gamesOnPier(pier: Pier): readonly RegisteredGame[] {
-  return registry.filter((game) => game.pier === pier);
+  return registry.filter((game) => game.manifest.pier === pier);
 }
