@@ -7,6 +7,7 @@ import { firebaseLeaderboardRepo } from '@/system/repo/firebase/leaderboardRepo'
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
 import { firebaseRoomRepo } from '@/system/repo/firebase/roomRepo';
 import { localBlackjackRepo } from '@/system/repo/local/blackjackRepo';
+import { localTicketRepo } from '@/system/repo/api/ticketRepo';
 import { shadowProfileRepo } from '@/system/repo/shadow/profileRepo';
 import type { EconomyRepo, ProfileRepo, Repos } from '@/system/repo/types';
 
@@ -138,11 +139,21 @@ const wsRooms =
     ? apiRoomChat({ baseUrl: apiBaseUrl, getToken })
     : null;
 
+/**
+ * OFFLINE HARDENING. Tickets follow the ECONOMY's flag, for the same reason blackjack does: they
+ * are only meaningful against the referee that verifies them. On the Firebase path there is no
+ * server to sign a nonce and no bound to enforce — the economy is the client-authoritative one it
+ * was through Phase 6 — so `localTicketRepo` answers `enabled: false` and the client keeps minting
+ * its own nonces, which is not a degraded mode there but the correct one.
+ */
+const tickets = apiEconomyOn ? api.tickets : localTicketRepo;
+
 export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile,
   economy,
   blackjack,
+  tickets,
   leaderboard,
   room: wsRooms ? wsRooms.room : firebaseRoomRepo,
   chat: wsRooms ? wsRooms.chat : firebaseChatRepo,
@@ -175,6 +186,8 @@ export type {
   Repos,
   RoomRepo,
   SignInInput,
+  TicketBatch,
+  TicketRepo,
   SignUpInput,
   Unsubscribe,
 } from '@/system/repo/types';

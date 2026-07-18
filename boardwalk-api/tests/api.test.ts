@@ -34,6 +34,10 @@ const cfg: ApiConfig = {
   allowedOrigin: '*',
   authMode: 'firebase',
   allowInsecure: false,
+  // Offline hardening: no ticket secret, so `/settle` keeps accepting client-minted nonces —
+  // these suites predate tickets and must stay unaffected by them, which is the fallback's whole job.
+  ticketSecret: '',
+  ticketSecretPrevious: '',
 };
 
 // A fake verifier: the token IS the uid, so tests name a caller by sending `Bearer <uid>`.
@@ -60,7 +64,7 @@ const profile: Profile = {
 
 describe('auth', () => {
   it('health needs no token', async () => {
-    await request(app()).get('/health').expect(200, { ok: true, db: 'up' });
+    await request(app()).get('/health').expect(200, { ok: true, db: 'up', tickets: 'off' });
   });
 
   it('401 without a bearer token', async () => {

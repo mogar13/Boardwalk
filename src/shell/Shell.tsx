@@ -3,6 +3,7 @@ import { UiRoot } from '@/ui';
 import { useAuthBootstrap } from '@/system/auth/useAuth';
 import { AuthGate } from '@/shell/AuthGate';
 import { TopBar } from '@/shell/TopBar';
+import { useOfflineSync } from '@/system/offline/useOfflineSync';
 
 /**
  * The app frame. Mounted once by the router as the layout element wrapping every route, so
@@ -13,6 +14,10 @@ import { TopBar } from '@/shell/TopBar';
  *     move into the shell in Phase 3. This is that move.
  *   • `<UiRoot />` — the single host for toasts and `confirm()`. Outside the gate, so a
  *     toast can fire on the sign-in screen too, not only once you are inside.
+ *   • `useOfflineSync()` — the ONE ticket top-up and outbox drain, on an `online` listener and a
+ *     slow poller. Here rather than in a game, for the same reason the session subscription is:
+ *     a per-game loop would be 5 loops racing one queue, and would stop draining the moment you
+ *     left the table where the results were banked.
  *
  * `<AuthGate>` renders the top bar and the routed page only when a player is signed in;
  * before that it is the doorway (or the not-configured panel). The `<Outlet />` is where
@@ -20,6 +25,7 @@ import { TopBar } from '@/shell/TopBar';
  */
 export function Shell() {
   useAuthBootstrap();
+  useOfflineSync();
 
   return (
     <>

@@ -18,7 +18,7 @@ Ordered by **what goes wrong if you never do it**, not by effort:
 
 | # | Item | If never done |
 |---|---|---|
-| 1 | Offline replay-hardening | A reconnect can pay a win twice. **Money.** |
+| 1 | ~~Offline replay-hardening~~ — **BUILT, not yet deployed** | ~~A reconnect can pay a win twice.~~ See [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md). What is left is a hand deploy to the Pi. |
 | 2 | Crash-recovery for rooms | A crashed host strands a table permanently. **Data.** |
 | 3 | Close Phase C (delete RTDB rooms) | Nothing breaks. Two systems stay alive instead of one. |
 | 4 | A sixth game | Nothing. This is the point. |
@@ -28,7 +28,27 @@ Two smaller items ride along with whatever you touch next; they are at the botto
 
 ---
 
-## 1. Offline replay-hardening — the only open item that can move money
+## 1. Offline replay-hardening — BUILT; only the deploy is outstanding
+
+> **Closed 2026-07-18** by [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md), which is the design, the
+> answers to the five questions, and the evidence. Read that instead of what follows; the rest of
+> this section is kept because its framing of the problem is still the right one, with **one
+> correction found on contact with the code**, below.
+>
+> **The correction:** this section says "a result banked offline and re-sent on reconnect is, from
+> the server's side, indistinguishable from the same result sent twice." True in principle, and it
+> described a hole that did not exist yet — **there was no offline queue at all.** A failed settle
+> reverted its optimistic profile, toasted, and dropped the intent. So the work was not hardening a
+> live hole; it was building the banking mechanism the locked decision promised, with its bound in
+> the same commit. That is a strictly better position than the one this section assumed.
+>
+> **The scope call the last paragraph invites — "decide how much offline play is worth supporting"
+> — was answered FULL** (server-signed nonces, unbounded offline duration) by the owner. The design
+> reconciles that with the batch it necessarily implies: **duration unbounded, volume bounded at 64.**
+>
+> Still owed: the Pi deploy, by hand, first.
+
+### The original framing, kept
 
 **Status:** owed since Phase B, never built. Named in
 [BACKEND_PLAN.md](done/BACKEND_PLAN.md) as a locked decision with no implementation.

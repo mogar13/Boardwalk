@@ -14,6 +14,7 @@ import {
   type Outcome,
   type PackPull,
 } from './economy';
+import { deviceOfTicket } from './tickets';
 import type { Profile } from './types';
 
 /**
@@ -89,7 +90,28 @@ export function claimNonce(db: Db, uid: string, nonce: string, kind: string, now
       'INSERT OR IGNORE INTO mutations (uid, nonce, kind, created_at) VALUES (?, ?, ?, ?)'
     )
     .run(uid, nonce, kind, now);
-  return info.changes > 0;
+  if (info.changes === 0) return false;
+
+  // OFFLINE HARDENING. If the nonce is a ticket, record the spend against its device, inside this
+  // same transaction — so the outstanding count (`issued_seq - spent_count`) can never drift from
+  // what was actually claimed, and a crash between the two is not a state that exists.
+  //
+  // It lives HERE, in the one function every mutation already funnels through, rather than being
+  // threaded as a parameter through six `apply*` signatures. That keeps the change to the money
+  // paths at zero: `applyBet`, `applySettle`, `applyPurchase`, `applyDaily`, `applyPack` and both
+  // blackjack routes are untouched by this feature.
+  //
+  // No signature is checked here and none is needed: the gate verified it before the transaction
+  // opened. And when enforcement is OFF, a client-minted nonce that happens to be dot-shaped
+  // updates a `ticket_devices` row that does not exist — zero rows changed, no effect. Parsing a
+  // shape is not trusting it.
+  const deviceId = deviceOfTicket(nonce);
+  if (deviceId !== null) {
+    db.prepare(
+      'UPDATE ticket_devices SET spent_count = spent_count + 1, last_seen_at = ? WHERE uid = ? AND device_id = ?'
+    ).run(now, uid, deviceId);
+  }
+  return true;
 }
 
 /** The player's XP as this transaction has just left it — the `AchievementView`'s `xp`. */

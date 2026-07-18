@@ -10,6 +10,8 @@ import { economyRouter } from './routes/economy';
 import { healthRouter } from './routes/health';
 import { leaderboardRouter } from './routes/leaderboard';
 import { profileRouter } from './routes/profile';
+import { ticketGate, ticketsEnabled, ticketsRouter } from './routes/tickets';
+import { ticketKeys } from './domain/tickets';
 
 export interface AppDeps {
   readonly cfg: ApiConfig;
@@ -50,7 +52,8 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
     res.json({ name: 'boardwalk-api', status: 'ok', health: '/health' });
   });
 
-  app.use(healthRouter(db));
+  const keys = ticketKeys(cfg.ticketSecret, cfg.ticketSecretPrevious);
+  app.use(healthRouter(db, ticketsEnabled(keys)));
 
   const tokenVerifier =
     verifier ??
@@ -58,6 +61,12 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   app.use(authMiddleware(cfg, tokenVerifier));
 
   app.use(profileRouter(db));
+  app.use(ticketsRouter(db, keys));
+  // The gate sits on /settle ALONE — see `ticketGate` for why spending a ticket on an online
+  // purchase would starve the offline budget it exists to bound. Mounted before the economy router
+  // so a refusal happens before the mutation's transaction opens, which is what leaves a refused
+  // ticket provably unspent.
+  app.post('/settle', ticketGate(db, keys));
   app.use(economyRouter(db));
   app.use(blackjackRouter(db));
   app.use(leaderboardRouter(db));
