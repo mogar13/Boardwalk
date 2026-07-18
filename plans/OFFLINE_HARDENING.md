@@ -382,20 +382,52 @@ re-trigger a flush and confirm the ledger did not move twice.
 
 ---
 
-## Deploy order
+## Deploy order — THREE phases, and the secret goes LAST
 
-The Pi goes first, by hand, as always — and this time the ordering has an extra reason. If the client
-ships first it spends tickets a server that does not know about them will reject, and every offline
-result is lost. If the server ships first it accepts both tickets and plain nonces (a ticket is only
-required when `TICKET_SECRET` is set), so an old client keeps working unchanged.
+**This section was wrong on first writing, and the error was live in production for about two
+minutes. Read the correction before deploying anything.**
+
+The original said "the Pi goes first" and then listed *set `TICKET_SECRET`* as step 3 and *merge the
+frontend* as step 5. Both halves of that are individually true and the combination is broken:
+
+> **Setting the secret IS the cutover, not part of the server deploy.** The moment it is set, the
+> gate refuses any nonce that is not a ticket — and the deployed frontend is still minting its own.
+> Every chess/UNO/solitaire settle on the live site 409s until the new client ships.
+
+"Server first is safe" is only true **while the secret is absent**. So the deploy is three phases,
+and the secret belongs to the third:
+
+### Phase 1 — server code, enforcement OFF
 
 1. rsync `packages/game-logic` as a sibling of `~/boardwalk-api`, then `boardwalk-api`.
-2. `npm install && npm run build && npm test` **on the device**.
-3. Set `TICKET_SECRET` in the systemd environment. Restart.
-4. **Verify from the artifact, not the exit code**: `/health` reports `tickets: 'on'`, and
-   `PRAGMA table_info(ticket_devices)` lists the columns. Check the ledger is byte-identical either
-   side of the restart.
-5. Only then merge the frontend.
+2. `npm install && npm run build && npm test` **on the device**. (Never `--omit=optional` — it
+   builds and runs but breaks `npm test`.)
+3. Restart. **Do NOT set `TICKET_SECRET` yet.**
+4. Verify from the artifact: `/health` reports `tickets: "off"`, the boot log carries the
+   `TICKET_SECRET is not set` warning, `PRAGMA table_info(ticket_devices)` lists the six columns
+   (the table is created at open even with enforcement off), and the ledger is byte-identical.
+
+At this point production is **exactly as it was** — old clients keep working, the new table exists,
+and nothing is enforced.
+
+### Phase 2 — the client
+
+5. Merge to `main` and let Pages deploy. The new client asks `POST /tickets`, is told
+   `enabled: false`, and mints its own nonces — the same behaviour as before, with no error path.
+   That is what `enabled` being a *third state* buys: the client works correctly on both sides of
+   the cutover, so there is no window where either half is broken.
+
+### Phase 3 — the cutover
+
+6. Set `TICKET_SECRET` in `~/boardwalk-secrets/boardwalk-api.env` (generate it **on the Pi** —
+   `openssl rand -base64 32` — so it never crosses the wire), restart, and verify `/health` reports
+   `tickets: "on"`.
+7. Confirm a real settle still lands, and that a forged nonce is refused 409.
+
+**Rollback is one line and does not need a redeploy**: rename the key (e.g. to
+`TICKET_SECRET_PENDING`) and restart. `/health` goes back to `"off"` and every client works again.
+That property is worth more than it looks — it is the difference between a cutover you can undo in
+fifteen seconds and one that needs a rebuild.
 
 No rules deploy. No new profile field, by design (Q4).
 
