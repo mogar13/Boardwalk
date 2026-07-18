@@ -10,11 +10,15 @@ The registry carries five real games and a `React.lazy` component loader (`Regis
 `{ manifest, Component }`), the play route mounts a game inside `<GameShell>` + `<Suspense>`, the
 `<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe, Chess, UNO), or a solo
 game renders its board straight into the shell with no room at all (Blackjack, Solitaire). Every
-game's rules are pure unit-tested `logic/`. The two Phase-6 lint rules this phase owed —
-`@boardwalk/no-impure-logic` (a game's `logic/` imports nothing impure) and
-`@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live and their guards
-fire in `tests/lint-rules.test.ts`. **Phase 6 is complete — the launch set is done, and there is no
-game checklist beyond it (see Scope discipline).**
+game's rules are pure unit-tested `logic/` — and since Phase D that `logic/` lives in
+**`packages/game-logic`**, a real npm workspace package, not under `src/games/`. A game's folder is
+now glue and pixels; its rulebook is `@boardwalk/game-logic/games/<game>`, imported by the browser
+*and* by `boardwalk-api`, because a rule the referee enforces and a rule the client plays must be
+the same lines of code or they will drift (they did — see the Money section). The two Phase-6 lint
+rules this phase owed — `@boardwalk/no-impure-logic` (a game's `logic/` imports nothing impure) and
+`@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live, govern **both**
+games trees, and their guards fire in `tests/lint-rules.test.ts`. **Phase 6 is complete — the launch
+set is done, and there is no game checklist beyond it (see Scope discipline).**
 
 **UNO is the hidden-hands proof, and the first (and only) consumer of the private `hands/` channel.**
 Its coverage is the multiplayer-hard half: **private hands** (each player sees only their own cards —
@@ -23,7 +27,7 @@ re-derives v1's clock-skew fix), **AI-as-occupant** (a leaving player's hand is 
 so the table never stalls), and a table that seats up to **seven**. The model is **host-as-dealer**:
 because the rules refuse a read of anyone else's `hands/` node (even the host's), no client can hold the
 whole game the way Chess's every client holds the board — so the host alone holds the complete
-`UnoGame` (every hand + the draw pile) in memory, runs the pure `src/games/uno/logic/uno.ts` reducer,
+`UnoGame` (every hand + the draw pile) in memory, runs the pure `@boardwalk/game-logic/games/uno` reducer,
 and each transition **projects** a public view (`toPublic` → top card, counts, whose turn — never a
 hidden card) to `state/data` and **deals** each changed hand to its owner's private node. The deck
 therefore never touches the wire at all — strictly more private than v1, whose deck was public. Non-hosts
@@ -47,7 +51,7 @@ touches neither a seat nor the bankroll.** Blackjack was the first caller of the
 same seam carries a game with no economy either, so it reports only `{ outcome: 'win' }` — XP + the
 win stat, no payout — the same report shape Chess uses, and it has **no `betting`** in its manifest
 (absence is the signal, not a `betting: false`). The rules are a pure, unit-tested Klondike engine
-(`src/games/solitaire/logic/solitaire.ts`): the deal (seven columns, only the top of each face up),
+(`@boardwalk/game-logic/games/solitaire`): the deal (seven columns, only the top of each face up),
 the tableau build (down in rank, alternating colour; only a King opens an empty column), the
 foundation build (up by suit, Ace→King), the stock draw-and-**recycle** (draw 1 or 3; an empty stock
 flips the waste back face-down so the draw order repeats), multi-card run lifts (`isValidRun`),
@@ -66,7 +70,7 @@ board runs past the fold is the visible tableau, and it collapses to zero when n
 rulebook, **hot-seat** (two humans, one screen — the first game to need it), and a 2-seat online
 table with **zero betting** (no `betting` in its manifest → `reportResult` moves XP + stats, never
 the bankroll). No AI: a chess engine is a whole other thing, and the house is Tic-Tac-Toe's
-coverage. `src/games/chess/logic/chess.ts` is a pure, wire-safe rulebook — FEN as the shared state
+coverage. `@boardwalk/game-logic/games/chess` is a pure, wire-safe rulebook — FEN as the shared state
 (a string round-trips through RTDB where a piece array's empty squares would hit Tic-Tac-Toe's
 null-drop bug), legal-move generation with check/pins, castling (incl. through-check), en passant,
 promotion, and checkmate/stalemate/fifty-move/insufficient-material — all in `tests/chess.test.ts`
@@ -133,7 +137,17 @@ one screen, a 2-seat online table, zero betting), UNO (the hidden-hands proof: h
 private per-seat hands, AI-as-occupant, a 7-seat table, zero betting), and Solitaire (the room-less
 proof: a full Klondike engine, no seats, no bankroll, `reportResult({ outcome: 'win' })` only) —
 each ~1 file of glue plus a pure, unit-tested `logic/`, which is the whole claim the SDK exists to
-make. **The launch set of five is complete — see Scope discipline for why there is no sixth by
+make. Those five rulebooks now sit in **`packages/game-logic`** alongside the economy, achievements,
+stats, XP, the money formatters, the store catalogue, the daily ladder and the profile's data
+shapes — everything both the browser and the referee have to agree about. The build seam is
+deliberately asymmetric: the frontend reads the package's **TypeScript source** (a `paths` entry in
+`tsconfig.app.json`/`tsconfig.test.json` and a matching `resolve.alias` in `vite.config.ts` — the
+same mechanism as `@/`, so there is no build step between editing a rule and seeing it in the
+browser), while `boardwalk-api` reads the package's **built CommonJS** through an ordinary
+`file:../packages/game-logic` dependency. That asymmetry is the point: it leaves the API's
+`rootDir: src`, `outDir: dist` and `main: dist/server.js` untouched, so the Pi's systemd `ExecStart`
+does not move. `Session` stayed behind in `src/system/auth/session.ts` — it is an auth fact, not a
+rule the referee runs. **The launch set of five is complete — see Scope discipline for why there is no sixth by
 default.** Start at
 [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
@@ -213,13 +227,21 @@ lint rule that matches nothing reports success.
   or an offline result re-sent on reconnect all collapse to one effect and replay the first answer.
   A browser retries; an economy that is not replay-safe is one flaky connection from a duplicate
   payout.
-- **The server's copy of the money rules is guarded, not trusted.** ✅ `tests/economy-parity.test.ts`
-  imports both `boardwalk-api/src/domain/economy.ts` and the frontend's pure modules and asserts
-  every price, every rung of the daily ladder, the XP table and the opening stake agree. The copy
-  exists because sharing the modules is Phase D's `packages/game-logic` move (the API is CommonJS
-  with `rootDir: src` and outside the npm workspace, so a shared package changes the Pi's
-  entrypoint). **Do not add a rule to one side without the other** — this test caught a real drift
-  the first time it ran.
+- **There is no server copy of the money rules — both sides import the same module.** ✅ Live
+  (Phase D). Prices, the daily ladder, the XP table, the opening stake, `validateBet` and the
+  achievement catalogue all live once, in `packages/game-logic`, and `boardwalk-api` depends on it.
+  `PRICES_CENTS` in `boardwalk-api/src/domain/economy.ts` is **derived** from the shared `CATALOG`
+  (`Object.fromEntries(CATALOG.map(…))`) rather than transcribed from it, so "priced on one side and
+  not the other" stopped being a state the system can be in. What remains server-side is what has no
+  client counterpart: the payout ceiling and the four `check*` functions that phrase a rule as a
+  decision about a request. **Add a money rule in one place, because there is only one place.**
+  This replaced `tests/economy-parity.test.ts`, which imported both sides and asserted every
+  constant agreed — a real guard that caught real drift more than once (P4's card backs landed on
+  the client alone, which would have made the server refuse a purchase the store was offering).
+  Deleting a guard is normally the wrong move, and it was right exactly once here, for the one
+  reason that makes it right: **there is nothing left to compare.** A parity test over a single
+  module is a test that a thing equals itself. Do not reintroduce the duplication in order to have
+  something to guard.
 - **The one game that can win money does not deal its own cards.** ✅ Live (Phase D, code complete —
   **not yet deployed**). `BlackjackRepo` (`deal`/`move`) is the seam; `src/system/repo/api/blackjackRepo.ts`
   is the referee, `src/system/repo/local/blackjackRepo.ts` the offline twin, and `useBlackjackTable()`
@@ -228,7 +250,22 @@ lint rule that matches nothing reports success.
   settles. A ceiling could bound "blackjack, pay me 2.5×"; it could never stop it, because "did this
   player actually win" is not a question you can ask about a number. The kill switch is
   `VITE_API_BLACKJACK=0`, which puts the table back on the local reducer with ordinary `bet`/`settle`
-  intents — the Phase-B economy exactly, by rebuild.
+  intents — the Phase-B economy exactly, by rebuild. And **the old road is closed**: `checkSettle`
+  refuses `gameId: 'blackjack'` outright (`SERVER_DEALT_GAMES`), because leaving `POST /bet` +
+  `POST /settle` open at the 2.5× ceiling would make the whole dealer opt-in, and the cheapest way
+  to defeat a cutover is to leave the path it replaced standing.
+- **A badge is computed by the referee, never reported.** ✅ Live (Phase D, code complete — **not
+  yet deployed**). `/settle` has no `unlockedAchievementIds` and no `grantedItemIds` — the fields
+  are *gone*, not validated. `boardwalk-api/src/domain/achievements.ts` recomputes with the SAME
+  shared `satisfiedAchievements` the client uses, over an `AchievementView` whose every number is
+  read back from the server's own tables **inside the settle transaction**, after the stat bump, the
+  XP award and the ledger row have landed; a grant rides with its badge in that transaction, because
+  a badge landing without its cosmetic is v1's `recordWin` defect wearing a hat. This matters beyond
+  chips: the two Platinum mastery tiers grant `ttl_thehouse` and `ttl_grandmaster`, titles the store
+  refuses to sell at **any** price so that wearing one means you earned it. Only `feats` still cross
+  the wire — filtered by the shared `recordedFeats` to rows marked `feat: true`, so a chain id
+  cannot be smuggled through the channel — and they stay there because no state predicate can see a
+  two-card 21 or a Solitaire cleared without a recycle.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
   back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
@@ -241,20 +278,26 @@ lint rule that matches nothing reports success.
 - **A game receives `{ onExit }` and nothing else.** ✅ Live — `GameProps` in `src/games/registry.ts`,
   and the play route (`src/shell/pages/Play.tsx`) passes only `onExit`. Everything else is a hook. A
   `system` prop would rebuild the `window.SystemUI` god-object this project exists to escape.
-- **`logic/` is pure.** No DOM, no React, no `@/system`, no Firebase. ✅ Lint-enforced —
-  `@boardwalk/no-impure-logic` (bans React and any resolved import into `src/system`/`src/ui`, four
-  import syntaxes, relative escapes included). This is what makes rules unit-testable now and
-  server-runnable later ([BACKEND_PLAN.md](plans/BACKEND_PLAN.md)).
+- **`logic/` is pure, and it lives in `packages/game-logic/src/games/<game>/logic/`.** No DOM, no
+  React, no `@/system`, no Firebase. ✅ Lint-enforced — `@boardwalk/no-impure-logic` (bans React and
+  any resolved import into `src/system`/`src/ui`, four import syntaxes, relative escapes included),
+  and its `GAMES_DIRS` names **both** trees: `src/games` and `packages/game-logic/src/games`. That
+  second entry is the whole guard now — leaving the rule pointed at `src/games` after Phase D moved
+  the rulebooks would have gone silent on every line of logic in the repo *while still reporting
+  success*, which is the exact failure mode this file's Enforcement section exists to prevent. This
+  is what made rules unit-testable then and server-runnable now: `boardwalk-api` runs these files
+  ([BACKEND_PLAN.md](plans/BACKEND_PLAN.md) Phase D).
 - **Extract logic → test logic → then draw UI.** In that order. Tests before any UI exists. This is
   the only step that catches a bad shuffle or an off-by-one score. (Tic-Tac-Toe: `logic/ticTacToe.ts`
   + `tests/ticTacToe.test.ts` existed and were green before `Board.tsx` was drawn.)
 - **`gameId` comes from `manifest.id`.** Never a string literal. In v1, 5 of 31 games' stats silently
   never reached the hub because `texas_holdem` recorded itself as `"poker"`. ✅ Live — the registry
   keys on `manifest.id` (frozen `as const`), and stats/room-path/route all derive from it.
-- **Nothing under `games/` imports another game's folder.** ✅ Lint-enforced —
+- **Nothing under `games/` imports another game's folder — in either games tree.** ✅ Lint-enforced —
   `@boardwalk/no-cross-game-imports` (resolves the specifier, so a single-`../` sibling escape fires
-  too; the registry, which names every game, is deliberately exempt). Hoist shared code to `system/`
-  or `ui/` deliberately.
+  too; the registry, which names every game, is deliberately exempt), with the same two-entry
+  `GAMES_DIRS`. Hoist shared code to `system/`, `ui/`, or — if the referee needs it too —
+  `packages/game-logic`, deliberately.
 - **A game attaches to its component via a lazy `Component` on its registry entry.** ✅ Live —
   `RegisteredGame` is `{ manifest, Component }`, `Component = lazy(() => import(...))` built once at
   module load so each game is its own chunk. Never `lazy()` in render (it remounts and drops the room
@@ -448,8 +491,8 @@ builds the thing it guards.
 | 800-line ceiling + ratchet | `scripts/check-file-size.mjs` on `prebuild` (now covers `eslint-rules/` too) |
 | Types are real, not decorative | `tsc -b` strict + `recommendedTypeChecked` |
 | `firebase/*` only under `src/system/repo/firebase/`; concrete repos only from `src/system/repo/` | `@boardwalk/no-firebase-imports` — SDK + `@firebase/*`, `export…from`, dynamic `import()`, and resolved relative escapes |
-| A game's `logic/` imports nothing impure (React, `@/system`, `@/ui`) | `@boardwalk/no-impure-logic` — path-scoped to `**/logic/**` under `src/games`, resolves specifiers so relative escapes fire |
-| No game imports a sibling game's folder | `@boardwalk/no-cross-game-imports` — resolves specifiers (a single-`../` escape fires); the registry is exempt |
+| A game's `logic/` imports nothing impure (React, `@/system`, `@/ui`) | `@boardwalk/no-impure-logic` — path-scoped to `**/logic/**` under **both** games trees (`GAMES_DIRS` = `src/games` + `packages/game-logic/src/games`), resolves specifiers so relative escapes fire |
+| No game imports a sibling game's folder | `@boardwalk/no-cross-game-imports` — same two-tree `GAMES_DIRS`; resolves specifiers (a single-`../` escape fires); the registry is exempt |
 | Tic-Tac-Toe's rules are correct | `tests/ticTacToe.test.ts` (18) — every win line, draw-vs-win, `play` immutability + illegal-move no-op, and the house: takes a win, blocks a loss, opens centre, perfect-vs-perfect draws |
 | Blackjack's rules + casino payout are correct | `tests/blackjack.test.ts` (26) — ace-soft `handValue`, natural-vs-3-card-21, dealer stands-on-all-17s at the boundary, the full settle matrix, the **integer-safe 3:2 payout on an odd wager** (the v1 `parseInt` chip), and the pure reducer (deal/hit-bust/stand/double/no-op) |
 | Chess's rules are correct | `tests/chess.test.ts` (40) — FEN round-trip, 20 opening moves, piece movement + blocking, check/pin/out-of-check, castling (both sides, out-of/through-check, blocked, rights bookkeeping incl. captured-rook), en passant (set/capture/expiry), promotion (four pieces, chosen + default), fool's/scholar's mate + winner seat, stalemate-not-mate, insufficient-material + fifty-move draws, and `playMove` totality (illegal/finished → unchanged) + input immutability |
@@ -466,10 +509,10 @@ builds the thing it guards.
 | Achievements 2.0 — chains, grant, feats, hidden, completion % | `tests/achievements.test.ts` (24) — every chain tier at its boundary and one below (wins 10/50/100/500, bankroll $10k–$1M, level 5/10/25/50, per-game chess & blackjack 1/10/50/100), the mastery chains read the right game's wins, the earn-only grant lands in `inventory` on the completing tier only, not early, and exactly once; `recordedFeats` filtered to `FEAT_IDS` + de-duped; a game **cannot** forge a chain badge (or its grant) through the feats channel; feats fire once and carry no `test`; `completionPct` derivation; and catalogue integrity (unique ids, four ordered tiers per chain, only the two mastery Platinums grant, `feat`⇔no-`test`) |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
-| The client cannot move its own money (Phase B) | `boardwalk-api/tests/economy.test.ts` (39) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, and every mutation replay-safe (a repeated nonce moves nothing and does not double a stat) |
+| The client cannot move its own money, nor mint its own badge | `boardwalk-api/tests/economy.test.ts` (45) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, open wagers consumed oldest-first, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, every mutation replay-safe (a repeated nonce moves nothing and does not double a stat), and Phase D: **`checkSettle` refuses `gameId: 'blackjack'` outright** (the dealer settles that game), XP and stat counts come from the OUTCOME and never from the wire, the server **awards `first_win` itself on a real win with nobody reporting it** and does not award it on a loss, unlocks once and never revokes, a replayed settle re-awards and re-grants nothing, and **a forged badge, a forged grant, and a chain id smuggled through `feats` all change nothing** — while a real feat, which no state predicate could have seen, is recorded |
+| Blackjack's dealer is the server, and it never sends what it should not | `boardwalk-api/tests/blackjack.test.ts` (22) — `dealHand` deducts from the LEDGER balance and opens a wager row, refuses a stake the balance cannot cover **and deals nothing**, gives the nonce back on a refusal so the same nonce deals once affordable (the `return`-out-of-a-transaction COMMITS bug, which was leaving an orphan hand and a burned nonce), settles a dealt natural immediately at an integer 2.5× on an odd wager, and leaves a live hand's stake open; `playMove` hit-to-bust pays nothing, stand plays the dealer out and pays exactly what the shared rulebook says, a double takes a SECOND wager and settles against the doubled stake and is refused whole if the balance cannot cover it, a move on a settled hand and a hand id belonging to another account both refused; replay safety on both routes (no second hand, no second card, no doubled payout); and the projection — the hole card and the deck absent while live, the dealer revealed once settled, `viewOf` carrying no deck at any phase — plus the routes answering `{profile, hand, replayed}`, **ignoring a hostile body carrying `payoutCents`, `outcome`, `result` and cards**, 400 on an unparseable body, 409 on a refusal, 401 without a token |
 | `PUT /profile` cannot set a balance, XP, stats, achievements or inventory | `boardwalk-api/tests/api.test.ts` (19) — a hostile body carrying all five is accepted and changes none of them; the opening stake is the server's `signup` grant and fires exactly once per uid; 409 (not 400) for a refusal, 400 for a missing nonce |
-| The dealt-hand seam plays the shared rulebook and hides the hole card | `tests/blackjack-seam.test.ts` (10) — the LOCAL implementation driven against the shared reducer as an oracle (deal/hit/stand/double card-for-card, the stake taken once, a double staking twice and settling over the doubled wager, a dealt natural settling inside `deal` with the odd-wager 3:2 exact), the refusals (an unaffordable stake writes NO intent, a repeated nonce replays instead of dealing again, an unknown hand refused), and the projection: a live hand carries one dealer card with the hole card and the deck absent from the serialised payload, a settled one reveals — asserted **field-for-field against the referee's own `viewOf`**, imported from `boardwalk-api/`, because the projection exists twice and a leaked hole card renders perfectly |
-| The server's money rules match the client's | `tests/economy-parity.test.ts` (8) — catalogue ids both directions + every price, earn-only stays `null` (a `0` would make it free), the daily ladder and `DAY_MS`, the XP table, bet-validation agreement, and a ten-day streak run reward-for-reward |
+| The dealt-hand seam plays the shared rulebook and hides the hole card | `tests/blackjack-seam.test.ts` (10) — the LOCAL implementation driven against the shared reducer as an oracle (deal/hit/stand/double card-for-card, the stake taken once, a double staking twice and settling over the doubled wager, a dealt natural settling inside `deal` with the odd-wager 3:2 exact), the refusals (an unaffordable stake writes NO intent, a repeated nonce replays instead of dealing again, an unknown hand refused), and the projection: a live hand carries one dealer card with the hole card and the deck absent from the serialised payload, a settled one reveals — asserted against the **shared** `viewOf` (`@boardwalk/game-logic/games/blackjack`), which all three call sites now import, so the test asks whether what the repo hands out *is* the sanctioned projection rather than whether two copies of it resemble each other |
 | The Firebase→SQLite backfill cannot lose an account or mint one | `boardwalk-api/tests/backfill.test.ts` (34) — the RTDB wire coerced (stripped-empty objects, hostile types, a missing bankroll defaulting to the opening stake rather than $0, a legacy `level` ignored); one `migration` ledger row sized to LAND on the Firebase balance; the `migration:v1` marker making a re-run a total no-op (ten runs, and a re-run that must NOT refund a loss the player has since taken); **a backfilled player signing in afterwards is refused a second signup stake**; per-uid transactions so one malformed record does not roll back the batch; a dry run that writes nothing and does not burn the marker; and `reconcile` catching two swapped balances that a matching grand total would hide |
 | A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
@@ -478,13 +521,14 @@ builds the thing it guards.
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
-| Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
+| Every guard above actually fires | `tests/lint-rules.test.ts` (48 — the two Phase-6 rules proved **twice**, once per games tree, falsified by dropping `packages/game-logic/src/games` from `GAMES_DIRS` and watching exactly the three new cases go red), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
 | `boardwalk-api/` is never linted | **root `eslint.config.mjs` ignores `boardwalk-api/**`**, so `npm run lint` there errors with "all files are ignored" and always has. The API's ~2,000 lines have never been linted by anything. Fixing it means an eslint config inside the package |
 | Phase B is deployed to the Pi | unguarded and **NOT DONE** — the code is green locally; the cutover is live only after the deploy, the restore drill and the prod verify in BACKEND_PLAN.md's owed list |
+| Phase D is deployed to the Pi | unguarded and **NOT DONE**, and it rides along with Phase B's already-owed manual deploy rather than adding a second one. `ExecStart`/`WorkingDirectory` do **not** change — that was the entire point of the build seam — but the Pi now needs `packages/game-logic/` present *next to* `boardwalk-api/` for the `file:../packages/game-logic` dependency to resolve, `npm install` re-run there to create the symlink, and the package built (`boardwalk-api`'s own `npm run build` does that first). **Whether the Pi has the whole repo checked out or only the `boardwalk-api/` directory is UNVERIFIED** — nobody has SSH'd to it in this work. If it is only the directory, the deploy fails at `npm install`. Check before deploying |
 | The backfill has actually been RUN | unguarded and **NOT DONE**. SQLite holds one profile; RTDB holds every real player, so cutting the frontend over *before* the backfill gives every unmigrated player a fresh $5,000 and drops their XP, stats, achievements and inventory. The tool and its tests are green; the procedure is [plans/BACKFILL_RUNBOOK.md](plans/BACKFILL_RUNBOOK.md) and **no step of it has been executed**. Run it before the cutover, never after |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
@@ -541,6 +585,14 @@ Routes: `/` (hub) · `/play/:gameId` · `/store` · `/leaderboard` · `/profile`
 the router, the auth gate and the top bar; the game hub reads `src/games/registry.ts`, which holds
 all five games (`/play/tic-tac-toe`, `/play/blackjack`, `/play/chess`, `/play/uno`,
 `/play/solitaire`).
+
+The tree has three parts, not two. `src/` is the app; `packages/game-logic/` is the shared rulebook
+(an npm workspace — `workspaces: ["packages/*"]`, so the root `npm install` covers it) that both the
+app and the referee import; `boardwalk-api/` is the referee, and it is **outside** the workspace on
+purpose, depending on the package by `file:` path so it consumes the built CommonJS. Editing a rule
+needs no build step for the browser (Vite aliases the source), but `boardwalk-api`'s `build`,
+`typecheck` and `pretest` scripts each build the package first, because the server reads `dist/`.
+Its tests are separate: `cd boardwalk-api && npm test`.
 
 To drive the room flow locally: `npx firebase emulators:start --only auth,database`, then
 `VITE_USE_EMULATOR=1 npm run dev`, and open `/Boardwalk/_dev/lobby` (or `/Boardwalk/play/tic-tac-toe`

@@ -1,9 +1,13 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** 🚧 **Phase B is code-complete and green, and NOT yet deployed** (see Phase B below for
-the five owed non-code steps, all of which need the Pi). Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
+**Status:** 🚧 **Phases B and D are code-complete and green, and NEITHER is deployed** (see Phase B
+below for the five owed non-code steps, all of which need the Pi, and
+[The deploy delta](#the-deploy-delta-phase-d) for what Phase D adds to that same trip — including
+one thing that must be **checked before deploying**, because it can fail the deploy at
+`npm install`). Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
 `boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
-below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests — and is
+below (with the append-only `ledger`), profile + leaderboard endpoints, the money routes, the WS room
+gateway and the blackjack dealer, 171 passing tests across 8 files — and is
 **deployed live** on the Pi at `https://boardwalk-pi.tail1bed2f.ts.net` (Tailscale Funnel). The
 frontend's server-backed repos at `src/system/repo/api/` are now **wired into the composition root in
 shadow mode**: when `VITE_API_BASE_URL` is set, `src/system/repo/index.ts` keeps Firebase as the
@@ -185,6 +189,8 @@ and breaks only in production).
 - **Achievements are still computed client-side** and recorded additively, because the catalogue
   lives in the frontend. A dishonest client can award itself a badge and an earn-only cosmetic. It
   cannot award itself a chip.
+  **→ Closed by Phase D.** The catalogue is shared, so the server can see what it could not; the two
+  request fields are gone rather than validated.
 - **The server's money rules are a second copy** of the frontend's pure ones (prices, ladder, XP,
   opening stake). Sharing them is Phase D's `packages/game-logic` move and was not done here on
   purpose: the API is CommonJS with `rootDir: src` and is not in the root npm workspace, so wiring a
@@ -193,6 +199,12 @@ and breaks only in production).
   The copy is **guarded**: `tests/economy-parity.test.ts` imports both sides and asserts every price,
   every rung of the daily ladder, the XP table and the opening stake agree. It caught a real drift
   the first time it ran (two title ids wrong on the server).
+  **→ Closed by Phase D.** The package exists, both sides import it, `PRICES_CENTS` is derived from
+  the shared `CATALOG` rather than transcribed, and `tests/economy-parity.test.ts` is deleted —
+  there is nothing left to compare. The entrypoint fear turned out to be answerable rather than
+  merely deferrable: the API takes the package as an **ordinary resolved dependency**
+  (`file:../packages/game-logic`) and reads its built CommonJS, so `rootDir`, `outDir` and
+  `main: dist/server.js` never move. See Phase D.
 
 **Still owed before this is actually done — none of it is code:**
 1. **Deploy to the Pi** (needs SSH; the migration runs at boot, but take a backup first).
@@ -248,6 +260,120 @@ Only worth doing for games where it matters.
 
 **Done when:** a player with devtools open cannot see an opponent's hand — because the server never
 sent it.
+
+**✅ CODE COMPLETE FOR BLACKJACK, NOT YET DEPLOYED (2026-07-18).** Three commits: the shared package,
+the referee computing achievements, and the dealer dealing.
+
+**One source for the rules — `packages/game-logic`.** The five rulebooks moved (each behind a subpath
+`@boardwalk/game-logic/games/<game>`, because three of them export a `Card`), and so did the economy
+(`bet`, `result`/`applyResult`), achievements, stats, XP, the money formatters, the store catalogue,
+the daily ladder and the profile's data shapes. `Session` stayed behind in `src/system/auth/session.ts`
+— it is an auth fact, not a rule the referee runs.
+
+**The build seam is asymmetric on purpose, and it is the reason Phase B deferred this.** The
+frontend reads the package's **TypeScript source**, through `paths` in `tsconfig.app.json` /
+`tsconfig.test.json` and a matching `resolve.alias` in `vite.config.ts` — the same mechanism as
+`@/`, so there is no build step between editing a rule and seeing it in the browser, and vitest
+reads the same files. `boardwalk-api` reads the package's **built CommonJS**, through an ordinary
+`"@boardwalk/game-logic": "file:../packages/game-logic"` dependency. Compiling the package as extra
+*input* to the API's `tsc` would have pushed its output under a new directory and moved
+`dist/server.js`; taking it as a resolved dependency instead leaves `rootDir: src`, `outDir: dist`
+and `main: dist/server.js` **unchanged**, so the Pi's systemd `ExecStart` does not move. The API's
+`build`, `typecheck` and `pretest` scripts each build the package first. One wrinkle worth knowing:
+`boardwalk-api/tsconfig.json` needed a `paths` entry for the game subpaths, because
+`moduleResolution: node` predates `exports` and cannot read the package's export map — Node resolves
+those subpaths fine at runtime, so this was the worst version of the problem, code that would have
+*run* correctly while failing to compile.
+
+**The guards moved with the code**, which was the easy thing to get wrong. Both Phase-6 lint rules
+are path-scoped to "the games tree"; leaving them pointed at `src/games` would have gone silent on
+every line of logic in the repo *while still reporting success*. `GAMES_DIRS` now names both trees
+and `tests/lint-rules.test.ts` proves each rule twice (48, up from 43), falsified by removing the
+package from the list and watching exactly the three new cases go red. eslint's ignore list widened
+from `dist/**` to `**/dist/**` so the package's build output is not linted as source.
+
+**The referee computes achievements.** `/settle` no longer accepts `unlockedAchievementIds` or
+`grantedItemIds` — the fields are **gone**, not validated, so there is nowhere on the request to ask
+for a badge. `boardwalk-api/src/domain/achievements.ts` recomputes with the same shared
+`satisfiedAchievements` the client uses, over an `AchievementView` whose every number is read back
+from the server's own tables **inside the settle transaction**, after the stat bump, the XP award
+and the ledger row have landed; a grant rides with its badge in that same transaction, because a
+badge landing without its cosmetic is the shape of v1's `recordWin` defect. What this closed was
+small in chips and total in prestige: a dishonest client could award itself the two Platinum mastery
+tiers and with them `ttl_thehouse` and `ttl_grandmaster`, the titles the store deliberately refuses
+to sell at any price. Only `feats` stay on the wire — filtered by the shared `recordedFeats` to rows
+marked `feat: true`, so a chain id cannot be smuggled through the channel — and they stay there
+until the server deals every game, because no state predicate can see a two-card 21 or a Solitaire
+cleared without a recycle. `boardwalk-api/src/domain/types.ts` also stopped restating
+`Profile`/`GameStat`/`DailyState`/`Equipped` and re-exports them; those being "structurally
+identical" by hand is how Phase A shipped a `Profile` with no `equipped` field and silently dropped
+every player's card back on every write.
+
+**The dealer deals.** `POST /blackjack/deal {nonce, wagerCents}` and
+`POST /blackjack/move {nonce, handId, move}` → `{profile, hand: HandView, replayed}`. The server
+shuffles, deals, validates each move and computes the payout from its own cards with the shared
+`payoutCents(result, wager)` — the same function the client used to call, run where it counts.
+**Neither request has a field for a payout, an outcome, or a card.** A double-down commits its
+second stake server-side in the same transaction and is refused whole if the balance cannot cover
+it. `HandView` (shared, `games/blackjack/logic/view.ts`) makes the "Done when" structural rather
+than diligent: it has **no `deck` field**, so the deck cannot be forwarded by accident, and it
+carries **one dealer card until `phase === 'settled'`** — `slice(0, 1)`, not a placeholder, because
+a fake hole card is a lie on the wire that a renderer could believe.
+
+**And the old road is closed.** `checkSettle` now refuses `gameId: 'blackjack'` outright
+(`SERVER_DEALT_GAMES` in `domain/economy.ts`). Without that, `POST /bet` + `POST /settle` at the
+2.5× ceiling remains a standing bypass of the dealer and the whole phase is opt-in — the cheapest
+way to defeat a cutover is to leave the path it replaced standing. The generic-settle tests moved to
+a gameId the referee does not deal, which is what that route is now for.
+
+**Frontend, all behind the seam.** A `BlackjackRepo` interface with `src/system/repo/api/blackjackRepo.ts`
+(the referee) and `src/system/repo/local/blackjackRepo.ts` (the offline twin, running the same shared
+reducer, so a fresh clone / the emulator / guests still get a real game with no server);
+`useBlackjackTable()` is the only thing the game calls, and `Table.tsx` is now a **renderer of
+`HandView`** — it draws a card back for the hole card it genuinely does not have. `useBet()` still
+owns the chip rack but no longer commits: the stake leaves the bankroll inside the deal's own
+transaction. Kill switch `VITE_API_BLACKJACK=0`, tied to the economy flag, because a table whose
+cards the server deals but whose money it does not price is a state nobody designed.
+
+**Two real defects found on the way**, both worth keeping in mind. A `return` out of a
+`db.transaction` **commits** — only a throw rolls back — so a refused deal was leaving an orphan hand
+row and a burned nonce; every refusal path now checks before it writes. And the deal route's test
+asserted `START - wager`, which is wrong about one deal in twenty-one because a natural settles
+inside that same response; it asserts the ledger row now. A test that is red one run in twenty is
+worse than no test.
+
+**What Phase D did NOT do — the honest residual.** Only blackjack is server-dealt. The other four
+games (chess, uno, solitaire, tic-tac-toe) do not bet, so their payout is forced to `0` and no chip
+is at stake — but their **outcome is still self-reported**. A dishonest client can still claim a win
+it did not earn and take the XP and the stat that ride with it. Fixing that means the server holding
+the match — the board, the turn order, the move validation — which is a much larger job than
+projecting one hand, and it is not started. The bound today is: *a dishonest client can inflate its
+level and its win count, and it can never take a chip.* UNO's hidden hands, likewise, are still
+enforced by RTDB rules and a host-as-dealer client, not by this server.
+
+**Counts:** frontend 435 across 26 files, `boardwalk-api` 171 across 8 (45 in economy, 22 in
+blackjack).
+
+**Still owed — and it rides along with Phase B's deploy, it does not add a second one:**
+see [The deploy delta](#the-deploy-delta-phase-d) below.
+
+### The deploy delta (Phase D)
+
+**Read this before deploying.** Phase B is *also* still undeployed, so both phases go to the Pi in
+one trip.
+
+1. **`ExecStart` and `WorkingDirectory` do NOT change.** That was the entire point of the build
+   seam. The unit still runs `node dist/server.js` from `boardwalk-api/`.
+2. **But `packages/game-logic/` must be present next to `boardwalk-api/`** — the dependency is
+   `file:../packages/game-logic`, a relative path out of the API directory.
+3. **`npm install` must be re-run in `boardwalk-api/`** so the symlink into `node_modules` is
+   created, and **the package must be built** — `boardwalk-api`'s own `npm run build` does that
+   first, so a normal build covers it.
+4. ⚠️ **UNVERIFIED: whether the Pi has the whole repo checked out or only the `boardwalk-api/`
+   directory.** Nobody SSH'd to it during this work. **If it is only the directory, the `file:`
+   dependency will not resolve and the deploy fails at `npm install`.** Check this first; if the Pi
+   has only `boardwalk-api/`, the deploy needs `packages/game-logic/` copied or the checkout
+   widened before anything else happens.
 
 ---
 
