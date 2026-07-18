@@ -24,6 +24,21 @@ export interface AppDeps {
 export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
+
+  // Private Network Access (Chrome). When the SPA's origin resolves the API host to a private-range
+  // IP — which happens for anyone on the same Tailscale tailnet, where the Funnel host maps to a
+  // 100.x address — Chrome sends a PNA preflight (`Access-Control-Request-Private-Network: true`)
+  // and BLOCKS the request unless the response carries `Access-Control-Allow-Private-Network: true`.
+  // Set it before `cors` runs: the default cors middleware ends the OPTIONS preflight itself, and a
+  // header set here (without ending the response) survives onto that reply. Non-tailnet users reach
+  // the public Funnel IP and never trigger this, so it is inert for them.
+  app.use((req, res, next) => {
+    if (req.headers['access-control-request-private-network'] === 'true') {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
+
   app.use(cors({ origin: cfg.allowedOrigin }));
   app.use(express.json({ limit: '256kb' }));
 

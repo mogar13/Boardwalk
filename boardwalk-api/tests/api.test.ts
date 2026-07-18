@@ -50,6 +50,27 @@ describe('auth', () => {
   });
 });
 
+describe('private network access (Chrome PNA preflight)', () => {
+  it('echoes Access-Control-Allow-Private-Network on a PNA preflight', async () => {
+    const res = await request(app())
+      .options('/profile')
+      .set('Origin', 'https://mogar13.github.io')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Private-Network', 'true')
+      .expect(204);
+    expect(res.headers['access-control-allow-private-network']).toBe('true');
+  });
+
+  it('omits the PNA header when the request does not ask for it', async () => {
+    const res = await request(app())
+      .options('/profile')
+      .set('Origin', 'https://mogar13.github.io')
+      .set('Access-Control-Request-Method', 'GET')
+      .expect(204);
+    expect(res.headers['access-control-allow-private-network']).toBeUndefined();
+  });
+});
+
 describe('profile routes', () => {
   it('404 before a profile exists, then GET returns what PUT stored', async () => {
     const server = app();
