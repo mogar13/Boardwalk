@@ -16,7 +16,9 @@ import { defaultProfile } from '@/system/profile/defaults';
 import { CATALOG, isEarnOnly, type Cosmetic, type Rarity } from '@/system/store/catalog';
 import {
   canOpen,
+  completion,
   dustFor,
+  isPackable,
   openPack,
   PACKS,
   packById,
@@ -175,7 +177,9 @@ describe('openPack — the roll', () => {
     const { profile, pull } = openPack(owner, pack, 7);
     expect(pull?.item.id).toBe(id);
     expect(pull?.duplicate).toBe(true);
-    expect(pull?.dustCents).toBe(dustFor(pack, pull?.item.rarity ?? 'common'));
+    expect(pull?.dustCents).toBe(
+      dustFor(pack, pull?.item.rarity ?? 'common', completion(owner, pack))
+    );
     expect(pull?.dustCents).toBeGreaterThan(0);
     expect(profile.bankrollCents).toBe(
       owner.bankrollCents - pack.priceCents + (pull?.dustCents ?? 0)
@@ -183,12 +187,14 @@ describe('openPack — the roll', () => {
     expect(Object.keys(profile.inventory)).toEqual([id]); // nothing new
   });
 
-  it('a duplicate never profits — dust is at most the price', () => {
+  it('a duplicate never profits — dust is at most the price, at ANY completion', () => {
     for (const p of PACKS) {
       for (const r of RARITIES) {
-        expect(dustFor(p, r)).toBeGreaterThan(0);
-        expect(dustFor(p, r)).toBeLessThanOrEqual(p.priceCents);
-        expect(Number.isInteger(dustFor(p, r))).toBe(true);
+        for (const pct of [0, 0.25, 0.5, 0.93, 1]) {
+          expect(dustFor(p, r, pct)).toBeGreaterThan(0);
+          expect(dustFor(p, r, pct)).toBeLessThanOrEqual(p.priceCents);
+          expect(Number.isInteger(dustFor(p, r, pct))).toBe(true);
+        }
       }
     }
   });
@@ -235,5 +241,88 @@ describe('openPack — the roll', () => {
         expect((counts[r] ?? 0) / N).toBeCloseTo(p.odds[r], 1);
       }
     }
+  });
+
+  it('scales dust up with pool completion — the near-complete window stops stinging', () => {
+    // The fix for the one place a pack genuinely stung: at 13-of-14 collected a near-certain
+    // duplicate was still costing full price. Dust now climbs toward a full refund instead.
+    const fresh = dustFor(pack, 'common', 0);
+    const deep = dustFor(pack, 'common', 13 / 14);
+    expect(deep).toBeGreaterThan(fresh);
+    expect(deep).toBeGreaterThan(pack.priceCents * 0.9);
+    // Monotonic the whole way, and a full pool would refund everything.
+    let prev = -1;
+    for (const pct of [0, 0.1, 0.3, 0.6, 0.8, 0.95, 1]) {
+      const d = dustFor(pack, 'common', pct);
+      expect(d).toBeGreaterThan(prev);
+      prev = d;
+    }
+    expect(dustFor(pack, 'common', 1)).toBe(pack.priceCents);
+  });
+
+  it('clamps a nonsense completion rather than paying out beyond the price', () => {
+    expect(dustFor(pack, 'common', 5)).toBe(pack.priceCents);
+    expect(dustFor(pack, 'common', -3)).toBe(dustFor(pack, 'common', 0));
+  });
+
+  it('rarity still matters at equal completion — a better tier dusts better', () => {
+    const pct = 0.4;
+    expect(dustFor(pack, 'rare', pct)).toBeGreaterThan(dustFor(pack, 'common', pct));
+    expect(dustFor(pack, 'epic', pct)).toBeGreaterThan(dustFor(pack, 'rare', pct));
+    expect(dustFor(pack, 'legendary', pct)).toBeGreaterThanOrEqual(dustFor(pack, 'epic', pct));
+  });
+
+  it('pays the completion-scaled dust the card quoted, not the base rate', () => {
+    // Own most of the pool, then force a duplicate and check the roll used the SAME number the
+    // shelf shows. A card that quotes one refund and pays another is the drift this test exists for.
+    const pool = packPool(pack);
+    const first = openPack(rich(), pack, 7);
+    const hit = first.pull?.item.id ?? '';
+    const owned = pool.filter((c) => c.id !== hit).slice(0, pool.length - 2);
+    const inventory = Object.fromEntries([...owned, { id: hit }].map((c) => [c.id, true as const]));
+    const deep = rich({ inventory });
+
+    const pct = completion(deep, pack);
+    expect(pct).toBeGreaterThan(0.5);
+
+    const { pull } = openPack(deep, pack, 7);
+    expect(pull?.duplicate).toBe(true);
+    expect(pull?.dustCents).toBe(dustFor(pack, pull?.item.rarity ?? 'common', pct));
+  });
+});
+
+describe('completion — derived, never stored', () => {
+  const pack = packAt(0);
+
+  it('is 0 for a fresh account and rises with the inventory', () => {
+    expect(completion(rich(), pack)).toBe(0);
+    const pool = packPool(pack);
+    const half = Object.fromEntries(
+      pool.slice(0, Math.floor(pool.length / 2)).map((c) => [c.id, true as const])
+    );
+    expect(completion(rich({ inventory: half }), pack)).toBeCloseTo(0.5, 1);
+  });
+
+  it('reaches 1 when the pool is owned — the point canOpen refuses', () => {
+    const all = Object.fromEntries(packPool(pack).map((c) => [c.id, true as const]));
+    expect(completion(rich({ inventory: all }), pack)).toBe(1);
+    expect(canOpen(rich({ inventory: all }), pack).ok).toBe(false);
+  });
+
+  it('ignores inventory entries outside this pack — it is per-pool, not global', () => {
+    const foreign = { ttl_regular: true as const, av_crown: true as const };
+    expect(completion(rich({ inventory: foreign }), packAt(0))).toBe(0);
+  });
+});
+
+describe('isPackable — the type-level gate', () => {
+  it('accepts a chip-priced cosmetic and refuses earn-only and starters', () => {
+    // The compile-time half is that `PackPull.item` is a `PackableCosmetic`: a pull cannot be built
+    // from a raw `Cosmetic` without going through here. This asserts the runtime half agrees.
+    for (const c of CATALOG) {
+      expect(isPackable(c)).toBe(c.priceCents !== null && c.priceCents > 0);
+    }
+    expect(CATALOG.filter(isPackable).some(isEarnOnly)).toBe(false);
+    expect(CATALOG.filter(isPackable).some((c) => c.priceCents === 0)).toBe(false);
   });
 });

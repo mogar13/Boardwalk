@@ -22,7 +22,15 @@ import { formatDollars } from '@/system/profile/money';
 import type { Profile } from '@/system/profile/types';
 import type { Rarity } from '@/system/store/catalog';
 import { CosmeticPreview } from '@/system/store/CosmeticPreview';
-import { canOpen, dustFor, PACKS, packPool, type Pack, type PackPull } from '@/system/store/packs';
+import {
+  canOpen,
+  completion,
+  dustFor,
+  PACKS,
+  packPool,
+  type Pack,
+  type PackPull,
+} from '@/system/store/packs';
 import { RARITY_ORDER, RARITY_TEXT } from '@/system/store/rarity';
 import { useStore } from '@/system/store/useStore';
 import { Button, Card, Modal, cx } from '@/ui';
@@ -65,6 +73,9 @@ function PackCard({
   const check = canOpen(profile, pack);
   const pool = packPool(pack);
   const ownedCount = pool.filter((c) => c.id in profile.inventory).length;
+  // Dust scales with how far into this pool you are, so the quoted range is YOUR range, not a
+  // fresh account's. The card has to show the number the roll would actually pay.
+  const pct = completion(profile, pack);
 
   return (
     <Card className="flex flex-col gap-4 p-5">
@@ -79,7 +90,8 @@ function PackCard({
 
       <p className="text-bw-muted text-[0.65rem] leading-snug">
         {ownedCount} of {pool.length} collected · a duplicate refunds{' '}
-        {formatDollars(dustFor(pack, 'common'))}–{formatDollars(dustFor(pack, 'legendary'))}
+        {formatDollars(dustFor(pack, 'common', pct))}–
+        {formatDollars(dustFor(pack, 'legendary', pct))}
       </p>
 
       <div className="mt-auto flex flex-col items-center gap-2">

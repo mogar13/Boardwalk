@@ -372,19 +372,27 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   thing discovered by clicking Open. **Duplicates are real and deliberate**: the roll picks
   uniformly within the rolled rarity and does NOT steer to what you are missing — steering would
   make the dust refund code with no reader, the mechanic form of `loadout.color`. A duplicate
-  instead converts to rarity-scaled dust (10/25/50/100% of the pack price; a duplicate legendary
-  refunds the lot). What `canOpen` refuses is a pack whose pool you have COMPLETED — that is a fee,
-  not a gamble. Two invariants carry the earn-vs-buy split through: the pool is `priceCents > 0`, so
+  instead converts to dust that scales on BOTH axes — up with the rarity rolled (base 10/25/50/100%
+  of the pack price; a duplicate legendary always refunds the lot) and up with how much of the pool
+  you already own, `rate = base + (1 - base) × completion`. That second axis closes the one window
+  where a pack genuinely stung: at 13-of-14 collected, a near-certain duplicate was still costing
+  full price. `completion` is DERIVED from `inventory` — the same rule that keeps `level` out of the
+  profile — so the relief a pity timer buys costs no stored counter, no `$other: false` change and
+  no deploy. What `canOpen` refuses is a pack whose pool you have COMPLETED — that is a fee, not a
+  gamble; the approach to it is now cushioned rather than cliff-edged. Two invariants carry the earn-vs-buy split through: the pool is `priceCents > 0`, so
   a pack can never drop an **earn-only** title (chips still cannot buy "Grandmaster", not even
   through a slot machine) nor a free **starter**; both are asserted over the catalogue and
-  exhaustively over the roll. The card-back ladder grew from 8 to all **15** staged backs — a pack
+  exhaustively over the roll, and the earn-only half is enforced BY TYPE — `PackPull.item` is a
+  `PackableCosmetic`, reachable only through the `isPackable` gate, so a future change that builds a
+  pull straight out of `CATALOG` is a compile error rather than a test we must remember to keep. The card-back ladder grew from 8 to all **15** staged backs — a pack
   needs depth or every pull is a duplicate by the third open. Reveal is one modal reusing the
   existing `jackpot`/`win`/`push` roles (no new audio staged; celebration stingers stay P5). The
   ethics guardrail is stated in the code: play money only, published odds, no real-money path, ever.
   **NO rules change** (pulls land under the already-open `inventory/$itemId`), so no deploy needed.
-  498 tests green, browser-verified against the emulator (fresh account → pack shelf with all three
-  rate tables, only the affordable pack enabled, opened it, pulled "Emerald", bankroll $5,000 →
-  $2,500, collected count 0→1 of 14, zero console errors, zero failed requests, no broken art).
+  506 tests green, browser-verified against the emulator (fresh account → pack shelf with all three
+  rate tables, only the affordable pack enabled, opened it, pulled a back, bankroll $5,000 → $2,500,
+  collected count 0→1 of 14 and the quoted duplicate refund moving $250→$411 with it, zero console
+  errors, zero failed requests, no broken art).
 - **P5 — Felts / frames / polish + celebration SFX**.
 
 P1 first because it's the cleanest win and the owner asked for it most concretely. Packs (P4) are

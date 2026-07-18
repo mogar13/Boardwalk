@@ -18,20 +18,24 @@
  * "an earn-only title can never drop" assertions in `tests/packs.test.ts` instead of things found
  * by clicking Open a hundred times. The caller (`useStore`) supplies a nonce.
  *
- * THE TWO INVARIANTS THAT MATTER MOST, both tested:
- *   1. A pack NEVER grants an earn-only cosmetic. The pool is `priceCents > 0`, so the P2/P3
- *      earn-vs-buy split holds — you still cannot buy your way to "Grandmaster", not even through
- *      a slot machine. A pack that could drop it would quietly undo the whole prestige tier.
+ * THE TWO INVARIANTS THAT MATTER MOST:
+ *   1. A pack NEVER grants an earn-only cosmetic, so the P2/P3 earn-vs-buy split holds — you still
+ *      cannot buy your way to "Grandmaster", not even through a slot machine. A pack that could
+ *      drop it would quietly undo the whole prestige tier. This one is enforced BY TYPE:
+ *      `PackPull.item` is a `PackableCosmetic`, reachable only through `isPackable`.
  *   2. A pack NEVER grants a free starter. Everyone owns those; rolling one would be a guaranteed
- *      dud dressed as a pull.
+ *      dud dressed as a pull. That half is a value check (`> 0`) TypeScript cannot express, so it
+ *      stays a test.
  *
  * DUPLICATES ARE REAL, AND THAT IS DELIBERATE. The roll picks uniformly among ALL items of the
  * rolled rarity, owned or not — it does not quietly steer to what you are missing. If it did, the
- * dust refund below would be code with no reader (`loadout.color` in mechanic form) and the pull
- * would lose its tension. A duplicate instead converts to DUST — a rarity-scaled chip refund, so a
- * pack is never a total loss and a duplicate LEGENDARY pays the whole price back. What the pack
- * refuses to sell you is a pack whose pool you have already completed (`canOpen`), because THAT is
- * a guaranteed dud rather than a gamble.
+ * dust refund would be code with no reader (`loadout.color` in mechanic form) and the pull would
+ * lose its tension. A duplicate instead converts to DUST, a chip refund that scales BOTH ways: up
+ * with the rarity rolled, and up with how much of the pool you already own (`dustFor`). That second
+ * axis is the fix for the one place a pack genuinely stung — the window just under a finished pool,
+ * where a near-certain duplicate was still costing full price. `canOpen` refuses a COMPLETED pool
+ * outright, because that is a fee rather than a gamble; the approach to it is now cushioned instead
+ * of cliff-edged, and it needed no stored pity counter to do it.
  */
 import { formatDollars } from '@/system/profile/money';
 import type { Profile } from '@/system/profile/types';
@@ -65,9 +69,27 @@ export interface Pack {
 }
 
 /**
- * A duplicate's refund, as a fraction of the PACK price (not the item price) by the rarity rolled.
- * A duplicate legendary refunds the whole pack — the near-miss consolation that keeps the pull
- * from feeling like a mugging, and the reason the roll can afford to be honest about duplicates.
+ * A cosmetic a pack is ALLOWED to contain: bought with chips, `priceCents` a real number.
+ *
+ * This is the repo's meta-rule applied to the invariant that matters most here — make the wrong
+ * thing UNSPELLABLE rather than documenting "don't". `PackPull.item` is a `PackableCosmetic`, so a
+ * future change that hand-builds a pull straight out of `CATALOG` does not typecheck: it has to go
+ * through `isPackable` first. The tests still assert the runtime half (the `> 0` starter exclusion
+ * is a value check TypeScript cannot express), but the earn-only half — the one that would let
+ * chips buy "Grandmaster" — is now a compile error rather than a test we have to remember to keep.
+ */
+export type PackableCosmetic = Cosmetic & { readonly priceCents: number };
+
+/** The narrowing gate. The ONLY way a `Cosmetic` becomes pack-eligible. */
+export function isPackable(c: Cosmetic): c is PackableCosmetic {
+  return c.priceCents !== null && c.priceCents > 0;
+}
+
+/**
+ * A duplicate's BASE refund, as a fraction of the PACK price (not the item price) by the rarity
+ * rolled. A duplicate legendary refunds the whole pack — the near-miss consolation that keeps the
+ * pull from feeling like a mugging, and the reason the roll can afford to be honest about
+ * duplicates. The base is the floor; see `dustFor` for why it climbs with your collection.
  */
 const DUST_RATE: Readonly<Record<Rarity, number>> = {
   common: 0.1,
@@ -119,14 +141,12 @@ export function packById(id: string): Pack | undefined {
  * `priceCents > 0`. That single filter enforces both invariants in the header: `null` excludes the
  * earn-only prestige tier, `0` excludes the free starters everyone already owns.
  */
-export function packPool(pack: Pack): readonly Cosmetic[] {
-  return CATALOG.filter(
-    (c) => pack.kinds.includes(c.kind) && c.priceCents !== null && c.priceCents > 0
-  );
+export function packPool(pack: Pack): readonly PackableCosmetic[] {
+  return CATALOG.filter(isPackable).filter((c) => pack.kinds.includes(c.kind));
 }
 
 /** The pool's items at one rarity — the bucket the second roll indexes into. */
-function poolAtRarity(pack: Pack, rarity: Rarity): readonly Cosmetic[] {
+function poolAtRarity(pack: Pack, rarity: Rarity): readonly PackableCosmetic[] {
   return packPool(pack).filter((c) => c.rarity === rarity);
 }
 
@@ -165,7 +185,8 @@ function mulberry32(seed: number): () => number {
 
 /** What came out of the pack. `duplicate` is the dust path; on a fresh pull `dustCents` is 0. */
 export interface PackPull {
-  readonly item: Cosmetic;
+  /** Typed as PACKABLE, not `Cosmetic` — an earn-only item cannot be spelled here. See above. */
+  readonly item: PackableCosmetic;
   /** Already owned — converted to dust rather than granted twice. */
   readonly duplicate: boolean;
   /** The refund on a duplicate, in integer cents. 0 on a fresh pull. */
@@ -235,7 +256,10 @@ export function openPack(profile: Profile, pack: Pack, seed: number): PackResult
   if (item === undefined) return { profile, pull: null };
 
   if (isOwned(profile, item)) {
-    const dustCents = Math.floor(pack.priceCents * DUST_RATE[item.rarity]);
+    // Completion is measured on the profile BEFORE this open — the pull is a duplicate, so it does
+    // not change the collection, but reading it up front keeps "what the card promised" and "what
+    // you got" the same number.
+    const dustCents = dustFor(pack, item.rarity, completion(profile, pack));
     return {
       profile: { ...profile, bankrollCents: spent + dustCents },
       pull: { item, duplicate: true, dustCents },
@@ -252,7 +276,38 @@ export function openPack(profile: Profile, pack: Pack, seed: number): PackResult
   };
 }
 
-/** The dust a duplicate at this rarity would refund — the store card's "duplicates refund" line. */
-export function dustFor(pack: Pack, rarity: Rarity): number {
-  return Math.floor(pack.priceCents * DUST_RATE[rarity]);
+/**
+ * How much of this pack's pool you already own, 0..1. DERIVED from `inventory` — the same rule that
+ * keeps `level` out of the profile and computes it from `xp`. A pity counter would have meant a new
+ * stored field, a `$other: false` rules change and a hand deploy; this needs none of that, because
+ * "how deep am I in this pool" is already a fact the inventory determines.
+ */
+export function completion(profile: Profile, pack: Pack): number {
+  const pool = packPool(pack);
+  if (pool.length === 0) return 1;
+  return pool.filter((c) => isOwned(profile, c)).length / pool.length;
+}
+
+/**
+ * The dust a duplicate refunds — the store card's "duplicates refund" line, and the fix for the
+ * one place a pack genuinely stung.
+ *
+ * THE PROBLEM IT SOLVES. `canOpen` already refuses a COMPLETED pool, but the window just below that
+ * was the bad one: at 13-of-14 backs collected you were paying full price for a near-certain
+ * minimum-rate dust. The gamble stops being a gamble long before the pool is finished.
+ *
+ * THE FIX. Dust rises with your completion of the pool, from the rarity's base rate at an empty
+ * collection toward a FULL refund as the pool fills:
+ *
+ *     rate = base + (1 - base) × completion
+ *
+ * Monotonic, never above 1 (so a duplicate can never profit — still asserted), and it needs no
+ * stored state at all. The effect is that the deeper you are in a pool, the less a duplicate costs
+ * you, which is the same relief a pity timer buys without the migration surface. Rarity still
+ * matters: a legendary duplicate refunds everything at any completion.
+ */
+export function dustFor(pack: Pack, rarity: Rarity, completionPct = 0): number {
+  const base = DUST_RATE[rarity];
+  const rate = base + (1 - base) * Math.min(1, Math.max(0, completionPct));
+  return Math.floor(pack.priceCents * rate);
 }
