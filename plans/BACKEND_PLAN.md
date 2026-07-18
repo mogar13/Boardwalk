@@ -1,7 +1,9 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** 🚧 **Phase B is code-complete and green, and NOT yet deployed** (see Phase B below for
-the five owed non-code steps, all of which need the Pi). Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
+**Status:** ✅ **Phase B's SERVER is deployed and live** (2026-07-18, from `cb42e44`) — backups,
+restore drill and the nightly timer landed first, then the migration and cutover. Owed steps 1–3 of
+the five are done; **step 4 (prod round-trip verify) needs the frontend merged**, and the one-shot
+**backfill has NOT been run** (`mutations` has 0 `migration:v1` markers; SQLite holds one profile). Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
 `boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
 below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests — and is
 **deployed live** on the Pi at `https://boardwalk-pi.tail1bed2f.ts.net` (Tailscale Funnel). The
