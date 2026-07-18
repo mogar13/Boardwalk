@@ -458,6 +458,10 @@ const cfg: ApiConfig = {
   allowedOrigin: '*',
   authMode: 'firebase',
   allowInsecure: false,
+  // Offline hardening: no ticket secret, so `/settle` keeps accepting client-minted nonces —
+  // these suites predate tickets and must stay unaffected by them, which is the fallback's whole job.
+  ticketSecret: '',
+  ticketSecretPrevious: '',
 };
 
 const fakeVerifier: TokenVerifier = {

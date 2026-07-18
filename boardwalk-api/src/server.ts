@@ -1,5 +1,5 @@
 import { buildApp } from './app';
-import { configProblems, readConfig } from './config';
+import { configProblems, configWarnings, readConfig } from './config';
 import { openDb } from './db/db';
 import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import { RoomGateway } from './rooms/gateway';
@@ -17,6 +17,9 @@ function main(): void {
     for (const p of problems) console.error(`[config] ${p}`);
     process.exit(1);
   }
+  // Non-fatal, but loud. A bound that is switched off in production while every test covering it is
+  // green is exactly the failure this line exists to make impossible to miss at boot.
+  for (const w of configWarnings(cfg)) console.warn(`[config] ${w}`);
 
   const db = openDb(cfg.dbPath);
 

@@ -185,6 +185,34 @@ CREATE TABLE IF NOT EXISTS pack_opens (
   PRIMARY KEY (uid, nonce)
 );
 
+-- OFFLINE HARDENING. One row per (account, device) that has ever asked for tickets.
+--
+-- A ticket is a server-signed nonce; this table is the issuance ledger that makes the OUTSTANDING
+-- count knowable, and therefore cappable. \`issued_seq\` is the highest sequence number ever minted
+-- for this device, \`spent_count\` is how many of its tickets the server has since claimed, and the
+-- difference is what is outstanding. Summed across a uid's devices and capped at TICKET_BATCH, that
+-- is the entire bound on how much work an offline client can fabricate.
+--
+-- THE CAP IS PER-UID, NOT PER-DEVICE, and the column layout is not what enforces that — the query
+-- in \`outstandingTickets\` is. The device id is a random string the CLIENT invents with no
+-- attestation of any kind, so a per-device cap would multiply with fabricated devices instead of
+-- bounding anything. Here a client that claims to be a hundred devices is dividing its own 64.
+-- The device id exists to namespace sequence numbers and to make a gap attributable; it is never an
+-- authorization, and no query may treat it as one.
+--
+-- No COLUMN_MIGRATIONS entry is needed for a NEW TABLE — \`CREATE TABLE IF NOT EXISTS\` runs on every
+-- open and does reach the Pi's existing database. It is only a new COLUMN on an OLD table that
+-- silently never lands. A column added to THIS table later would need an entry.
+CREATE TABLE IF NOT EXISTS ticket_devices (
+  uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  device_id    TEXT NOT NULL,
+  issued_seq   INTEGER NOT NULL DEFAULT 0,
+  spent_count  INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  PRIMARY KEY (uid, device_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;

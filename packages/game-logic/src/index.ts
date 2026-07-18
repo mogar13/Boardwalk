@@ -50,6 +50,7 @@ export * from './progress/stats';
 export * from './progress/achievements';
 export * from './economy/bet';
 export * from './economy/result';
+export * from './economy/tickets';
 export * from './rewards/daily';
 export * from './store/catalog';
 export * from './store/packs';

@@ -276,6 +276,41 @@ export interface EconomyRepo {
 }
 
 /**
+ * A batch of server-signed nonces, plus where the account stands.
+ *
+ * `enabled: false` means this server does not enforce tickets (no `TICKET_SECRET`), and the client
+ * keeps minting its own nonces exactly as it did before offline banking existed. It is a THIRD
+ * state alongside "granted" and "refused", and it is worth the field: a client that could not tell
+ * "not required" from "the route is broken" would either retry forever or silently stop banking.
+ */
+export interface TicketBatch {
+  readonly enabled: boolean;
+  readonly tickets: readonly string[];
+  /** Unspent tickets the server believes this ACCOUNT holds, across every device it has claimed. */
+  readonly outstanding: number;
+}
+
+/**
+ * THE OFFLINE BANKING BUDGET, behind the seam.
+ *
+ * A ticket is a nonce the client cannot mint. It is spent in the `nonce` field of a `settle` — so
+ * `EconomyIntent` does not change by one field, and the property that no intent has a place to put
+ * a balance, a price, an XP amount, a stat count, a clock, a seed or an item survives untouched.
+ *
+ * The interface is one method because there is exactly one thing to ask: a client requests tickets
+ * and the server decides how many, capped per-ACCOUNT. There is no "return a ticket" and no "how
+ * many do I have" — the first would be a way to un-spend, and the second is answered by the grant.
+ *
+ * `deviceId` is a client-chosen sequence namespace and NOT a credential: nothing attests it, a
+ * client may claim to be a hundred devices, and the server's cap is per-uid precisely so that
+ * inventing devices divides the budget instead of multiplying it. See
+ * `plans/OFFLINE_HARDENING.md` and `boardwalk-api/src/domain/tickets.ts`.
+ */
+export interface TicketRepo {
+  issue(deviceId: string, want: number): Promise<TicketBatch>;
+}
+
+/**
  * THE DEALT HAND — Phase D's seam, and the one place a game's rules live behind the repo.
  *
  * Every other game in this repo runs its rulebook in the browser and tells the economy what
@@ -555,6 +590,8 @@ export interface Repos {
   readonly economy: EconomyRepo;
   /** Phase D: the one game whose cards are not the client's. See `BlackjackRepo`. */
   readonly blackjack: BlackjackRepo;
+  /** Offline hardening: the nonces a client cannot mint. See `TicketRepo`. */
+  readonly tickets: TicketRepo;
   readonly leaderboard: LeaderboardRepo;
   readonly room: RoomRepo;
   readonly chat: ChatRepo;

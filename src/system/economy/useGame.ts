@@ -5,6 +5,8 @@ import { useGameContext } from '@/system/economy/gameContext';
 import { applyResult, type ResultReport } from '@boardwalk/game-logic';
 import { useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
+import { useOfflineStore } from '@/system/offline/offlineStore';
+import type { SettleIntent } from '@/system/offline/queue';
 
 /**
  * `useGame()` — a game's window on the OS. Its manifest, and `reportResult` — the one call that
@@ -54,22 +56,52 @@ export function useGame(): GameApi {
       // `applied` is still computed above, and it is now a PREDICTION: it drives the optimistic
       // profile and the unlock toast, and the authoritative profile the server answers with
       // replaces it a beat later.
-      void applyEconomy(
-        {
+      //
+      // OFFLINE HARDENING. The nonce is a server-signed TICKET when the referee issues them, and a
+      // self-minted string only where there is no referee to verify one (a fresh clone, the
+      // emulator, `VITE_API_ECONOMY=0`). `acquireNonce()` answers null when the book is empty on a
+      // server that DOES enforce, and that null is the bound doing its job: there is no branch here
+      // that mints a nonce to paper over an exhausted budget, because that branch is the hole.
+      void (async () => {
+        const { ticket, required } = await useOfflineStore.getState().acquireNonce();
+        if (ticket === null && required) {
+          // The bound, as the player experiences it: offline, out of credits, and told so plainly
+          // rather than shown a result that silently never lands.
+          toast.error("You're offline and out of saved-result credits — this game won't be ranked.");
+          return;
+        }
+
+        const intent: SettleIntent = {
           kind: 'settle',
-          nonce: mintNonce(),
+          nonce: ticket ?? mintNonce(),
           gameId: manifest.id,
           outcome: report.outcome,
           payoutCents: Math.round(report.payoutCents ?? 0),
           ...(report.feats !== undefined ? { feats: report.feats } : {}),
-        },
-        applied.profile
-      ).then(
-        (result) => {
-          if (!result.ok) toast.error(result.error);
-        },
-        () => toast.error('Could not save your result — check your connection.')
-      );
+        };
+
+        await applyEconomy(intent, applied.profile).then(
+          (result) => {
+            if (!result.ok) toast.error(result.error);
+          },
+          () => {
+            // THE BANKING PATH. Before this, a network failure dropped the intent — nonce and all —
+            // so the result was simply LOST, and a "retry" would have minted a different nonce and
+            // defeated the server's idempotency anyway. Now the intent is kept VERBATIM, ticket
+            // included, and re-sent on reconnect: the same nonce arriving twice moves the ledger
+            // once, which `boardwalk-api/tests/tickets.test.ts` demonstrates against a real replay.
+            //
+            // Only when a ticket was actually spent. Without one there is nothing bounding a queue,
+            // and an unbounded queue of self-minted nonces is the hole rather than the fix.
+            if (ticket !== null) {
+              useOfflineStore.getState().bank(intent, Date.now());
+              toast.success("Saved — we'll rank this when you're back online.");
+            } else {
+              toast.error('Could not save your result — check your connection.');
+            }
+          }
+        );
+      })();
       // Gold-adjacent flourish stays as a plain success toast: an achievement is a moment, not a
       // sign, and the theme keeps status toots flat on purpose. One toast per badge unlocked.
       for (const a of applied.unlocked) {
