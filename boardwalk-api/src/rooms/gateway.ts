@@ -66,6 +66,18 @@ export class RoomGateway {
   /** Wire this gateway to an existing HTTP server (shares the Express port and the tunnel). */
   attach(server: Server, path = '/rooms'): WebSocketServer {
     const wss = new WebSocketServer({ server, path, maxPayload: 512 * 1024 });
+    // Private Network Access (Chrome), the WS twin of the HTTP middleware in `app.ts`. A WebSocket
+    // cannot run a separate CORS preflight, so Chrome folds the PNA check into the handshake itself:
+    // it sends `Access-Control-Request-Private-Network: true` on the upgrade request and blocks the
+    // socket unless the 101 response echoes `Access-Control-Allow-Private-Network: true`. This fires
+    // only for a browser resolving the API host to a private-range IP — a tailnet device seeing the
+    // Funnel host as a 100.x address — and is inert for everyone reaching the public Funnel IP. The
+    // `headers` event is ws's hook for adding response headers to the handshake reply.
+    wss.on('headers', (headers, req) => {
+      if (req.headers['access-control-request-private-network'] === 'true') {
+        headers.push('Access-Control-Allow-Private-Network: true');
+      }
+    });
     wss.on('connection', (ws) => this.onConnection(ws));
     return wss;
   }

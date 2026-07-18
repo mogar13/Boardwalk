@@ -149,6 +149,25 @@ Retire the RTDB *database* (Auth stays). Biggest phase — budget accordingly.
 
 **Done when:** RTDB is no longer read or written at all.
 
+**🚧 WIRED (branch `phase-c`), off by default.** The referee half is live and wired: the WS gateway
+(`boardwalk-api/src/rooms/`) is attached to the Express HTTP server in `server.ts` at `/rooms`, sharing
+the port, the Tailscale Funnel, and one Firebase-verifier — an upgrade authenticates the exact same ID
+token a REST call does. The Chrome PNA header is echoed onto the WS **handshake** too (a WebSocket
+can't preflight, so Chrome folds the check into the upgrade), the twin of the HTTP middleware, for
+tailnet devices. `tests/gateway.test.ts` (7) drives it over a real socket: handshake gate, forged-author
+refusal on create/claim/chat, owner-only private hands, host-only guards, and the disconnect safety net.
+
+The client half is built behind the seam: `src/system/repo/api/socket.ts` is the ONE multiplexed
+`wss://…/rooms` connection — request/reply correlation, push fan-out, immediate-cache replay to a late
+subscriber, **reconnect with backoff + subscription replay**, and **backpressure** (a bounded, drop-oldest
+outbox that respects `bufferedAmount`); `api/roomRepo.ts` + `api/chatRepo.ts` implement the unchanged
+`RoomRepo`/`ChatRepo` over it (`tests/socket.test.ts`, 8, drives the state machine against a fake socket).
+The composition root swaps them in behind `VITE_WS_ROOMS=1` (needs `VITE_API_BASE_URL`, inert under the
+emulator) — **off by default**: the realtime path is opt-in until the gateway has soaked against a real
+two-account table (the browser-verification recipe). **Remaining:** that browser soak, then make the flag
+the default and delete the Firebase room/chat repos so RTDB is no longer read or written at all. The
+Phase-B replay-hardening story for offline-banked results is still owed before offline wins are trusted.
+
 ### Phase D — Server-authoritative game state
 Only worth doing for games where it matters.
 

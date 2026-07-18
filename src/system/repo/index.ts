@@ -1,4 +1,4 @@
-import { apiRepos } from '@/system/repo/api';
+import { apiRepos, apiRoomChat } from '@/system/repo/api';
 import { firebaseAuth, firebaseReady } from '@/system/repo/firebase/app';
 import { firebaseAuthRepo } from '@/system/repo/firebase/authRepo';
 import { firebaseChatRepo } from '@/system/repo/firebase/chatRepo';
@@ -65,12 +65,29 @@ const profile: ProfileRepo = shadowApi
   ? shadowProfileRepo(firebaseProfileRepo, shadowApi.profile)
   : firebaseProfileRepo;
 
+/**
+ * PHASE C CUTOVER — room + chat over the WebSocket referee instead of RTDB. Off by default: rooms are
+ * the realtime path players actually depend on, so the swap is opt-in until the WS gateway has been
+ * proven against a real table (the browser-verification recipe). Flip `VITE_WS_ROOMS=1` (with an API
+ * base URL, and not under the emulator — a `demo-boardwalk` token the Pi's verifier rejects would
+ * just spin the handshake) to move rooms off Firebase; when this has soaked, it becomes the default
+ * and the Firebase room/chat repos are retired. This is the "rewrite `./api/*`, change one wiring
+ * line" the seam was built for — no game, hook, or component is touched.
+ */
+const wsRooms =
+  import.meta.env.VITE_WS_ROOMS === '1' &&
+  apiBaseUrl !== undefined &&
+  apiBaseUrl !== '' &&
+  !useEmulator
+    ? apiRoomChat({ baseUrl: apiBaseUrl, getToken })
+    : null;
+
 export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile,
   leaderboard: firebaseLeaderboardRepo,
-  room: firebaseRoomRepo,
-  chat: firebaseChatRepo,
+  room: wsRooms ? wsRooms.room : firebaseRoomRepo,
+  chat: wsRooms ? wsRooms.chat : firebaseChatRepo,
 };
 
 /**
