@@ -105,6 +105,11 @@ export interface SolitaireState {
   readonly drawCount: 1 | 3;
   /** Every draw and every accepted move increments this — the scoreboard, and a cheap change key. */
   readonly moves: number;
+  /**
+   * How many times the waste has been recycled back into the stock. Starts at 0; a win with 0 is
+   * the "Clean Sheet" feat (the board holds this fact, the economy does not — the game reports it).
+   */
+  readonly recycles: number;
   /** True once all 52 cards are on the foundations. Terminal; further actions are no-ops. */
   readonly won: boolean;
 }
@@ -122,6 +127,7 @@ export function initialState(): SolitaireState {
     tableau: [[], [], [], [], [], [], []],
     drawCount: 1,
     moves: 0,
+    recycles: 0,
     won: false,
   };
 }
@@ -335,7 +341,7 @@ function tryMove(state: SolitaireState, from: Pile, fromIndex: number, to: Pile)
 
 /** The first foundation index the top card of `from` can legally go to, or `null`. */
 function foundationFor(state: SolitaireState, from: Pile): number | null {
-  const moving = liftable(state, from, Math.max(0, (pileTopIndex(state, from) ?? 0)));
+  const moving = liftable(state, from, Math.max(0, pileTopIndex(state, from) ?? 0));
   const card = moving?.length === 1 ? moving[0] : undefined;
   if (card === undefined) return null;
   for (let i = 0; i < state.foundations.length; i++) {
@@ -380,7 +386,7 @@ export function reducer(state: SolitaireState, action: Action): SolitaireState {
           .slice()
           .reverse()
           .map((c) => ({ ...c, faceUp: false }));
-        return { ...state, stock, waste: [], moves: state.moves + 1 };
+        return { ...state, stock, waste: [], moves: state.moves + 1, recycles: state.recycles + 1 };
       }
       const n = Math.min(state.drawCount, state.stock.length);
       const stock = state.stock.slice();

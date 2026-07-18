@@ -73,13 +73,14 @@ export function Board() {
     if (state === null || state.outcome.kind === 'playing' || mySeatIndex < 0) return;
     if (reportedRound.current === state.round) return;
     reportedRound.current = state.round;
-    const outcome =
-      state.outcome.kind === 'checkmate'
-        ? state.outcome.winner === mySeatIndex
-          ? 'win'
-          : 'loss'
-        : 'push'; // stalemate / draw
-    reportResult({ outcome });
+    const won = state.outcome.kind === 'checkmate' && state.outcome.winner === mySeatIndex;
+    const outcome = state.outcome.kind === 'checkmate' ? (won ? 'win' : 'loss') : 'push';
+    // Speedrun feat: a checkmate win inside 20 full moves. The fullmove number is the 6th FEN
+    // field — a fact the board holds and the economy does not, so the game reports it. Hidden, so
+    // the first fast finish is a surprise.
+    const fullmove = Number(state.fen.split(' ')[5] ?? '');
+    const speedrun = won && Number.isFinite(fullmove) && fullmove < 20;
+    reportResult({ outcome, ...(speedrun ? { feats: ['feat_speedrun'] } : {}) });
   }, [state, mySeatIndex, reportResult]);
 
   // A soft click on any applied move — remote or local — using the OS audio role, never a filename.
@@ -245,7 +246,9 @@ function statusLine(
   }
   if (oc.kind === 'stalemate') return 'Stalemate — a draw.';
   if (oc.kind === 'draw') {
-    return oc.reason === 'fifty-move' ? 'Draw — the fifty-move rule.' : 'Draw — not enough material.';
+    return oc.reason === 'fifty-move'
+      ? 'Draw — the fifty-move rule.'
+      : 'Draw — not enough material.';
   }
   const side = turn === 0 ? 'White' : 'Black';
   const check = inCheck ? ' — check!' : '';
