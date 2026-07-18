@@ -363,7 +363,28 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   `tests/progress.test.ts` retargeted, `tests/solitaire.test.ts` recycle counter), browser-verified
   (profile renders all five chains + feats + hidden ??? + "0 / 27 · 0%", zero console errors). Feeds P2's
   earn-only cosmetics.
-- **P4 — Packs**: the variable-reward loop, on top of P2's rarity system.
+- ✅ **P4 — Packs — SHIPPED 2026-07-18.** The variable-reward loop, on top of P2's rarity. Three
+  packs (`src/system/store/packs.ts`): Card Back $2,500, Avatar $10,000, Grand $20,000, each
+  publishing its rate table on the card — and the displayed table IS `pack.odds`, the object
+  `openPack` rolls against, so the shown rate cannot drift from the real one. The roll is **pure and
+  seeded** (`openPack(profile, pack, seed)`, mulberry32; the nonce is minted in `useStore`, never
+  inside the logic), so the distribution is 21 assertions in `tests/packs.test.ts` rather than a
+  thing discovered by clicking Open. **Duplicates are real and deliberate**: the roll picks
+  uniformly within the rolled rarity and does NOT steer to what you are missing — steering would
+  make the dust refund code with no reader, the mechanic form of `loadout.color`. A duplicate
+  instead converts to rarity-scaled dust (10/25/50/100% of the pack price; a duplicate legendary
+  refunds the lot). What `canOpen` refuses is a pack whose pool you have COMPLETED — that is a fee,
+  not a gamble. Two invariants carry the earn-vs-buy split through: the pool is `priceCents > 0`, so
+  a pack can never drop an **earn-only** title (chips still cannot buy "Grandmaster", not even
+  through a slot machine) nor a free **starter**; both are asserted over the catalogue and
+  exhaustively over the roll. The card-back ladder grew from 8 to all **15** staged backs — a pack
+  needs depth or every pull is a duplicate by the third open. Reveal is one modal reusing the
+  existing `jackpot`/`win`/`push` roles (no new audio staged; celebration stingers stay P5). The
+  ethics guardrail is stated in the code: play money only, published odds, no real-money path, ever.
+  **NO rules change** (pulls land under the already-open `inventory/$itemId`), so no deploy needed.
+  498 tests green, browser-verified against the emulator (fresh account → pack shelf with all three
+  rate tables, only the affordable pack enabled, opened it, pulled "Emerald", bankroll $5,000 →
+  $2,500, collected count 0→1 of 14, zero console errors, zero failed requests, no broken art).
 - **P5 — Felts / frames / polish + celebration SFX**.
 
 P1 first because it's the cleanest win and the owner asked for it most concretely. Packs (P4) are

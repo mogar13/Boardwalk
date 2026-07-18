@@ -255,7 +255,8 @@ export function reducer(state: BlackjackState, action: Action): BlackjackState {
     case 'deal': {
       if (state.phase !== 'betting') return state;
       const [p1, d1, p2, d2, ...deck] = action.deck;
-      if (p1 === undefined || d1 === undefined || p2 === undefined || d2 === undefined) return state;
+      if (p1 === undefined || d1 === undefined || p2 === undefined || d2 === undefined)
+        return state;
       const player = [p1, p2];
       const dealer = [d1, d2];
       const dealt: BlackjackState = {

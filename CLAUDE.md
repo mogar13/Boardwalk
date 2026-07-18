@@ -114,8 +114,8 @@ its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe + Black
 seq-ordered state, the lobby, presence, lifecycle teardown) and `src/system/chat` (`useChat`,
 uid-pinned messages), over `RoomRepo`/`ChatRepo` and pure, unit-tested seat/ordering/lifecycle/key
 logic. `database.rules.json` now governs `rooms/`, `hands/` (owner-only hidden information) and
-`chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase/a
-daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
+`chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase or pack
+open/a daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
 derived from `xp`, `wins` from `stats`, neither stored. `src/system/room` also now carries the private
 hand channel's two game-facing hooks — `useRoom().writeHand(index, data)` (host deals) and
 `useHand<T>(index)` (owner subscribes to its own seat only) — the first callers of the `RoomRepo`
@@ -186,8 +186,9 @@ lint rule that matches nothing reports success.
 ### Money
 
 - **`useBankroll()` returns a readonly balance. There is no setter.** ✅ Live. Wagers go through
-  `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase and
-  the daily claim, are the *only* callers of the one internal writer (`authStore.mutateProfile`). A
+  `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase, a
+  pack open (`openPack` — spends the price, credits dust on a duplicate) and the daily claim, are
+  the *only* callers of the one internal writer (`authStore.mutateProfile`). A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
@@ -424,6 +425,7 @@ builds the thing it guards.
 | The economy is correct — limits, payouts, XP, unlocks | `tests/economy.test.ts` — `validateBet`/`clampBet`, and `applyResult` proving `big_win` fires on *net* not gross and never twice, money floored, input unmutated |
 | Stats count right; achievements fire at the boundary | `tests/progress.test.ts` (10) — `bumpStats` immutability + per-game keys, and `satisfiedAchievements` at the exact threshold for the standalone badges (`first_win`, `big_win`, `high_roller`, `table_regular`) and the level/bankroll chain rungs |
 | Achievements 2.0 — chains, grant, feats, hidden, completion % | `tests/achievements.test.ts` (24) — every chain tier at its boundary and one below (wins 10/50/100/500, bankroll $10k–$1M, level 5/10/25/50, per-game chess & blackjack 1/10/50/100), the mastery chains read the right game's wins, the earn-only grant lands in `inventory` on the completing tier only, not early, and exactly once; `recordedFeats` filtered to `FEAT_IDS` + de-duped; a game **cannot** forge a chain badge (or its grant) through the feats channel; feats fire once and carry no `test`; `completionPct` derivation; and catalogue integrity (unique ids, four ordered tiers per chain, only the two mastery Platinums grant, `feat`⇔no-`test`) |
+| Packs pull at the published rate, and can never drop what money must not buy | `tests/packs.test.ts` (21) — odds sum to 1 and the empirical distribution matches them over 20k seeds (the card's table IS the roll), every weighted rarity has a non-empty bucket, the pool excludes **every earn-only cosmetic and every free starter** (asserted over the catalogue AND exhaustively over the roll), a seeded roll is deterministic, a fresh pull spends exactly the price and grants the id, a duplicate refunds rarity-scaled dust and grants nothing, dust never exceeds the price, `canOpen` refuses a short bankroll and a completed pool, every pool item is reachable, bankroll floored at 0, input unmutated |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |

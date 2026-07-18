@@ -225,7 +225,7 @@ export type Move =
     }
   | { readonly type: 'draw' };
 
-const setAt = <T,>(arr: readonly T[], i: number, v: T): T[] => arr.map((x, k) => (k === i ? v : x));
+const setAt = <T>(arr: readonly T[], i: number, v: T): T[] => arr.map((x, k) => (k === i ? v : x));
 
 /**
  * Apply `move` for `seat` to the complete game. TOTAL and PURE, exactly like Chess's `playMove`: an
@@ -234,7 +234,12 @@ const setAt = <T,>(arr: readonly T[], i: number, v: T): T[] => arr.map((x, k) =>
  * host compares hand references afterwards to know which private nodes to re-deal — so unchanged
  * hands keep their array reference (structural sharing), which the immutable updates here preserve.
  */
-export function applyMove(game: UnoGame, seat: number, move: Move, rng: () => number = Math.random): UnoGame {
+export function applyMove(
+  game: UnoGame,
+  seat: number,
+  move: Move,
+  rng: () => number = Math.random
+): UnoGame {
   if (game.winner !== -1) return game;
   if (seat !== game.turn) return game;
   const hand = game.hands[seat];
@@ -263,7 +268,11 @@ export function applyMove(game: UnoGame, seat: number, move: Move, rng: () => nu
 
   const chosen = move.chosenColor ?? (card.color as UnoColor);
   const color = playedColor(card, chosen);
-  let hands = setAt(game.hands, seat, hand.filter((_, k) => k !== idx));
+  let hands = setAt(
+    game.hands,
+    seat,
+    hand.filter((_, k) => k !== idx)
+  );
   const discard = game.discard.concat(card);
   let deck = game.deck;
   let discardPile = discard;
