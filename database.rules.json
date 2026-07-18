@@ -96,6 +96,19 @@
             "$itemId": { ".validate": "newData.isBoolean() && newData.val() == true" }
           },
 
+          // Equipped non-avatar cosmetics (P2 of the progression overhaul): a card back and a
+          // title, each a cosmetic id string. `avatar` is NOT here — it stays a top-level profile
+          // field (the owner's no-migration decision), so this map holds only the new kinds.
+          // `$other: false` pins it to exactly these two keys: a `frame`/`felt` added later is a
+          // rules change on purpose, the same discipline as `daily` and each game's `stats`. The
+          // value is only shape-checked (a bounded string) — WHICH id is equipped is client state,
+          // like the amounts in bankrollCents, until BACKEND_PLAN.md arbitrates.
+          "equipped": {
+            "cardback": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "title": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "$other": { ".validate": false }
+          },
+
           // The daily-reward clock. Two whole non-negative numbers and nothing else — a UTC day
           // index and a streak. `$other: false` refuses anything the server does not expect,
           // which matters here because this is the field a "give me free money" edit would aim

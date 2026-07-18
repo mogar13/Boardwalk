@@ -1,4 +1,5 @@
 import { cardBackSrc, cardSrc } from '@/system/cards/cards';
+import { useEquippedCardBack } from '@/system/cards/useCardBack';
 import { cx } from '@/ui';
 import type { Card } from '@/games/blackjack/logic/blackjack';
 
@@ -21,6 +22,9 @@ export function Hand({
   readonly hideIndex?: number;
   readonly label: string;
 }) {
+  // The player's equipped card back — the hole card is drawn with the one they chose in the store,
+  // not a hardcoded colour. The game passes the id; `cardBackSrc` owns the art. See useEquippedCardBack.
+  const back = useEquippedCardBack();
   return (
     <div className="flex flex-col gap-2">
       <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.14em] uppercase">
@@ -33,7 +37,7 @@ export function Hand({
           return (
             <img
               key={i}
-              src={faceDown ? cardBackSrc('red') : cardSrc(card)}
+              src={faceDown ? cardBackSrc(back) : cardSrc(card)}
               alt={faceDown ? 'Face-down card' : `${card.rank} of ${card.suit}`}
               width={140}
               height={190}

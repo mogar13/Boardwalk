@@ -34,6 +34,11 @@ export function useStore(): StoreApi {
         toast.warning(check.error);
         return;
       }
+      // `canBuy` already refused an earn-only (null-priced) item, so the price is a real number
+      // here — narrow it for the confirm/label below rather than trusting the `??` to paper over a
+      // bug. If this is ever null past the guard, that is a `canBuy` regression, not a $0 purchase.
+      const price = item.priceCents;
+      if (price === null) return;
 
       // The async part is an implementation detail behind a void API — kicked off here and left to
       // run. Spending real bankroll is worth a confirm, and the label names the cost, never "OK":
@@ -41,8 +46,8 @@ export function useStore(): StoreApi {
       void (async () => {
         const ok = await confirm({
           title: `Buy ${item.name}?`,
-          body: `${item.emoji}  Spend ${formatDollars(item.priceCents)} from your bankroll.`,
-          confirmLabel: `Spend ${formatDollars(item.priceCents)}`,
+          body: `Spend ${formatDollars(price)} from your bankroll on ${item.name}.`,
+          confirmLabel: `Spend ${formatDollars(price)}`,
         });
         if (!ok) return;
 
@@ -59,7 +64,7 @@ export function useStore(): StoreApi {
 
         try {
           await mutateProfile(applyPurchase(fresh, item));
-          toast.success(`${item.emoji}  ${item.name} — yours`);
+          toast.success(`${item.name} — yours`);
         } catch {
           toast.error('Purchase failed — try again.');
         }

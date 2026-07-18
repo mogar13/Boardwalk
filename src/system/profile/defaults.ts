@@ -29,10 +29,12 @@ export const DEFAULT_AVATAR = '👤';
  *
  *   • `isDev` — v2 does not store one at all. See Session.isAdmin.
  *   • `chatColor` — chat is Phase 5.
- *   • `equippedCardBack` / `title` — a card back has no reader until a game draws one,
- *     so it would be `loadout.color` reborn (written by the store, read by nothing). It
- *     lands with the game that renders it. The store sells AVATARS in Phase 4 precisely
- *     because an equipped avatar has a reader today — the top bar and the profile card.
+ *
+ * The `equipped` map landed in P2 of the progression overhaul, WITH its readers: the card games
+ * draw `equipped.cardback` (via `useEquippedCardBack`) and the profile card shows `equipped.title`
+ * — so a card back is no longer the `loadout.color` this note once warned about. It starts empty
+ * (`{}`, which RTDB strips on the wire and `readProfile` re-defaults); the default card back is a
+ * free starter every account owns, so an empty map still draws a valid back.
  *
  * Phase 4 added `stats`, `achievements`, `inventory` and `daily` — each with the consumer
  * that reads it, the `.validate` line in database.rules.json that pins it, and the pure
@@ -54,6 +56,7 @@ export function defaultProfile(rawUsername: string): Profile {
     stats: {},
     achievements: {},
     inventory: {},
+    equipped: {},
     daily: { lastClaimDay: 0, streak: 0 },
   };
 }

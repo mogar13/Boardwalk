@@ -157,6 +157,17 @@
   --color-uno-green: oklch(62% 0.16 150);
   --color-uno-yellow: oklch(82% 0.16 90);
 
+  /* Cosmetic RARITY tiers (P2 store). GAME CONTENT like the UNO suits, not chrome — a scarcity
+     LABEL on a store card, so it is FLAT and does NOT touch the glow budget (blue=act, cyan=here,
+     gold=money stay the only three that glow). Four hues chosen to read as a rising ladder and to
+     stay clear of the three signals: legendary is warm orange (H45), deliberately NOT accent-gold
+     (H86) — gold means money, and a legendary card back is not money. Kept at moderate chroma so
+     each clears contrast as a thin border/label on the base surfaces. */
+  --color-rarity-common: oklch(70% 0.02 284); /* neutral — the floor, no status */
+  --color-rarity-rare: oklch(72% 0.12 232); /* cool blue, flat (info's family, no glow) */
+  --color-rarity-epic: oklch(66% 0.19 300); /* violet — a hue nothing else here uses */
+  --color-rarity-legendary: oklch(74% 0.16 45); /* warm orange — hot, and 41° clear of money-gold */
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   /* Signage. Prefers a condensed grotesque where one is installed, because that

@@ -308,6 +308,58 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
       })
     );
   });
+
+  it('accepts a well-formed equipped map (P2 cosmetics)', async () => {
+    // The `equipped` map holds the non-avatar cosmetics — a card back and a title, each a cosmetic
+    // id string. This is the field P2 added; before its `.validate` block the profile's
+    // `$other: false` refused it outright, which is exactly why adding it was a rules change.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 'cb_red3', title: 'ttl_grandmaster' },
+      })
+    );
+    // A partial map is fine — you can wear a card back with no title.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 'cb_blue1' },
+      })
+    );
+  });
+
+  it('refuses a stray key in equipped — $other is false, so frame/felt is a rules change', async () => {
+    // The pin that makes a future cosmetic kind (frame, felt) a deliberate rules change with its
+    // reader, not a field that quietly appears. `avatar` here is also a stray — it lives top-level,
+    // not in this map — so a writer folding it in is refused.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 'cb_red3', frame: 'fr_gold' },
+      })
+    );
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { avatar: '👑' },
+      })
+    );
+  });
+
+  it('refuses an equipped id of the wrong type or over length', async () => {
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 5 },
+      })
+    );
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { title: 'x'.repeat(65) },
+      })
+    );
+  });
 });
 
 describe('usernames/ — the public index', () => {

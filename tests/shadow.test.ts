@@ -22,6 +22,7 @@ const baseProfile = (over: Partial<Profile> = {}): Profile => ({
   stats: { blackjack: { played: 10, won: 4, lost: 5, pushed: 1 } },
   achievements: { big_win: 1700000000000 },
   inventory: { top_hat: true },
+  equipped: { cardback: 'cb_red3' },
   daily: { lastClaimDay: 19500, streak: 3 },
   ...over,
 });
