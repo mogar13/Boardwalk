@@ -130,9 +130,15 @@ function readInventory(wire: unknown): Inventory {
  */
 function readEquipped(wire: unknown): Equipped {
   const e = asRecord(wire);
-  const out: { cardback?: string; title?: string } = {};
+  const out: { cardback?: string; title?: string; felt?: string; frame?: string } = {};
   if (typeof e.cardback === 'string' && e.cardback !== '') out.cardback = e.cardback;
   if (typeof e.title === 'string' && e.title !== '') out.title = e.title;
+  // P5's two kinds. This whitelist is per-key by design — an unlisted key is DROPPED, so a kind
+  // added to the type without a line here reads back as nothing-equipped: the cosmetic saves, then
+  // silently un-equips on reload. That is the failure mode this function's shape invites, and the
+  // reason each kind gets its own line rather than a spread of whatever the wire carried.
+  if (typeof e.felt === 'string' && e.felt !== '') out.felt = e.felt;
+  if (typeof e.frame === 'string' && e.frame !== '') out.frame = e.frame;
   return out;
 }
 

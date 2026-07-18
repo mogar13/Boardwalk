@@ -96,16 +96,24 @@
             "$itemId": { ".validate": "newData.isBoolean() && newData.val() == true" }
           },
 
-          // Equipped non-avatar cosmetics (P2 of the progression overhaul): a card back and a
-          // title, each a cosmetic id string. `avatar` is NOT here — it stays a top-level profile
+          // Equipped non-avatar cosmetics: a card back and a title (P2), plus a felt and a frame
+          // (P5) — each a cosmetic id string. `avatar` is NOT here — it stays a top-level profile
           // field (the owner's no-migration decision), so this map holds only the new kinds.
-          // `$other: false` pins it to exactly these two keys: a `frame`/`felt` added later is a
+          // `$other: false` pins it to exactly these four keys: a fifth kind added later is a
           // rules change on purpose, the same discipline as `daily` and each game's `stats`. The
           // value is only shape-checked (a bounded string) — WHICH id is equipped is client state,
           // like the amounts in bankrollCents, until BACKEND_PLAN.md arbitrates.
+          //
+          // P5 ADDED `felt` AND `frame` HERE, and the pin is why that was a deploy and not a
+          // one-line diff: until this file is pushed with `npm run rules:deploy`, production
+          // REFUSES any profile write carrying either key — which is every write a player makes
+          // once the new frontend is live, not merely the ones that equip a felt. Same class as
+          // P1's `played` and P2's `equipped`. Nothing in CI does this.
           "equipped": {
             "cardback": { ".validate": "newData.isString() && newData.val().length <= 64" },
             "title": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "felt": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "frame": { ".validate": "newData.isString() && newData.val().length <= 64" },
             "$other": { ".validate": false }
           },
 

@@ -393,7 +393,54 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   rate tables, only the affordable pack enabled, opened it, pulled a back, bankroll $5,000 → $2,500,
   collected count 0→1 of 14 and the quoted duplicate refund moving $250→$411 with it, zero console
   errors, zero failed requests, no broken art).
-- **P5 — Felts / frames / polish + celebration SFX**.
+- ✅ **P5 — Felts / frames / celebration SFX — SHIPPED 2026-07-18.** The last slice, and the one
+  that had to pay for its own deploy surface. `CosmeticKind` grew to
+  `avatar | cardback | title | felt | frame`, each landing WITH its reader, and the two new kinds
+  answer the "no reader" rule in opposite ways.
+
+  **`felt` is art.** `src/system/felt/felts.ts` owns id→file, `useEquippedFelt()` resolves to a URL,
+  and `<Card felt={…}>` draws it as a muted `object-cover` layer — so all five boards read it
+  through **one** kit prop rather than five bespoke edits, because `<Card>` was already the surface
+  every board sits on (its docblock has said "the felt, the table" since Phase 1). Three felts
+  (Emerald / Midnight / Crimson), curated from the trove into `public/felts/`. **No free starter:**
+  the default is no felt, which is the exact `bg-base-200` table Phase 6 shipped, so the kind is
+  additive on a live app and an account that buys nothing sees no change. Drawn at `opacity-80`
+  because the theme's contrast pairs are computed against the base surfaces.
+
+  **`frame` is not art — and it is not a new colour either.** The sweep found no ring art, and §3.1
+  said if frames threaten the glow budget, frames get cut. They didn't have to: a frame is drawn in
+  P2's **rarity** tokens, which are already flat and already cleared, so the kind adds **zero hues**
+  and a frame's colour IS its rarity. Four frames, and the three avatar `<span>`s (top bar,
+  leaderboard, profile card) collapsed into one `<Avatar>` in the same commit. **Own-avatar only**
+  (owner decision): another player's frame would need projecting into `leaderboard/<uid>`, a fourth
+  pinned `$other: false` node and its own deploy — so `<Avatar>` takes the frame as a prop, leaving
+  that a one-prop change later.
+
+  **Celebration SFX** are two real roles, `unlock` and `fanfare` (Kenney Sax jingles, CC0), replacing
+  the `jackpot`/`win` the P4 reveal borrowed as a stated placeholder. Single-file, not pools — a
+  celebration is punctuation, not a burst — and both play sites fire once per BATCH, since one
+  result can complete several chain tiers. Felts and frames also joined **`pk_grand`** (owner
+  decision), which is explicit: `packPool` is gated on `pack.kinds`, so adding cosmetics to
+  `CATALOG` alone would have changed nothing. Honest knock-on: the pool is bigger, so existing
+  collectors' completion — and the dust their duplicates refund — drops.
+
+  **NOT in scope, and staying out:** `dice` and chip skins. Both have abundant art and no reader,
+  which is the whole reason the union stayed closed around them even while it was open for editing.
+
+  539 tests green (`tests/felts.test.ts` +7, `tests/frames.test.ts` +6 — the frame one guards
+  tone-vs-rarity drift, the failure no disk check or compiler can see) plus
+  `boardwalk-api` 194 (`tests/migrations.test.ts` +4, `api.test.ts` +2). Every new guard falsified
+  by breaking its subject on purpose. Browser-verified against the emulator: felt renders on
+  Solitaire, Blackjack and a live Tic-Tac-Toe board, the ring renders in the top bar, a pack open
+  plays `unlock.ogg`, both stingers confirmed loadable-and-playable, **zero console errors, zero
+  failed requests, no dead scroll**.
+
+  ⚠️ **TWO manual deploys, and they go BEFORE the frontend merge.** `npm run rules:deploy`
+  (`equipped` now pins four keys — until it runs, prod refuses every profile write carrying a felt
+  or frame, the P1/P2 failure again), and the Pi (`equipped_felt`/`equipped_frame`; the columns land
+  via `COLUMN_MIGRATIONS` on restart, but the code must be rsync'd by hand). The frontend
+  auto-deploys on push, and Phase D already paid ten minutes of broken prod blackjack for the other
+  order.
 
 P1 first because it's the cleanest win and the owner asked for it most concretely. Packs (P4) are
 gated behind rarity (P2) existing.

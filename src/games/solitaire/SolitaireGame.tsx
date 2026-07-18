@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { Button, Card, cx, useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
+import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGame } from '@/system/economy/useGame';
 import type { GameProps } from '@/games/registry';
 import { Board } from '@/games/solitaire/components/Board';
@@ -30,6 +31,7 @@ export default function SolitaireGame({ onExit }: GameProps) {
   const [drawCount, setDrawCount] = useState<1 | 3>(1);
   const { reportResult } = useGame();
   const { play } = useAudio();
+  const felt = useEquippedFelt();
   const toast = useToast();
 
   const newGame = (count: 1 | 3) => {
@@ -99,7 +101,7 @@ export default function SolitaireGame({ onExit }: GameProps) {
         </div>
       </div>
 
-      <Card className="flex flex-col gap-6 p-4 sm:p-6">
+      <Card felt={felt} className="flex flex-col gap-6 p-4 sm:p-6">
         <Board state={state} dispatch={dispatch} play={play} />
       </Card>
 

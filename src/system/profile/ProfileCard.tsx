@@ -5,6 +5,8 @@ import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { useProfileEditor } from '@/system/profile/useProfileEditor';
 import { xpProgress } from '@boardwalk/game-logic';
 import { equippedTitle } from '@boardwalk/game-logic';
+import { Avatar } from '@/system/profile/Avatar';
+import { useEquippedFrame } from '@/system/frame/useEquippedFrame';
 
 /**
  * The signed-in player, in full. The top bar (`src/shell/TopBar`) shows a compact version
@@ -22,6 +24,7 @@ export function ProfileCard() {
   const { session, signOut } = useAuth();
   const profile = useProfile();
   const isAdmin = useIsAdmin();
+  const frame = useEquippedFrame();
   const { rename } = useProfileEditor();
 
   const [editing, setEditing] = useState(false);
@@ -51,9 +54,7 @@ export function ProfileCard() {
       <Card className="flex flex-col gap-6 px-6 py-5">
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <span className="text-4xl" aria-hidden>
-              {profile.avatar}
-            </span>
+            <Avatar emoji={profile.avatar} size="lg" frame={frame} />
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="font-display text-base-content text-lg font-semibold tracking-[0.08em]">

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
+import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { aiSeatsToDrive } from '@/system/room/seats';
@@ -36,6 +37,7 @@ export function Board() {
   const { state, patch, seats, status, isHost } = useRoom<TicTacToeState>();
   const { isMyTurn, mySeatIndex } = useSeats();
   const { reportResult } = useGame();
+  const felt = useEquippedFelt();
 
   // 1. Host seeds the opening state exactly once, when the room flips to playing.
   useEffect(() => {
@@ -107,7 +109,7 @@ export function Board() {
           : `${MARK[turn]} to move — ${seats[turn]?.name ?? '…'}.`;
 
   return (
-    <Card className="flex flex-col items-center gap-5 p-6">
+    <Card felt={felt} className="flex flex-col items-center gap-5 p-6">
       <p
         className={cx(
           'text-sm',

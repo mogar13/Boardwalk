@@ -6,6 +6,7 @@ import { xpProgress } from '@boardwalk/game-logic';
 import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@/system/progress/boards';
 import { useLeaderboard } from '@/system/progress/useLeaderboard';
 import type { LeaderboardEntry } from '@/system/repo';
+import { Avatar } from '@/system/profile/Avatar';
 
 /**
  * The public standings — the reader the `leaderboard/` node was built for. Phase 4 shipped one
@@ -57,9 +58,9 @@ function Row({
     >
       <span className="font-display text-bw-muted text-sm font-semibold tabular-nums">{rank}</span>
       <div className="flex min-w-0 items-center gap-3">
-        <span className="text-2xl" aria-hidden>
-          {entry.avatar}
-        </span>
+        {/* No `frame` — another player's frame is not in the public projection. See
+            `useEquippedFrame` for why that stayed out of P5. */}
+        <Avatar emoji={entry.avatar} size="md" />
         <div className="flex min-w-0 flex-col">
           <span
             className={cx(

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
+import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
@@ -42,6 +43,7 @@ export function Board() {
   const { state, patch, seats, status, isHost } = useRoom<ChessState>();
   const { isMyTurn, mySeatIndex } = useSeats();
   const { reportResult } = useGame();
+  const felt = useEquippedFelt();
   const audio = useAudio();
 
   const [selected, setSelected] = useState<number | null>(null);
@@ -148,7 +150,7 @@ export function Board() {
   };
 
   return (
-    <Card className="flex flex-col items-center gap-5 p-6">
+    <Card felt={felt} className="flex flex-col items-center gap-5 p-6">
       <p className={cx('text-sm', playing ? 'text-bw-muted' : 'text-base-content')}>
         {statusLine(state, turn, myMove, mySeatIndex, seats, checkedKing !== -1)}
       </p>

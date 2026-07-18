@@ -328,16 +328,40 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     );
   });
 
-  it('refuses a stray key in equipped — $other is false, so frame/felt is a rules change', async () => {
-    // The pin that makes a future cosmetic kind (frame, felt) a deliberate rules change with its
-    // reader, not a field that quietly appears. `avatar` here is also a stray — it lives top-level,
-    // not in this map — so a writer folding it in is refused.
+  it('accepts a felt and a frame in equipped (P5 cosmetics)', async () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE. Until P5 it read "refuses a stray key in equipped —
+    // $other is false, so frame/felt is a rules change", and it failed a write carrying
+    // `frame: 'fr_gold'`. That was the pin working exactly as designed: it made this slice pay a
+    // rules change plus a hand-run `npm run rules:deploy` to add a cosmetic kind, rather than
+    // letting the field quietly appear. P5 paid it, so the assertion flips — and the refusal it
+    // used to prove is preserved below against a key that is still genuinely unknown.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 'cb_red3', title: 'ttl_grandmaster', felt: 'ft_blue', frame: 'fr_ember' },
+      })
+    );
+    // Still partial-friendly: a felt with no frame, and a frame with no felt.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { felt: 'ft_green' } })
+    );
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { frame: 'fr_steel' } })
+    );
+  });
+
+  it('still refuses a stray key in equipped — $other is false, so a SIXTH kind is a rules change', async () => {
+    // The pin survives P5 with its teeth in. `dice` is the honest example: PROGRESSION_PLAN.md
+    // keeps that kind out until a dice game exists to read it, and this is the enforcement half of
+    // that decision — the field cannot appear ahead of its reader even by accident.
     await assertFails(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
-        equipped: { cardback: 'cb_red3', frame: 'fr_gold' },
+        equipped: { cardback: 'cb_red3', dice: 'dc_ivory' },
       })
     );
+    // `avatar` is also a stray — it lives top-level, not in this map — so a writer folding it in
+    // is refused.
     await assertFails(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
@@ -357,6 +381,21 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
         equipped: { title: 'x'.repeat(65) },
+      })
+    );
+    // The P5 keys are shape-checked the same way, asserted rather than assumed: a `.validate` is
+    // written per key, so "felt is bounded because cardback is" is exactly the reasoning that
+    // leaves one key unbounded and nothing red.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { felt: 5 },
+      })
+    );
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { frame: 'x'.repeat(65) },
       })
     );
   });
