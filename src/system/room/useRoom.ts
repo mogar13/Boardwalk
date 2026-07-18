@@ -95,7 +95,12 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     state: (snapshot?.state ?? null) as TPublic | null,
     seats: snapshot?.seats ?? [],
     meta: snapshot?.meta ?? null,
-    status: snapshot === null ? 'gone' : snapshot.meta.status,
+    // 'gone' when there is no snapshot AND when the snapshot is a ghost — a room node that exists
+    // only because `trackPresence` wrote our presence key into a mistyped/closed join code, so it
+    // has no host and no seats. A real room always carries a host (set atomically at create), so an
+    // empty `meta.host` is the reliable tell. Without this, joining a bad code lands the player in a
+    // broken empty lobby instead of the "This table has closed" card that `status === 'gone'` drives.
+    status: snapshot === null || snapshot.meta.host === '' ? 'gone' : snapshot.meta.status,
     presence: snapshot?.presence ?? {},
     myId: myUid,
     isHost: snapshot?.meta.host === myUid,

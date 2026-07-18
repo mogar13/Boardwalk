@@ -4,7 +4,12 @@ import { Button } from '@/ui/Button';
 import { Modal } from '@/ui/Modal';
 import { useToastList, useToast } from '@/ui/useToast';
 import type { ToastTone } from '@/ui/useToast';
-import { usePendingConfirm, registerConfirmHost, resolveConfirm } from '@/ui/useConfirm';
+import {
+  usePendingConfirm,
+  usePendingConfirmKey,
+  registerConfirmHost,
+  resolveConfirm,
+} from '@/ui/useConfirm';
 
 /**
  * Everything the kit needs mounted, mounted once. Put it at the app root.
@@ -107,14 +112,19 @@ function Toasts() {
 
 function ConfirmHost() {
   const pending = usePendingConfirm();
+  // The LAST request's id, held across the close (see the store field) — NOT switched to a static
+  // idle value when `pending` clears. A key that flipped on close would remount the Modal, tearing
+  // the open <dialog> out of the DOM before its `[open]` effect could call `close()`, which skips
+  // native focus restoration and dumps a keyboard/screen-reader user on <body>. A stable key keeps
+  // the Modal mounted through the close so focus returns to whatever opened it; a NEW request bumps
+  // the key, preserving the fresh-mount-per-request the key existed for.
+  const renderKey = usePendingConfirmKey();
 
   useEffect(() => registerConfirmHost(), []);
 
   return (
     <Modal
-      // `open` is driven by the store, and the `key` remounts per request so a
-      // second confirm cannot inherit the first's exit animation mid-flight.
-      key={pending?.id ?? 'idle'}
+      key={renderKey}
       open={pending !== null}
       onClose={() => {
         resolveConfirm(false);

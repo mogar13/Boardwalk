@@ -107,6 +107,15 @@ export function Modal({
       // ourselves. Dialogs without one (confirm) match nothing and keep the native default.
       dialog.querySelector<HTMLElement>('input, textarea, select')?.focus();
     } else if (!open && dialog.open) dialog.close();
+
+    return () => {
+      // Close a still-open dialog on unmount so the browser restores focus to the element that was
+      // focused before showModal(). This matters for the confirm host, which remounts the Modal via
+      // a `key` change when a request resolves: React tears the open <dialog> out of the DOM, and a
+      // dialog removed while open never runs native focus restoration — focus silently drops to
+      // <body>, stranding a keyboard/screen-reader user after they confirm. close() restores it.
+      if (dialog.open) dialog.close();
+    };
   }, [open]);
 
   return (

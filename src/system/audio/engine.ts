@@ -21,6 +21,12 @@ const BASE = `${import.meta.env.BASE_URL}audio/`;
 /** One cached element per FILE (not per role), so variations share nothing and can overlap. */
 const cache = new Map<string, HTMLAudioElement>();
 let unlocked = false;
+// Guards a primer play that is in flight. `unlocked` only latches inside the async `.then()` (so a
+// blocked first attempt retries on the next gesture), which leaves a window where a second gesture —
+// on touch devices `touchstart` fires and then `click`, both bound `{ once: true }` — calls `unlock()`
+// again and replays the primer. This flag closes that window while still allowing a retry: on failure
+// it resets to false and `unlocked` stays false, so the next real gesture tries again.
+let unlocking = false;
 
 function hasAudio(): boolean {
   return typeof document !== 'undefined' && typeof Audio !== 'undefined';
@@ -68,13 +74,14 @@ export function play(name: SoundName): void {
  * click that triggers it is not itself silenced.
  */
 export function unlock(): void {
-  if (unlocked || !hasAudio()) return;
+  if (unlocked || unlocking || !hasAudio()) return;
   const first = SOUNDS.click[0];
   if (first === undefined) return;
   const el = element(first);
   if (el === null) return;
   const restore = el.volume;
   el.volume = 0;
+  unlocking = true;
   void el
     .play()
     .then(() => {
@@ -82,8 +89,10 @@ export function unlock(): void {
       el.currentTime = 0;
       el.volume = restore;
       unlocked = true;
+      unlocking = false;
     })
     .catch(() => {
       el.volume = restore;
+      unlocking = false;
     });
 }

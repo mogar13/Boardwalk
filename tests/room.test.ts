@@ -149,6 +149,8 @@ describe('mySeatIndex / tableIsFull / humanCount', () => {
   it('is not full while an open seat remains', () => {
     expect(tableIsFull(seats)).toBe(false);
     expect(tableIsFull([human(ME), ai()])).toBe(true);
+    // A zero-seat table is not "full" — `[].every` is vacuously true, so this is the guard.
+    expect(tableIsFull([])).toBe(false);
   });
   it('counts only humans', () => {
     expect(humanCount(seats)).toBe(2);

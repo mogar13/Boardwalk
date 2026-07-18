@@ -160,7 +160,11 @@ export function aiSeatsToDrive(seats: readonly Seat[], isHost: boolean): number[
 
 /** Whether every seat is filled (human or AI) — the host's cue that the table can start. */
 export function tableIsFull(seats: readonly Seat[]): boolean {
-  return seats.every((s) => s.kind !== 'open');
+  // `[].every` is vacuously true, so guard the empty array: a zero-seat table (a ghost room, or a
+  // future caller that hasn't loaded seats yet) is NOT full. `canStart` also requires a human, so
+  // this is belt-and-braces today, but a helper that calls nothing "full" is a trap waiting for the
+  // next caller that forgets the human-count clause.
+  return seats.length > 0 && seats.every((s) => s.kind !== 'open');
 }
 
 /** How many humans hold a seat — for the lobby's "2/4 players" line and the min-seats check. */

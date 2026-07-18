@@ -54,7 +54,7 @@ function GameCard({ game }: { game: RegisteredGame }) {
 function EmptyPier() {
   return (
     <Card className="border-bw-line/60 flex items-center justify-center border-dashed p-8">
-      <p className="text-bw-muted text-sm">Opening soon — the first games arrive in Phase 6.</p>
+      <p className="text-bw-muted text-sm">No games on this pier yet — check back soon.</p>
     </Card>
   );
 }

@@ -59,14 +59,25 @@ interface ConfirmState {
   pending: Pending | null;
   /** How many <UiRoot>s are mounted. See `ask` for why this is tracked. */
   hosts: number;
+  /**
+   * The id of the most recent request, HELD across its resolution (not cleared with `pending`).
+   * <UiRoot> keys the Modal on this so the key stays stable through the close — a key that flipped
+   * to a static idle value on resolve would remount the Modal, tearing the open <dialog> out of the
+   * DOM before `close()` could run and skipping native focus restoration. A NEW request bumps it, so
+   * the per-request fresh mount (no inherited exit animation) is preserved. See `usePendingConfirmKey`.
+   */
+  lastId: number;
 }
 
 let seq = 0;
 
-const useConfirmStore = create<ConfirmState>(() => ({ pending: null, hosts: 0 }));
+const useConfirmStore = create<ConfirmState>(() => ({ pending: null, hosts: 0, lastId: 0 }));
 
 /** For <UiRoot> only. */
 export const usePendingConfirm = (): Pending | null => useConfirmStore((s) => s.pending);
+
+/** The Modal key for <UiRoot> — the live request's id, or the last one's while closing. */
+export const usePendingConfirmKey = (): number => useConfirmStore((s) => s.pending?.id ?? s.lastId);
 
 export function registerConfirmHost(): () => void {
   useConfirmStore.setState((s) => ({ hosts: s.hosts + 1 }));
@@ -107,7 +118,10 @@ function ask(req: ConfirmRequest): Promise<boolean> {
   }
 
   return new Promise<boolean>((resolve) => {
-    useConfirmStore.setState({ pending: { ...req, id: ++seq, resolve } });
+    const id = ++seq;
+    // `lastId` is set with `pending` and deliberately NOT cleared by `settle`, so the Modal key
+    // survives the close — see the field's comment.
+    useConfirmStore.setState({ pending: { ...req, id, resolve }, lastId: id });
   });
 }
 

@@ -335,7 +335,7 @@ describe('reducer: auto', () => {
 });
 
 describe('win and autoComplete', () => {
-  /** A state one move from a win: every suit built to the Queen, four Kings waiting on the waste. */
+  /** A state one move from a win: every suit built to the Queen, four Kings waiting in the tableau. */
   function nearlyWon(): SolitaireState {
     const suits: Suit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
     const ranks: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'];
@@ -374,6 +374,28 @@ describe('win and autoComplete', () => {
       tableau: [[c('K', 'spades', false)], [c('K', 'hearts')], [c('K', 'diamonds')], [c('K', 'clubs')], [], [], []],
     };
     expect(canAutoComplete(withFaceDown)).toBe(false);
+  });
+
+  it('refuses autoComplete while the waste holds cards autoComplete cannot reach', () => {
+    // Every tableau card is face up and the stock is empty, but the waste buries an Ace under a Two
+    // of the same suit. `autoComplete` only moves pile tops (never draws/recycles), so the Two can
+    // never be placed (its Ace is not on the foundation) and the Ace under it is unreachable — the
+    // button must not appear, and if it somehow ran it must not falsely report a win.
+    const blockingWaste: SolitaireState = {
+      ...nearlyWon(),
+      // Foundations built to the Queen for three suits; hearts only to nothing so the buried A♥/2♥ matter.
+      foundations: [
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'spades')),
+        [],
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'diamonds')),
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'clubs')),
+      ],
+      tableau: [[c('K', 'spades')], [c('K', 'diamonds')], [c('K', 'clubs')], [], [], [], []],
+      waste: [c('A', 'hearts'), c('2', 'hearts')], // A♥ at the bottom, 2♥ on top and blocking it
+    };
+    expect(canAutoComplete(blockingWaste)).toBe(false);
+    const after = reducer(blockingWaste, { type: 'autoComplete' });
+    expect(after.won).toBe(false);
   });
 
   it('autoComplete finishes a solvable, all-face-up game', () => {

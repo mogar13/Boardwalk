@@ -16,7 +16,7 @@
  * REFUSES a non-integer rather than rounding one, because a non-integer bet reaching here is a
  * bug upstream and silently rounding it hides the bug.
  */
-import { formatDollars } from '@/system/profile/money';
+import { formatDollars, formatMoney } from '@/system/profile/money';
 
 /** A game's betting limits, in cents. Comes from `manifest.betting`; absent means no betting. */
 export interface BetBounds {
@@ -66,7 +66,11 @@ export function validateBet(
     return { ok: false, error: `Table max is ${formatDollars(bounds.max)}.` };
   }
   if (amountCents > balanceCents) {
-    return { ok: false, error: `You only have ${formatDollars(balanceCents)}.` };
+    // `formatMoney`, not `formatDollars`: the table min/max are always whole dollars, but a balance
+    // can carry cents (a 3:2 blackjack payout is `floor(wager*3/2)`), and `formatDollars` rounds —
+    // which could tell a player they "only have $5,008" when they hold $5,007.50, overstating the
+    // very number this message exists to be honest about.
+    return { ok: false, error: `You only have ${formatMoney(balanceCents)}.` };
   }
   return { ok: true, amountCents };
 }

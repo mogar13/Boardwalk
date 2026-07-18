@@ -203,13 +203,20 @@ export function isWon(state: SolitaireState): boolean {
 }
 
 /**
- * Every card in play face up — no face-down card left in any column and the stock empty. This is
- * the condition under which `autoComplete` is guaranteed to finish the game, so the board offers
- * the button only when it holds.
+ * Every card in play face up — no face-down card left in any column, and the stock AND waste both
+ * empty. This is the condition under which `autoComplete` is guaranteed to finish the game, so the
+ * board offers the button only when it holds.
+ *
+ * The waste MUST be empty, not just the stock: `autoComplete` only ever sends the *top* of a pile to
+ * a foundation — it never draws or recycles — so a waste holding cards in a blocking order (a low
+ * card buried under a higher one) leaves the buried card permanently unreachable, and the button
+ * would offer a finish the reducer cannot deliver. With the waste empty every remaining card is a
+ * tableau top the greedy loop can reach, so the guarantee holds. The player empties the waste by
+ * hand (it is only ever a card or two by this stage) and the button then appears.
  */
 export function canAutoComplete(state: SolitaireState): boolean {
   if (state.won) return false;
-  if (state.stock.length > 0) return false;
+  if (state.stock.length > 0 || state.waste.length > 0) return false;
   return state.tableau.every((col) => col.every((c) => c.faceUp));
 }
 

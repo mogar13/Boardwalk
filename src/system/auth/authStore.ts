@@ -149,7 +149,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // UI matches the database, and rethrow so the caller can say "couldn't save". Reverting
       // to the exact `prev` we captured — not re-loading — keeps this synchronous and avoids a
       // second round-trip that could also fail.
-      set({ profile: prev });
+      //
+      // But ONLY revert if our optimistic `next` is still the store's profile. If a second
+      // mutation (a daily claim landing while a hand settles) has already written over `next`,
+      // reverting to `prev` would wipe that newer write too — a lost update that vanishes money
+      // or XP the player earned. Leaving the newer optimistic value in place is the safe choice:
+      // the client stays ahead of the server until the next successful save reconciles it.
+      if (get().profile === next) set({ profile: prev });
       throw error;
     }
   },

@@ -69,7 +69,20 @@ const useToastStore = create<ToastState>((set, get) => ({
 
   push: (tone, message) => {
     const id = `toast-${++seq}`;
-    set((s) => ({ toasts: [...s.toasts, { id, tone, message }].slice(-MAX_VISIBLE) }));
+    set((s) => {
+      const next = [...s.toasts, { id, tone, message }];
+      // If the cap drops the oldest toasts, cancel their timers here — otherwise the timer fires
+      // later against an id already gone from the list and only then clears itself. The same
+      // clearTimeout every other removal (`dismiss`) performs, applied to the ones the cap evicts.
+      for (const dropped of next.slice(0, Math.max(0, next.length - MAX_VISIBLE))) {
+        const t = timers.get(dropped.id);
+        if (t !== undefined) {
+          clearTimeout(t);
+          timers.delete(dropped.id);
+        }
+      }
+      return { toasts: next.slice(-MAX_VISIBLE) };
+    });
     timers.set(
       id,
       setTimeout(() => {
