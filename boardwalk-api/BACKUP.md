@@ -4,10 +4,13 @@ The referee owns the ledger, and the ledger is the money. There is no bankroll c
 this schema — a balance is `SUM(ledger.delta_cents)` — so losing ledger rows does not corrupt the
 balance, it *silently changes* it. That is the failure this document exists to prevent.
 
-> **Status: the drill HAS now been run on the real Pi (2026-07-18).** `npm run backup` produced a
+> **Status: DONE on the real Pi (2026-07-18), including the full restore rehearsal.** `npm run backup` produced a
 > verified snapshot of the live stick, the drill passed against it on the Pi **and** against the
-> off-box copy, and the systemd timer is installed and firing. One item remains: the full
-> stop/swap/start restore rehearsal — see [Owed](#owed).
+> off-box copy, the systemd timer is installed and firing, and the full stop/swap/start rehearsal
+> was performed against the live service. **It took 3 seconds** — stop, swap, drop the stale
+> `-wal`/`-shm`, chown, start — and the database came back byte-identical in content
+> (`balance=521500 ledger=2 mutations=1`) with `/health` green. Every item in [Owed](#owed) is
+> ticked.
 >
 > Two corrections found while doing it, both of which had made this document wrong in practice:
 > `scripts/` and `dist/backup/` **did not exist on the Pi at all**, so the verified backup had never
@@ -235,5 +238,5 @@ wrong data.
 - [x] Install and enable the systemd timer; confirm with `systemctl list-timers`. *(next fire 03:16; `Result=success`)*
 - [x] Set up the off-box `rsync` target over Tailscale and confirm a file lands there. *(PULL to `~/boardwalk-backups/`; push is impossible — no sshd on the target)*
 - [x] Run `npm run restore:drill` on the Pi **and** on the off-box copy. *(both PASSED, `$5215.00` from 2 ledger rows)*
-- [ ] Do one full stop/swap/start restore rehearsal (above) and note how long it took.
-- [ ] Then, and only then, delete this section and replace it with the date the drill was last run.
+- [x] Do one full stop/swap/start restore rehearsal (above) and note how long it took. *(2026-07-18 — **3 seconds**, service healthy, data identical)*
+- [x] **Drill last run: 2026-07-18** (backup + drill on the Pi and off-box, timer firing, full rehearsal).
