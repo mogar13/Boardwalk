@@ -124,9 +124,17 @@ export const PACKS: readonly Pack[] = [
     id: 'pk_grand',
     name: 'The Grand Pack',
     blurb:
-      'Anything the store sells — back, face or title — with the house leaning rare. Earn-only titles are not in here, and never will be.',
+      'Anything the store sells — back, face, title, felt or frame — with the house leaning rare. Earn-only titles are not in here, and never will be.',
     priceCents: 2_000_000,
-    kinds: ['cardback', 'avatar', 'title'],
+    // P5 widened this to every buyable kind, which is what "The Grand Pack" says on the tin. The
+    // pool is derived (`packPool` = CATALOG ∩ isPackable ∩ kinds), so felts and frames joined by
+    // being listed HERE — adding them to CATALOG alone changed nothing, which is the property that
+    // let P5 decide pack membership deliberately rather than inheriting it. Two knock-ons, both
+    // automatic and both correct: `rarityWeights` renormalises over the rarities the wider pool can
+    // actually serve (felts have no legendary), and `completion`/`dustFor` recompute off pool size,
+    // so an existing collector's completion — and the dust their duplicates refund — drops the day
+    // this ships. That is the honest consequence of a bigger pool, not a regression.
+    kinds: ['cardback', 'avatar', 'title', 'felt', 'frame'],
     odds: { common: 0.3, rare: 0.38, epic: 0.24, legendary: 0.08 },
   },
 ];

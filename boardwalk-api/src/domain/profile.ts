@@ -28,6 +28,8 @@ interface ProfileRow {
   daily_streak: number;
   equipped_cardback: string | null;
   equipped_title: string | null;
+  equipped_felt: string | null;
+  equipped_frame: string | null;
 }
 interface StatRow {
   game_id: string;
@@ -68,7 +70,7 @@ export function loadProfile(db: Db, uid: string): Profile | null {
   const p = db
     .prepare(
       `SELECT name, avatar, xp, daily_last_claim_day, daily_streak,
-              equipped_cardback, equipped_title
+              equipped_cardback, equipped_title, equipped_felt, equipped_frame
        FROM profiles WHERE uid = ?`
     )
     .get(uid) as ProfileRow | undefined;
@@ -109,6 +111,8 @@ export function loadProfile(db: Db, uid: string): Profile | null {
   const equipped: Equipped = {
     ...(p.equipped_cardback ? { cardback: p.equipped_cardback } : {}),
     ...(p.equipped_title ? { title: p.equipped_title } : {}),
+    ...(p.equipped_felt ? { felt: p.equipped_felt } : {}),
+    ...(p.equipped_frame ? { frame: p.equipped_frame } : {}),
   };
 
   return {
@@ -174,13 +178,16 @@ export function upsertProfile(
 
     db.prepare(
       `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak,
-                             equipped_cardback, equipped_title, updated_at)
-       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @now)
+                             equipped_cardback, equipped_title, equipped_felt, equipped_frame,
+                             updated_at)
+       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @felt, @frame, @now)
        ON CONFLICT(uid) DO UPDATE SET
          name = excluded.name,
          avatar = excluded.avatar,
          equipped_cardback = excluded.equipped_cardback,
          equipped_title = excluded.equipped_title,
+         equipped_felt = excluded.equipped_felt,
+         equipped_frame = excluded.equipped_frame,
          updated_at = excluded.updated_at`
     ).run({
       uid,
@@ -188,6 +195,8 @@ export function upsertProfile(
       avatar: str(input.avatar, '👤'),
       cardback: input.equipped.cardback ?? null,
       title: input.equipped.title ?? null,
+      felt: input.equipped.felt ?? null,
+      frame: input.equipped.frame ?? null,
       now,
     });
 

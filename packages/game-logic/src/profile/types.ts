@@ -147,6 +147,10 @@ export interface Equipped {
   readonly cardback?: string;
   /** The title shown on the profile card. The best titles are earn-only (achievement-granted). */
   readonly title?: string;
+  /** The table surface all five boards draw under the play area — `@/system/felt/useEquippedFelt`. */
+  readonly felt?: string;
+  /** The ring around your avatar in the top bar and profile card — `@/system/frame/useEquippedFrame`. */
+  readonly frame?: string;
 }
 
 /** The daily-reward clock. See the `daily` note and `@/system/rewards/daily`. */

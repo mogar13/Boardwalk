@@ -37,6 +37,8 @@ function coerceUpsert(body: unknown): { name: string; avatar: string; equipped: 
   const e = obj(b.equipped);
   const cardback = cosmeticId(e.cardback);
   const title = cosmeticId(e.title);
+  const felt = cosmeticId(e.felt);
+  const frame = cosmeticId(e.frame);
   return {
     name: text(b.name, 'Player').slice(0, NAME_MAX_LEN),
     avatar: text(b.avatar, '👤').slice(0, AVATAR_MAX_LEN),
@@ -45,6 +47,8 @@ function coerceUpsert(body: unknown): { name: string; avatar: string; equipped: 
     equipped: {
       ...(cardback === undefined ? {} : { cardback }),
       ...(title === undefined ? {} : { title }),
+      ...(felt === undefined ? {} : { felt }),
+      ...(frame === undefined ? {} : { frame }),
     },
   };
 }

@@ -9,6 +9,7 @@ import {
   type RepoResult,
 } from '@/system/repo';
 import { useToast } from '@/ui';
+import { useAudio } from '@/system/audio/useAudio';
 
 /**
  * `useBlackjackTable()` — the dealt hand, as a hook.
@@ -53,22 +54,32 @@ export interface BlackjackTable {
 function toastUnlocks(
   before: Profile | null,
   after: Profile,
-  success: (message: string) => void
+  success: (message: string) => void,
+  play: (role: 'unlock') => void
 ): void {
   if (before === null) return;
+  let any = false;
   for (const id of Object.keys(after.achievements)) {
     if (id in before.achievements) continue;
+    any = true;
     const badge = achievementById.get(id);
     // An id the client's catalogue does not carry is a server that is ahead of this build. Silence
     // beats rendering a raw id at the player.
     if (badge !== undefined) success(`${badge.emoji}  ${badge.name} unlocked`);
   }
+  // ONE stinger for the batch — same reasoning as `useGame`, and note it is gated on `any` (a
+  // badge WAS granted) rather than on a toast having been shown. A server ahead of this build
+  // grants an id the local catalogue cannot name: the player still earned something, so it should
+  // still sound like it, even though there is no text we can honestly put on screen.
+  if (any) play('unlock');
 }
 
 export function useBlackjackTable(): BlackjackTable {
   const [hand, setHand] = useState<HandView | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  // Named `playSound` because `play` is already this hook's blackjack MOVE dispatcher below.
+  const { play: playSound } = useAudio();
   // The in-flight guard is a REF and not the `busy` state, because two clicks in one frame both
   // read the pre-render state and would both pass. A ref is written synchronously, so the second
   // one loses — which matters here in a way it does not on a cosmetic button: the loser would be a
@@ -101,7 +112,7 @@ export function useBlackjackTable(): BlackjackTable {
               return;
             }
             useAuthStore.getState().adoptProfile(result.value.profile);
-            toastUnlocks(profile, result.value.profile, toast.success);
+            toastUnlocks(profile, result.value.profile, toast.success, playSound);
             putHand(result.value.hand);
           },
           () => toast.error('The dealer could not be reached — check your connection.')
@@ -111,7 +122,7 @@ export function useBlackjackTable(): BlackjackTable {
           setBusy(false);
         });
     },
-    [toast, putHand]
+    [toast, putHand, playSound]
   );
 
   const deal = useCallback(

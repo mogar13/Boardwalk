@@ -446,7 +446,7 @@ lint rule that matches nothing reports success.
   `localStorage`, cross-tab `storage`-synced), a top-bar toggle shown signed-out too. The engine
   unlocks the browser's autoplay gate on the first gesture (v1's primer). A game never touches an
   `HTMLAudioElement` or a storage key, the same way it never touches a Firebase listener.
-- **Assets are curated into the repo, not dumped.** ✅ `public/cards/` (standard 52 + backs, UNO
+- **Assets are curated into the repo, not dumped.** ✅ `public/felts/` (three tables, P5), `public/cards/` (standard 52 + backs, UNO
   set), `public/chips/`, `public/audio/` — the in-use subset of the CC0 Game-Shack trove, not the
   whole thing. A staged asset with no reader is the asset form of the game checklist; bring next
   game's art when that game is built. Licence note lives in `public/audio/CREDITS.md` (all CC0).
@@ -462,6 +462,35 @@ lint rule that matches nothing reports success.
   with one UNO-specific back and no variants, so it waits for UNO-back art the way `dice` waits for
   a dice game (owner decision). A `cardback` cosmetic is now the thing an avatar was in Phase 4 — a
   cosmetic that passes the reader test — not `loadout.color`.
+- **A `felt` is the table, and all five boards read it (P5).** ✅ Same split as the card back, one
+  step further: `src/system/felt/felts.ts` owns the id→file map and knows nothing of the profile,
+  `useEquippedFelt()` resolves it to a URL, and `<Card felt={…}>` in `src/ui` draws it as a muted
+  `object-cover` layer behind the content. The kit takes a URL and never a cosmetic id — a Card
+  cannot ask who is signed in. **There is no default felt**: `feltSrc(undefined)` is `null`, which
+  is the plain `bg-base-200` table every board has drawn since Phase 6, so the kind is purely
+  additive on a live app and an account that buys nothing looks unchanged. It is drawn at
+  `opacity-80` over the base surface deliberately — every contrast pair in the theme is computed
+  against the base surfaces, and a felt at full strength would quietly become a background colour
+  nothing had checked text against.
+- **A `frame` is a ring around your avatar, and it has no art and no new colour (P5).** ✅ The asset
+  sweep found essentially no ring art, and the answer was theme tokens rather than sourcing — but
+  the tokens are P2's **rarity** ladder, not new ones. So a frame's colour IS its rarity (a free
+  status signal), and the kind adds **zero hues** to a glow budget this file calls nearly spent.
+  `src/system/frame/frames.ts` maps id→tone, `RARITY_RING` maps tone→a flat `border-rarity-*`
+  class shared with the store card, and `<Avatar emoji size frame>` (`src/system/profile/`) is the
+  one component the top bar, the leaderboard row and the profile card all render — three copies of
+  a bare `<span>` collapsed into one in the commit that first needed them to agree. With no frame
+  it collapses to exactly that bare span, so nobody's top bar moves. **The frame is your own only**:
+  the leaderboard passes none, because projecting another player's frame means a fourth pinned
+  `$other: false` node and its own hand-run deploy (owner decision). `<Avatar>` takes it as a prop
+  precisely so that later change is one prop, not component surgery.
+- **A celebration is its own role, not a borrowed payout (P5).** ✅ `unlock` (an achievement fired)
+  and `fanfare` (a pack revealed) are real roles with staged CC0 files. `win`/`jackpot` answer
+  "this hand went your way" many times an hour; these answer "you got something you keep", and P4's
+  pack reveal borrowing `jackpot`/`win` as a stated placeholder made an unlock sound like a payout.
+  Both are single-file, not variation pools: pools exist for `deal`/`chip`-style bursts that
+  machine-gun, and a celebration is punctuation. Both play sites fire **once per batch**, not per
+  badge — a chain tier can unlock several at once.
 
 ### Files
 
@@ -541,8 +570,12 @@ builds the thing it guards.
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
-| Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
+| Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file. Covers P5's `unlock`/`fanfare` by construction (the test walks the registry, so a role added without its file is red) |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
+| Every felt maps to art that is on disk, and the store sells no felt without it | `tests/felts.test.ts` (7) — every `FELTS` id resolves in `public/felts/`, each id maps to its OWN file (two ids sharing one image is the store selling a felt twice), `null` for nothing-equipped AND for an unknown id (a retired felt degrades to a bare table, never a 404), base-path awareness, plus the catalogue half: every `felt` cosmetic resolves to art, none is a free starter (the default is NO felt), none is earn-only (no chain grants one) |
+| A frame's ring colour cannot drift from its rarity | `tests/frames.test.ts` (6) — every catalogue frame is registered and every registered id is real (both directions, so a tone for an unbuyable frame is dead data too), **each frame's tone EQUALS its catalogue rarity** (the one that would actually rot: re-tier a frame and its ring keeps the old colour, which no disk check and no compiler can see), every tone resolves to a **flat** `border-rarity-*` class carrying no shadow/glow — the guard that keeps this kind off the glow budget — and `null` for nothing-equipped/unknown |
+| A new column reaches the database that already EXISTS, not just a fresh one | `boardwalk-api/tests/migrations.test.ts` (4) — builds the pre-P5 `profiles` table by hand, proves `migrateColumns` adds `equipped_felt`/`equipped_frame` and leaves the old columns alone, that ten re-runs are a no-op, that every `COLUMN_MIGRATIONS` entry names a column the fresh DDL also creates (the two halves diverging is how one path silently misses it), and that a migrated database round-trips a felt and a frame. **`migrateColumns` carried a comment claiming this test since Phase B; it did not exist.** Falsified by dropping the two P5 entries: these go red while the other 192 API tests stay green, which is exactly the prod-only blindness the file exists for |
+| All four equipped slots survive the server round-trip | `boardwalk-api/tests/api.test.ts` (21) — a `PUT /profile` carrying cardback+title+felt+frame reads back with all four, asserted on a FRESH `GET` and not merely the write's own echo (a write can echo its input while the columns never held it), and un-equipping a felt CLEARS the column rather than leaving the old id |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
 | `boardwalk-api/` is linted, typechecked, tested and built in CI | `boardwalk-api/eslint.config.mjs` (flat, type-aware over `tsconfig.test.json` so **src, tests and `vitest.config.ts`** are all in the program — the build config includes only `src`, and the usual cure for the resulting "not in project" noise is to stop linting tests) + `.github/workflows/api.yml` on push **and pull_request**, `paths`-filtered to the package *and the workflow file*, so a change disabling the guard is checked by it |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (48 — the two Phase-6 rules proved **twice**, once per games tree, falsified by dropping `packages/game-logic/src/games` from `GAMES_DIRS` and watching exactly the three new cases go red), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (25), `tests/firebase-config.test.ts` (8) |
@@ -550,6 +583,7 @@ builds the thing it guards.
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
+| **P5 is DEPLOYED — both surfaces, both verified from the artifact** | ✅ **DONE 2026-07-18, and the frontend merge is unblocked.** (1) **Rules**: `GET /.settings/rules.json` on `boardwalk-fca02-default-rtdb` returns an `equipped` block carrying `cardback`, `title`, `felt`, `frame` and `$other: false`. **Deployed once from the wrong tree first** — the command ran in the primary checkout, which sits on `main` and does not carry the branch, so Firebase released the OLD four-key-less file and printed the identical green `Deploy complete!`. A rules deploy is only meaningful from a tree that HAS the change, and only provable by reading the rules back. (2) **Pi**: two rsyncs (`packages/game-logic` as a sibling, then `boardwalk-api`), `npm install && npm run build && npm test` ON the device — **194/194 green** — then restart. `PRAGMA table_info(profiles)` now lists `equipped_felt` and `equipped_frame` (COLUMN_MIGRATIONS ran on open), `dist/db/schema.js` carries both, and the ledger is byte-identical either side of the restart (1 profile, 2 rows, $5,215.00, `integrity_check` ok). The Pi's `package.json` was found **stale**, not hand-patched — still the Phase-D `--prefix` scripts that `54f8a98` replaced with `build:shared` — so the Pi can drift behind `main` between deploys, and a deploy is the thing that reconciles it |
 | Phase B is DEPLOYED and the backfill has RUN | unguarded — both done by hand 2026-07-18 and both **verified on the box, not inferred**. Server: deployed from `cb42e44`, `dist/domain/economy.js` present, `mutations` + `wagers` migrated in, 143/143 API tests green ON the Pi, deployed hashes match the commit. Client: `VITE_API_BASE_URL` is baked into the prod bundle (the `gameContext` chunk names the Funnel URL) and the Pi's CORS returns 204 for the Pages origin. Backfill: **1 `migration:v1` marker** present (it was 0), and SQLite matches Firebase field for field — `bankrollCents` 521500, `xp` 700, `played` 19, `wins` 5. **Nothing in this repo can prove any of it**, and a health check is NOT evidence: `/health` answers identically under Phase A and Phase B, which is exactly how this row twice claimed something it could not see. Check the marker and the parity, or check nothing. **Verified in prod 2026-07-18** — bet/settle/purchase/daily round-tripped against the live Pi on a throwaway account (since deleted): a replayed nonce moved nothing, a $1M payout with no open wager was refused 409, an earn-only title was refused, and a hostile `PUT /profile` carrying `bankrollCents: 999999999` left the balance at the server's own `500000`. See BACKEND_PLAN.md |
 | Phase D is deployed to the Pi | **DONE 2026-07-18.** The unverified half resolved to the bad case — the Pi is a standalone `~/boardwalk-api` directory, not a git checkout — so `packages/game-logic/` is now rsync'd to `~/packages/game-logic` beside it and the relative `file:` dependency resolves. `ExecStart` never moved. Procedure + the `--omit=optional` trap are in [BACKEND_PLAN.md](plans/BACKEND_PLAN.md#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be). **The Pi deploys by hand while the frontend deploys on push, so the Pi goes FIRST** — merging Phase D before it broke prod blackjack for ten minutes |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |

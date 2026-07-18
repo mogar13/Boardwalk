@@ -5,6 +5,8 @@ import { useAudio } from '@/system/audio/useAudio';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { xpProgress } from '@boardwalk/game-logic';
 import { Wordmark } from '@/shell/Wordmark';
+import { Avatar } from '@/system/profile/Avatar';
+import { useEquippedFrame } from '@/system/frame/useEquippedFrame';
 
 /**
  * The pier's top bar. v1's HUD, but injected ONCE by the shell instead of by each of 31
@@ -82,6 +84,7 @@ function LevelPip({ xp }: { xp: number }) {
 export function TopBar() {
   const { signOut } = useAuth();
   const profile = useProfile();
+  const frame = useEquippedFrame();
 
   return (
     <header className="border-bw-line bg-base-100/80 sticky top-0 z-20 border-b backdrop-blur">
@@ -131,9 +134,7 @@ export function TopBar() {
                   )
                 }
               >
-                <span className="text-xl" aria-hidden>
-                  {profile.avatar}
-                </span>
+                <Avatar emoji={profile.avatar} size="sm" frame={frame} />
                 <span className="font-display max-w-32 truncate text-sm font-semibold tracking-[0.06em]">
                   {profile.name}
                 </span>

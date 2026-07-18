@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
+import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useBlackjackTable } from '@/system/economy/useBlackjackTable';
 import { useBankroll } from '@/system/profile/useProfile';
 import { formatMoney } from '@boardwalk/game-logic';
@@ -40,6 +41,7 @@ export function Table({ onExit }: { onExit: () => void }) {
   const { hand, busy, deal, play: move, nextHand } = useBlackjackTable();
   const { play } = useAudio();
   const balance = useBankroll();
+  const felt = useEquippedFelt();
 
   // Voice a settled hand exactly once. Keyed on `handId` — the dealer's row id — so a rematch
   // sounds again and a re-render of the same finished hand does not, the same ref-on-round shape
@@ -99,7 +101,7 @@ export function Table({ onExit }: { onExit: () => void }) {
         </Button>
       </div>
 
-      <Card className="flex flex-col gap-8 p-6 sm:p-8">
+      <Card felt={felt} className="flex flex-col gap-8 p-6 sm:p-8">
         <Hand cards={hand?.dealer ?? []} faceDown={holeCards} label={dealerLabel} />
         <Hand cards={hand?.player ?? []} label={playerLabel} />
 

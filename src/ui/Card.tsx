@@ -28,6 +28,22 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, 'classNa
    * common way that ships.
    */
   interactive?: boolean;
+  /**
+   * An equipped FELT image URL to lay over the surface, or `null` for none (the default, and the
+   * plain panel this component has always been). P5's `felt` cosmetic; the five game boards pass
+   * `useEquippedFelt()` straight in.
+   *
+   * The kit takes a URL, never a cosmetic id and never the profile — same split as `cardBackSrc`:
+   * `@/system/felt/felts` owns id→file, the reader hook knows about the player, and `src/ui` stays
+   * a kit that knows about neither. A Card cannot ask who is signed in.
+   *
+   * It is drawn MUTED (`opacity-80`) over `bg-base-200` rather than at full strength. The theme's
+   * contrast pairs — `text-base-content` and friends — are all computed against the base surfaces,
+   * so a felt at full opacity would quietly become a new background colour that nothing has
+   * checked text against. Muting it over the existing dark base keeps every one of those pairs
+   * valid and lets the felt read as a texture on the table, which is what a felt is.
+   */
+  felt?: string | null;
   children?: ReactNode;
   /** Layout only — see Button.className. */
   className?: string;
@@ -46,6 +62,30 @@ const INTERACTIVE = cx(
   'focus-within:border-secondary/60 focus-within:shadow-glow-secondary'
 );
 
-export function Card({ interactive = false, className, ...rest }: CardProps) {
-  return <div className={cx(BASE, interactive && INTERACTIVE, className)} {...rest} />;
+export function Card({ interactive = false, felt = null, className, children, ...rest }: CardProps) {
+  return (
+    <div
+      className={cx(
+        BASE,
+        interactive && INTERACTIVE,
+        // `isolate` is the load-bearing half of this pair. The felt sits at `-z-10` so it lands
+        // behind the card's own content without needing a z-index on every child — but without a
+        // stacking context that -10 would escape the Card and slide behind the PAGE, where the
+        // body background hides it and the felt silently does nothing. `overflow-hidden` keeps the
+        // image inside the rounded corners.
+        felt !== null && 'relative isolate overflow-hidden',
+        className
+      )}
+      {...rest}
+    >
+      {felt !== null && (
+        <img
+          src={felt}
+          alt=""
+          className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-80"
+        />
+      )}
+      {children}
+    </div>
+  );
 }

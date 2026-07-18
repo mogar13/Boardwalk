@@ -9,6 +9,14 @@
  *   • `avatar`   → the top bar and the profile card (`profile.avatar`) — since Phase 4.
  *   • `cardback` → the card games' face-down art (`useEquippedCardBack` → `cardBackSrc`) — P2.
  *   • `title`    → the profile card, next to the name (`profile.equipped.title`) — P2.
+ *   • `felt`     → the table surface under all five boards (`useEquippedFelt` → `feltSrc`) — P5.
+ *   • `frame`    → the ring around your avatar in the top bar and profile card
+ *                  (`useEquippedFrame` → `frameRingClass`) — P5.
+ *
+ * THE TWO KINDS THAT ARE STILL ABSENT, and why. `dice` and a chip skin both have abundant art in
+ * the trove and NO reader — no dice game exists, and chips are betting UI rather than something
+ * you equip. They are deliberately not here. Staging art for them "while the union is open" is
+ * precisely the `loadout.color` mistake in its most tempting form: the cost looks like one line.
  *
  * WHY OWNING AND EQUIPPING ARE SEPARATE. `inventory` is the set you may equip; `avatar` /
  * `equipped` is the one you did. Collapsing them (equip-on-buy, no inventory) means re-buying to
@@ -28,8 +36,12 @@ import { DEFAULT_AVATAR } from '../profile/defaults';
 import { formatDollars } from '../profile/money';
 import type { Profile } from '../profile/types';
 
-/** The cosmetic families, each with a reader (see the header). `title` and `cardback` land in P2. */
-export type CosmeticKind = 'avatar' | 'cardback' | 'title';
+/**
+ * The cosmetic families, each with a reader (see the header). `title` and `cardback` landed in P2;
+ * `felt` and `frame` in P5. There is no `dice` and no `chip` — see the header for why absence is
+ * the correct state for a kind whose art exists but whose reader does not.
+ */
+export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame';
 
 /** Scarcity tier. Pure status — drives store styling and (P4) pack odds, never gameplay. */
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -203,6 +215,33 @@ export const CATALOG: readonly Cosmetic[] = [
     priceCents: null,
     unlock: 'Win 100 games of Chess',
   },
+
+  // ── Felts (P5: the table surface, read by all five boards) ───────────────────────────────────
+  // Each id is a `FELTS` key so the art resolves through `feltSrc`, and `tests/felts.test.ts`
+  // proves every one is a file on disk — the same disk check the card backs get, for the same
+  // reason: a filename is a string and typechecks however wrong it is.
+  //
+  // THERE IS NO FREE STARTER FELT, deliberately. The default is NO felt, which is exactly the
+  // `bg-base-200` table every board has drawn since Phase 6 — so this slice changes nothing for a
+  // player who buys nothing, and the felt is purely additive on a live system. A starter felt
+  // would instead repaint all five boards for everyone on deploy, which is a look change wearing
+  // a cosmetic's clothes.
+  { id: 'ft_green', name: 'Emerald Table', kind: 'felt', rarity: 'common', priceCents: 40_000 },
+  { id: 'ft_blue', name: 'Midnight Table', kind: 'felt', rarity: 'rare', priceCents: 250_000 },
+  { id: 'ft_red', name: 'Crimson Table', kind: 'felt', rarity: 'epic', priceCents: 900_000 },
+
+  // ── Frames (P5: the ring around your avatar) ─────────────────────────────────────────────────
+  // NO ART AND NO NEW COLOUR. A frame is a ring drawn in a theme token, and the tokens it draws
+  // from are the RARITY ladder P2 already cleared against the glow budget (blue=act, cyan=here,
+  // gold=money). So a frame's colour IS its rarity — which reads as a scarcity signal for free —
+  // and this kind adds exactly zero hues to a budget CLAUDE.md calls nearly spent. `frames.ts`
+  // owns the id→token map; `tests/frames.test.ts` proves every id maps to an approved token.
+  //
+  // Like felts, there is no starter: the default is no ring at all, today's bare avatar.
+  { id: 'fr_steel', name: 'Steel Ring', kind: 'frame', rarity: 'common', priceCents: 40_000 },
+  { id: 'fr_azure', name: 'Azure Ring', kind: 'frame', rarity: 'rare', priceCents: 250_000 },
+  { id: 'fr_violet', name: 'Violet Ring', kind: 'frame', rarity: 'epic', priceCents: 900_000 },
+  { id: 'fr_ember', name: 'Ember Ring', kind: 'frame', rarity: 'legendary', priceCents: 6_000_000 },
 ];
 
 /** Lookup by id, for turning a stored `inventory` / `equipped` key back into a cosmetic. */
@@ -237,6 +276,10 @@ export function isEquipped(profile: Profile, item: Cosmetic): boolean {
       return profile.equipped.cardback === item.id;
     case 'title':
       return profile.equipped.title === item.id;
+    case 'felt':
+      return profile.equipped.felt === item.id;
+    case 'frame':
+      return profile.equipped.frame === item.id;
   }
 }
 
@@ -293,6 +336,10 @@ export function applyEquip(profile: Profile, item: Cosmetic): Profile {
       return { ...profile, equipped: { ...profile.equipped, cardback: item.id } };
     case 'title':
       return { ...profile, equipped: { ...profile.equipped, title: item.id } };
+    case 'felt':
+      return { ...profile, equipped: { ...profile.equipped, felt: item.id } };
+    case 'frame':
+      return { ...profile, equipped: { ...profile.equipped, frame: item.id } };
   }
 }
 

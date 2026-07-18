@@ -37,8 +37,15 @@ CREATE TABLE IF NOT EXISTS profiles (
   -- of equippable kinds is closed and small, and a column is a thing .validate-style coercion
   -- can pin. THESE WERE MISSING UNTIL PHASE B — Phase A's mirror silently dropped equipped
   -- on every write, so a shadow read-back would have diffed on it forever.
+  --
+  -- P5 added felt and frame the same way, and it is the same trap twice: a kind that reaches
+  -- the client type but not this table round-trips as nothing-equipped, so the cosmetic saves and
+  -- then vanishes on reload. A column per kind, plus a COLUMN_MIGRATIONS entry per column, because
+  -- the Pi's database already exists and the DDL above never reaches it.
   equipped_cardback     TEXT,
   equipped_title        TEXT,
+  equipped_felt         TEXT,
+  equipped_frame        TEXT,
   updated_at            INTEGER NOT NULL
   -- no bankroll column, on purpose. See the header.
 );
@@ -211,6 +218,11 @@ export const COLUMN_MIGRATIONS: readonly {
   // new table DOES reach an existing database, because `CREATE TABLE IF NOT EXISTS` runs on every
   // open and there is nothing there to be a no-op against. It is only a new COLUMN on an OLD table
   // that silently never lands, which is the asymmetry this list exists for.
+  // PHASE P5. Two more equipped slots on the Pi's existing `profiles` table — the felt and the
+  // frame. Without these two lines the columns exist only on a freshly created database, which is
+  // every database the test suite makes and none of the ones in production.
+  { table: 'profiles', column: 'equipped_felt', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_felt TEXT' },
+  { table: 'profiles', column: 'equipped_frame', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_frame TEXT' },
   { table: 'mutations', column: 'hand_id', ddl: 'ALTER TABLE mutations ADD COLUMN hand_id INTEGER' },
   { table: 'wagers', column: 'hand_id', ddl: 'ALTER TABLE wagers ADD COLUMN hand_id INTEGER' },
 ];

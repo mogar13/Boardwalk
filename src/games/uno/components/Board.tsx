@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
+import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
@@ -46,6 +47,7 @@ export function Board() {
   const { state, patch, seats, status, isHost, writeHand } = useRoom<UnoState>();
   const { mySeatIndex, isMyTurn } = useSeats();
   const { reportResult } = useGame();
+  const felt = useEquippedFelt();
   const audio = useAudio();
 
   const { dealAgain } = useUnoHost({ isHost, status, state, seats, patch, writeHand });
@@ -137,7 +139,7 @@ export function Board() {
     );
 
   return (
-    <Card className="flex flex-col items-center gap-5 p-6">
+    <Card felt={felt} className="flex flex-col items-center gap-5 p-6">
       <p className={cx('text-sm', finished ? 'text-base-content' : 'text-bw-muted')}>
         {statusLine(state, seats, myTurn, mySeatIndex)}
       </p>

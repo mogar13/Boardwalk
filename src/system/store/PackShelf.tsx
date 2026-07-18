@@ -143,9 +143,15 @@ function Reveal({ pull, pack, onClose }: { pull: PackPull; pack: Pack; onClose: 
   );
 }
 
-/** Which sound a tier deserves. Epic-and-up gets the loud one; that is the whole point of a tier. */
-function soundFor(rarity: Rarity): 'jackpot' | 'win' {
-  return rarity === 'epic' || rarity === 'legendary' ? 'jackpot' : 'win';
+/**
+ * Which sound a tier deserves. Epic-and-up gets the long fanfare; that is the whole point of a
+ * tier. P5 moved BOTH arms off the borrowed payout roles this file shipped with as a stated
+ * placeholder (`jackpot`/`win`) and onto the celebration roles staged for exactly this: a pull is
+ * something you KEEP, and it should not sound like a hand that paid. The two roles split the same
+ * way the old pair did, so the tier signal survives the swap intact.
+ */
+function soundFor(rarity: Rarity): 'fanfare' | 'unlock' {
+  return rarity === 'epic' || rarity === 'legendary' ? 'fanfare' : 'unlock';
 }
 
 export function PackShelf({ profile }: { profile: Profile }) {

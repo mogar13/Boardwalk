@@ -4,6 +4,7 @@ import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { useGameContext } from '@/system/economy/gameContext';
 import { applyResult, type ResultReport } from '@boardwalk/game-logic';
 import { useToast } from '@/ui';
+import { useAudio } from '@/system/audio/useAudio';
 
 /**
  * `useGame()` — a game's window on the OS. Its manifest, and `reportResult` — the one call that
@@ -31,6 +32,7 @@ export function useGame(): GameApi {
   const { manifest } = useGameContext();
   const applyEconomy = useAuthStore((s) => s.applyEconomy);
   const toast = useToast();
+  const { play } = useAudio();
 
   const reportResult = useCallback(
     (report: ResultReport) => {
@@ -73,8 +75,13 @@ export function useGame(): GameApi {
       for (const a of applied.unlocked) {
         toast.success(`${a.emoji}  ${a.name} unlocked`);
       }
+      // ONE stinger for the batch, not one per badge. A result that completes a chain tier can
+      // unlock several at once, and playing the role per badge would stack identical takes into a
+      // machine-gun — the exact failure the registry's variation pools exist to prevent, arriving
+      // instead through the caller. The toasts still stack; only the sound is collapsed.
+      if (applied.unlocked.length > 0) play('unlock');
     },
-    [manifest.id, applyEconomy, toast]
+    [manifest.id, applyEconomy, toast, play]
   );
 
   return { manifest, reportResult };

@@ -30,7 +30,13 @@ import { useStore } from '@/system/store/useStore';
  * until you touch it, and the one you are wearing is cyan (= here).
  */
 
-/** The three kinds, in the order the store stacks them, with the section copy for each. */
+/**
+ * The five kinds, in the order the store stacks them, with the section copy for each.
+ *
+ * Order is by how visible the thing is while you play, not by price: the felt and the card back
+ * are the two you stare at for a whole session, so they lead. A kind with no rows renders nothing
+ * (the map skips an empty section), so this list can name a kind before its catalogue fills.
+ */
 const SECTIONS: readonly { kind: CosmeticKind; title: string; blurb: string }[] = [
   {
     kind: 'cardback',
@@ -38,7 +44,17 @@ const SECTIONS: readonly { kind: CosmeticKind; title: string; blurb: string }[] 
     blurb:
       'The face-down art on every table you deal — Blackjack and Solitaire draw the one you equip.',
   },
+  {
+    kind: 'felt',
+    title: 'Felts',
+    blurb: 'The table itself. Every game you sit down to is played on the one you equip.',
+  },
   { kind: 'avatar', title: 'Avatars', blurb: 'Your face in the top bar and on your profile.' },
+  {
+    kind: 'frame',
+    title: 'Frames',
+    blurb: 'A ring around your avatar, coloured by how rare it is.',
+  },
   {
     kind: 'title',
     title: 'Titles',

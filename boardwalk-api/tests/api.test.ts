@@ -158,6 +158,48 @@ describe('profile routes', () => {
       .expect(200);
     expect(profileOf(res).equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
   });
+
+  it('stores a felt and a frame too — all four equipped slots round-trip (P5)', async () => {
+    // The P5 kinds get their own case rather than riding on the one above, because the failure
+    // this guards is PER-COLUMN and silent: an `Equipped` field with no column is dropped on write
+    // and reads back absent, so the cosmetic appears to equip and is gone on reload. Nothing about
+    // the request errors — which is precisely why the assertion has to be on the read-back.
+    const server = app();
+    const equipped = {
+      cardback: 'cb_red3',
+      title: 'ttl_regular',
+      felt: 'ft_blue',
+      frame: 'fr_ember',
+    };
+    const res = await request(server)
+      .put('/profile')
+      .set('Authorization', 'Bearer u1')
+      .send({ ...profile, equipped })
+      .expect(200);
+    expect(profileOf(res).equipped).toEqual(equipped);
+
+    // And it survives a fresh read, not just the write's own answer — the write could echo its
+    // input back without the columns ever holding it.
+    const back = await request(server).get('/profile').set('Authorization', 'Bearer u1').expect(200);
+    expect(profileOf(back).equipped).toEqual(equipped);
+  });
+
+  it('un-equipping a felt clears the column rather than leaving the old id', async () => {
+    // The `?? null` half of the write. An UPDATE that only ever sets non-null values is a slot you
+    // can fill and never empty, which reads to a player as a cosmetic that will not come off.
+    const server = app();
+    await request(server)
+      .put('/profile')
+      .set('Authorization', 'Bearer u1')
+      .send({ ...profile, equipped: { felt: 'ft_blue', frame: 'fr_steel' } })
+      .expect(200);
+    const res = await request(server)
+      .put('/profile')
+      .set('Authorization', 'Bearer u1')
+      .send({ ...profile, equipped: { frame: 'fr_steel' } })
+      .expect(200);
+    expect(profileOf(res).equipped).toEqual({ frame: 'fr_steel' });
+  });
 });
 
 describe('economy routes', () => {

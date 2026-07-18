@@ -15,6 +15,17 @@
  * card games will reuse (deal, place, flip, chip, shuffle, win/lose/push). It is deliberately not
  * every sound in the trove: a role with no caller is `loadout.color`, a fixture written to be read
  * by nothing. Roles get added here in the commit that first plays them.
+ *
+ * THE TWO CELEBRATION ROLES (P5) EARN THEIR SEPARATION FROM `win`. `win` answers "this hand went
+ * your way" and fires many times an hour; these two answer "you got something you keep", which
+ * happens rarely and is worth a different sound. Reusing `win`/`jackpot` for them — which is what
+ * P4's pack reveal did as an explicit placeholder — makes an unlock sound like a payout, so the
+ * one moment the meta-progression has to sell itself sounds like ordinary play.
+ *
+ * They are BOTH single-file, not pools, and the split in this registry is not stylistic: `deal`,
+ * `place`, `chip` and `chips` are pools because they fire in rapid bursts and identical repeats
+ * machine-gun. An unlock or a pack reveal is a punctuation mark, so one take is right and a pool
+ * would only make the same event sound inconsistent from itself.
  */
 
 /** A playable role. A game passes one of these to `useAudio().play`; it cannot spell a filename. */
@@ -27,6 +38,8 @@ export type SoundName =
   | 'shuffle' // the deck reshuffled
   | 'win' // this hand won
   | 'jackpot' // a big win — the louder stinger, kept apart from `win` on purpose
+  | 'unlock' // an achievement fired — the short bright one, plays behind a toast
+  | 'fanfare' // a pack revealed — the long one, and the only role that interrupts
   | 'lose' // this hand lost
   | 'push' // a tie — money back, neither stinger
   | 'click' // a UI affordance (also the browser-unlock primer)
@@ -50,6 +63,8 @@ export const SOUNDS: Record<SoundName, readonly string[]> = {
   shuffle: ['shuffle.ogg'],
   win: ['win.ogg'],
   jackpot: ['jackpot.mp3'],
+  unlock: ['unlock.ogg'],
+  fanfare: ['fanfare.ogg'],
   lose: ['lose.ogg'],
   push: ['push.ogg'],
   click: ['click.mp3'],
