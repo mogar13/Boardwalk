@@ -11,7 +11,7 @@ React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase
 > economy — one-way money through `useBet`/`reportResult`, XP, stats, achievements, store, daily
 > reward (4), and multiplayer — rooms, seats, presence, chat, and hidden information that is a rule
 > not a layout (5). Still to come: **the five games** (6). The architecture was written down first,
-> on purpose. Start at [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md).
+> on purpose. Start at [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md).
 
 ## What this is
 
@@ -24,7 +24,7 @@ of a port. Because the old games are still playable, The Boardwalk has no parity
 with five games and is *finished*.
 
 There is deliberately no game checklist. See
-[ARCHITECTURE.md](plans/ARCHITECTURE.md#the-corollary-which-is-the-most-important-line-in-this-document).
+[ARCHITECTURE.md](plans/done/ARCHITECTURE.md#the-corollary-which-is-the-most-important-line-in-this-document).
 
 ## Casino OS v2
 
@@ -46,7 +46,7 @@ unspellable rather than documenting "don't."
 
 | Doc | What |
 |---|---|
-| [plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
+| [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
 | [CLAUDE.md](CLAUDE.md) | The rules, and what enforces each one. Short on purpose — every rule is paid for by a specific v1 bug. |
 | [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | 🔒 Later. Node + SQLite, server-authoritative economy. Not scheduled. |
 
@@ -91,4 +91,4 @@ npm run rules:deploy   # push them to Firebase. NOTHING IN CI DOES THIS — do i
 ```
 
 **Next: Phase 6 — the five games** (Tic-Tac-Toe first, the SDK's smoke test). Phases are one per
-conversation, each ending green and deployed; see [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases).
+conversation, each ending green and deployed; see [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases).

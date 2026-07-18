@@ -129,7 +129,7 @@ proof: a full Klondike engine, no seats, no bankroll, `reportResult({ outcome: '
 each ~1 file of glue plus a pure, unit-tested `logic/`, which is the whole claim the SDK exists to
 make. **The launch set of five is complete — see Scope discipline for why there is no sixth by
 default.** Start at
-[plans/ARCHITECTURE.md](plans/ARCHITECTURE.md) — it is the design, and it explains *why* for
+[plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) — it is the design, and it explains *why* for
 everything below.
 
 **Most rules below describe code that does not exist yet.** They are the contract for the phase that
@@ -168,7 +168,7 @@ If asked to "port the rest of the games," push back and point here.
 ## The rules
 
 Every rule below is paid for by a specific defect in The Game Shack, catalogued in
-[ARCHITECTURE.md](plans/ARCHITECTURE.md#what-casino-os-v1-got-wrong). **Before you change or delete a
+[ARCHITECTURE.md](plans/done/ARCHITECTURE.md#what-casino-os-v1-got-wrong). **Before you change or delete a
 rule, read the row that bought it.** This file stays short on purpose — VS-Dashboard's CLAUDE.md is
 715 lines because it earned them one bug at a time, and copying that wholesale would be cargo-culting
 the output instead of the process. Rules accrete here as we hit things.
@@ -380,7 +380,7 @@ Two tiers, and the split matters:
 - **`CLAUDE.md`** (this file) — rules, present tense. **Don't state a present-tense fact unless
   something fails when it stops being true.** If a claim has no guard behind it, either give it one or
   move it to the architecture doc as history.
-- **`plans/ARCHITECTURE.md`** — the design and the *why*. War stories go here in past tense, where
+- **`plans/done/ARCHITECTURE.md`** — the design and the *why*. War stories go here in past tense, where
   they stay true forever. "v1 had no `off()`" cannot rot; "we have no `off()`" rots the day someone
   adds one.
 
@@ -486,7 +486,7 @@ To drive the room flow locally: `npx firebase emulators:start --only auth,databa
 to play a real game against the emulator). The flag is dev-only and points the app at the emulators
 instead of production.
 
-Phases are listed in [ARCHITECTURE.md](plans/ARCHITECTURE.md#phases) — one per conversation, each ends
+Phases are listed in [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases) — one per conversation, each ends
 green and deployed. **Phase 6 is complete: Tic-Tac-Toe, Blackjack, Chess, UNO and Solitaire all
 shipped. The launch set of five is done — the next game is built only because one sounds fun, never
 to reach a number (see Scope discipline).**
