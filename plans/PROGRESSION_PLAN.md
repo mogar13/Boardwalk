@@ -346,7 +346,22 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   Solitaire, title on profile, zero console errors). **⚠️ Rules changed — `npm run rules:deploy`
   must run before the frontend reaches prod, or every profile write carrying `equipped` is refused
   (same class as P1's `played`).**
-- **P3 — Achievements 2.0**: chains, tier art, feats mechanism, hidden, completion %. Feeds P2's
+- ✅ **P3 — Achievements 2.0 — SHIPPED 2026-07-17.** The 6 flat badges gave way to five Bronze→Platinum
+  **chains** (wins 10/50/100/500, level 5/10/25/50, bankroll $10k–$1M, and per-game chess & blackjack
+  1/10/50/100), keeping the four single-milestone/event badges that are not chain-shaped (`first_win`,
+  `big_win`, `high_roller`, `table_regular`) and dropping the two now-redundant with chain tiers
+  (`seasoned`≡level-silver, `deep_pockets`≡bankroll-silver). The **grant** mechanism ties P2→P3: the
+  chess/blackjack Platinum tiers grant the earn-only `ttl_grandmaster` / `ttl_thehouse` titles straight
+  into `inventory` (the only way to obtain them — the store refuses to sell them). The **feats** path
+  (owner decision #2): `ResultReport.feats?: string[]`, an allow-listed event-flag channel the games
+  report on — Natural (blackjack two-card 21), Clean Sheet (solitaire with 0 recycles, via a new
+  `recycles` state counter), and the hidden Blitz (chess win < 20 fullmoves, parsed from the FEN).
+  **Hidden** achievements render "???" until earned; **completion %** is a pure `earned/total` derivation.
+  Tier art is the medal-emoji + tint fallback the asset sweep called for — no new sourcing, no new glow.
+  **NO rules change** (chains/grants/feats all land under already-open `achievements/$achId` and
+  `inventory/$itemId`), so no deploy needed for P3. 477 tests green (`tests/achievements.test.ts` +24,
+  `tests/progress.test.ts` retargeted, `tests/solitaire.test.ts` recycle counter), browser-verified
+  (profile renders all five chains + feats + hidden ??? + "0 / 27 · 0%", zero console errors). Feeds P2's
   earn-only cosmetics.
 - **P4 — Packs**: the variable-reward loop, on top of P2's rarity system.
 - **P5 — Felts / frames / polish + celebration SFX**.

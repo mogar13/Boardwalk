@@ -64,9 +64,20 @@ export function Table({ onExit }: { onExit: () => void }) {
       outcome: resultOutcome(result),
       payoutCents: payoutCents(result, state.wagerCents),
       wagerCents: state.wagerCents,
+      // A `blackjack` result is a two-card 21 — the Natural feat. The economy already knows the
+      // stat/XP; the feat is the one fact only the game sees, so the game reports it.
+      ...(result === 'blackjack' ? { feats: ['feat_natural'] } : {}),
     });
     play('flip'); // the hole card turning over
-    play(result === 'blackjack' ? 'jackpot' : result === 'win' ? 'win' : result === 'push' ? 'push' : 'lose');
+    play(
+      result === 'blackjack'
+        ? 'jackpot'
+        : result === 'win'
+          ? 'win'
+          : result === 'push'
+            ? 'push'
+            : 'lose'
+    );
   }, [state.phase, state.result, state.handId, state.wagerCents, reportResult, play]);
 
   const deal = () => {

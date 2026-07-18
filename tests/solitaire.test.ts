@@ -174,7 +174,10 @@ describe('liftable', () => {
   });
 
   it('lifts a valid face-up run from a tableau column, indexing from the run start', () => {
-    expect(liftable(base, { kind: 'tableau', col: 0 }, 1)).toEqual([c('Q', 'hearts'), c('J', 'clubs')]);
+    expect(liftable(base, { kind: 'tableau', col: 0 }, 1)).toEqual([
+      c('Q', 'hearts'),
+      c('J', 'clubs'),
+    ]);
     expect(liftable(base, { kind: 'tableau', col: 0 }, 2)).toEqual([c('J', 'clubs')]);
   });
 
@@ -211,9 +214,12 @@ describe('reducer: draw', () => {
     expect(next.waste).toHaveLength(0);
     expect(next.stock).toHaveLength(3);
     expect(next.stock.every((card) => !card.faceUp)).toBe(true);
+    // The recycle bumps the counter — the fact the Clean Sheet feat reads (a win with 0 recycles).
+    expect(next.recycles).toBe(1);
     // The waste top becomes the stock bottom, so the very next draw re-serves the old bottom card.
     const afterDraw = reducer({ ...next, drawCount: 1 }, { type: 'draw' });
     expect(afterDraw.waste[0]?.rank).toBe('2');
+    expect(afterDraw.recycles).toBe(1); // a plain stock draw does not recycle
   });
 
   it('is a no-op when both stock and waste are empty', () => {
@@ -371,7 +377,15 @@ describe('win and autoComplete', () => {
     expect(canAutoComplete(withStock)).toBe(false);
     const withFaceDown: SolitaireState = {
       ...nearlyWon(),
-      tableau: [[c('K', 'spades', false)], [c('K', 'hearts')], [c('K', 'diamonds')], [c('K', 'clubs')], [], [], []],
+      tableau: [
+        [c('K', 'spades', false)],
+        [c('K', 'hearts')],
+        [c('K', 'diamonds')],
+        [c('K', 'clubs')],
+        [],
+        [],
+        [],
+      ],
     };
     expect(canAutoComplete(withFaceDown)).toBe(false);
   });
@@ -385,10 +399,16 @@ describe('win and autoComplete', () => {
       ...nearlyWon(),
       // Foundations built to the Queen for three suits; hearts only to nothing so the buried A♥/2♥ matter.
       foundations: [
-        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'spades')),
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) =>
+          c(r as Rank, 'spades')
+        ),
         [],
-        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'diamonds')),
-        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) => c(r as Rank, 'clubs')),
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) =>
+          c(r as Rank, 'diamonds')
+        ),
+        ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q'].map((r) =>
+          c(r as Rank, 'clubs')
+        ),
       ],
       tableau: [[c('K', 'spades')], [c('K', 'diamonds')], [c('K', 'clubs')], [], [], [], []],
       waste: [c('A', 'hearts'), c('2', 'hearts')], // A♥ at the bottom, 2♥ on top and blocking it

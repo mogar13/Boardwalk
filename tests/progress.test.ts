@@ -46,6 +46,7 @@ describe('satisfiedAchievements', () => {
     xp: 0,
     lastWagerCents: 0,
     lastNetCents: 0,
+    winsByGame: {},
   };
 
   it('is empty for a fresh account that just lost its first hand', () => {
@@ -66,15 +67,17 @@ describe('satisfiedAchievements', () => {
     expect(satisfiedAchievements({ ...base, lastWagerCents: 49_999 })).not.toContain('high_roller');
   });
 
-  it('fires seasoned exactly at the level-10 XP threshold', () => {
+  it('fires the level chain silver (Seasoned) exactly at the level-10 XP threshold', () => {
     const at10 = xpThresholdForLevel(10);
-    expect(satisfiedAchievements({ ...base, xp: at10 })).toContain('seasoned');
-    expect(satisfiedAchievements({ ...base, xp: at10 - 1 })).not.toContain('seasoned');
+    expect(satisfiedAchievements({ ...base, xp: at10 })).toContain('level_silver');
+    expect(satisfiedAchievements({ ...base, xp: at10 - 1 })).not.toContain('level_silver');
   });
 
-  it('fires table_regular at 100 games and deep_pockets at $50,000', () => {
+  it('fires table_regular at 100 games and the bankroll chain silver at $50,000', () => {
     expect(satisfiedAchievements({ ...base, totalPlayed: 100 })).toContain('table_regular');
     expect(satisfiedAchievements({ ...base, totalPlayed: 99 })).not.toContain('table_regular');
-    expect(satisfiedAchievements({ ...base, bankrollCents: 5_000_000 })).toContain('deep_pockets');
+    expect(satisfiedAchievements({ ...base, bankrollCents: 5_000_000 })).toContain(
+      'bankroll_silver'
+    );
   });
 });

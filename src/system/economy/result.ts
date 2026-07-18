@@ -23,6 +23,7 @@
 import type { Profile } from '@/system/profile/types';
 import {
   achievementById,
+  recordedFeats,
   satisfiedAchievements,
   type Achievement,
   type AchievementView,
@@ -51,6 +52,15 @@ export interface ResultReport {
   readonly payoutCents?: number;
   /** Cents staked on this hand. Default 0. Present so `big_win`/`high_roller` can see the bet. */
   readonly wagerCents?: number;
+  /**
+   * FEAT ids the game earned this result — the event-flag path for achievements a state
+   * predicate cannot see (a two-card 21, a Solitaire cleared without recycling). The game knows
+   * these facts and nothing else does, so it reports the ids; `applyResult` records any that are
+   * marked `feat` in the catalogue and drops the rest. A game cannot grant itself a chain badge
+   * this way — only `feat: true` rows are honoured. Absent for most results. See
+   * `@/system/progress/achievements` `recordedFeats`.
+   */
+  readonly feats?: readonly string[];
 }
 
 /** What `reportResult` gives back: the next profile, and the facts worth surfacing to the player. */
@@ -84,7 +94,12 @@ const XP_BY_OUTCOME: Record<Outcome, number> = {
  * against the state AFTER the first three, because "reach level 10" and "hold $50,000" are
  * questions about the new state, not the old one. Unlock is a diff: an id is in `unlocked`
  * only if it is satisfied now AND was not already in `profile.achievements`, so a predicate
- * that stays true (`deep_pockets`) fires once and never revokes.
+ * that stays true (`bankroll_silver`) fires once and never revokes.
+ *
+ * Two unlock sources merge into that one diff: the state predicates (`satisfiedAchievements`)
+ * and the feats the game reported (`recordedFeats`, filtered to real `feat` rows). Whichever way
+ * an achievement unlocks, if it carries a `grants` its cosmetic id lands in `inventory` in the
+ * same return value — the P2→P3 link, the only path an earn-only cosmetic is obtained.
  */
 export function applyResult(
   profile: Profile,
@@ -106,6 +121,11 @@ export function applyResult(
 
   const stats = bumpStats(profile.stats, gameId, report.outcome);
 
+  // Per-game wins, for the mastery chains. `won` alone — the chain asks "how many chess games
+  // have you won", not "played". Absent games stay absent, so a predicate reads `?? 0`.
+  const winsByGame: Record<string, number> = {};
+  for (const [id, s] of Object.entries(stats)) winsByGame[id] = s.won;
+
   const view: AchievementView = {
     totalPlayed: totalPlayed(stats),
     totalWins: totalWins(stats),
@@ -113,9 +133,14 @@ export function applyResult(
     xp,
     lastWagerCents: wagerCents,
     lastNetCents: netCents,
+    winsByGame,
   };
 
-  const unlocked = satisfiedAchievements(view)
+  // Two unlock sources, one diff: state predicates plus the feats the game reported (filtered to
+  // real `feat` rows, so a game cannot forge a chain badge). An id counts as newly unlocked only
+  // if it is satisfied/reported now AND was not already earned — the idempotence guarantee.
+  const candidateIds = [...satisfiedAchievements(view), ...recordedFeats(report.feats)];
+  const unlocked = candidateIds
     .filter((id) => !(id in profile.achievements))
     .map((id) => achievementById.get(id))
     .filter((a): a is Achievement => a !== undefined);
@@ -123,8 +148,16 @@ export function applyResult(
   const achievements = { ...profile.achievements };
   for (const a of unlocked) achievements[a.id] = nowMs;
 
+  // Grants: a newly-unlocked achievement carrying a `grants` drops its earn-only cosmetic into
+  // `inventory` — the ONLY path such an item is obtained (the store refuses to sell it). Guarded
+  // on `unlocked`, so it fires exactly once with the badge and never re-grants on a later result.
+  const inventory = { ...profile.inventory };
+  for (const a of unlocked) {
+    if (a.grants !== undefined && !(a.grants in inventory)) inventory[a.grants] = true;
+  }
+
   return {
-    profile: { ...profile, bankrollCents, xp, stats, achievements },
+    profile: { ...profile, bankrollCents, xp, stats, achievements, inventory },
     xpGained,
     netCents,
     unlocked,

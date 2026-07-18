@@ -54,10 +54,15 @@ export default function SolitaireGame({ onExit }: GameProps) {
   useEffect(() => {
     if (!state.won || reportedWin.current) return;
     reportedWin.current = true;
-    reportResult({ outcome: 'win' });
+    // Clean Sheet feat: cleared without ever recycling the stock. Only the board tracks recycles,
+    // so the game reports it; the economy never learns the run any other way.
+    reportResult({
+      outcome: 'win',
+      ...(state.recycles === 0 ? { feats: ['feat_cleansheet'] } : {}),
+    });
     play('jackpot');
     toast.success('You cleared the board!');
-  }, [state.won, reportResult, play, toast]);
+  }, [state.won, state.recycles, reportResult, play, toast]);
 
   const showAutoFinish = canAutoComplete(state) && !state.won;
 
