@@ -7,7 +7,7 @@ proof), **Chess** (the hot-seat proof), **UNO** (the hidden-hands proof) and **S
 room-less proof) all shipped 2026-07-17. **Since then, backend Phases A–D shipped and deployed
 (2026-07-18)** — a Node + SQLite referee that owns the ledger, serves rooms over WebSockets and deals
 blackjack, with the rulebooks moved into a shared `packages/game-logic` both sides import. See
-[BACKEND_PLAN.md](../BACKEND_PLAN.md).
+[BACKEND_PLAN.md](BACKEND_PLAN.md).
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -365,8 +365,8 @@ here gets an incomplete picture:
 
 | Plan | State |
 |---|---|
-| [BACKEND_PLAN.md](../BACKEND_PLAN.md) — the referee (Node + SQLite) | Phases A, B, C and D all shipped and deployed (2026-07-17/18): the server owns the ledger, prices every money intent, serves rooms/chat over WebSockets, deals blackjack and computes achievements. Phase C's "retire RTDB" is **not** met — the Firebase repos remain as kill-switch fallbacks. |
-| [PROGRESSION_PLAN.md](../PROGRESSION_PLAN.md) — store, achievements, boards | P1–P4 shipped; P5 (felts / frames / celebration SFX) in progress. |
+| [BACKEND_PLAN.md](BACKEND_PLAN.md) — the referee (Node + SQLite) | Phases A, B, C and D all shipped and deployed (2026-07-17/18): the server owns the ledger, prices every money intent, serves rooms/chat over WebSockets, deals blackjack and computes achievements. Phase C's "retire RTDB" is **not** met — the Firebase repos remain as kill-switch fallbacks. |
+| [PROGRESSION_PLAN.md](PROGRESSION_PLAN.md) — store, achievements, boards | P1–P4 shipped; P5 (felts / frames / celebration SFX) in progress. |
 
 ### The five
 

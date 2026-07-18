@@ -2,7 +2,7 @@
   "name": "boardwalk-api",
   "version": "0.0.0",
   "private": true,
-  "description": "The Boardwalk referee — Node + SQLite. Verifies Firebase ID tokens, owns the ledger. See ../plans/BACKEND_PLAN.md (Phase A).",
+  "description": "The Boardwalk referee — Node + SQLite. Verifies Firebase ID tokens, owns the ledger. See ../plans/done/BACKEND_PLAN.md.",
   "license": "UNLICENSED",
   "type": "commonjs",
   "main": "dist/server.js",

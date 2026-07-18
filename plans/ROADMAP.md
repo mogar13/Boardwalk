@@ -31,7 +31,7 @@ Two smaller items ride along with whatever you touch next; they are at the botto
 ## 1. Offline replay-hardening — the only open item that can move money
 
 **Status:** owed since Phase B, never built. Named in
-[BACKEND_PLAN.md](BACKEND_PLAN.md) as a locked decision with no implementation.
+[BACKEND_PLAN.md](done/BACKEND_PLAN.md) as a locked decision with no implementation.
 
 The decision (2026-07-17) was that **offline wins are ranked, with sync-on-reconnect** — the owner
 wants real mobile/offline play through a power or internet outage. That decision is what creates the
@@ -94,7 +94,7 @@ plainly that the fallback is degraded. That is a reason to consider item 3 first
 ## 3. Close Phase C — a decision, not a chore
 
 **Status:** Phase C shipped and is deployed; its own **"Done when: RTDB is no longer read or written
-at all" is NOT met**, and [BACKEND_PLAN.md](BACKEND_PLAN.md#phase-c--realtime-rooms-over-websocket)
+at all" is NOT met**, and [BACKEND_PLAN.md](done/BACKEND_PLAN.md#phase-c--realtime-rooms-over-websocket)
 names the four reasons.
 
 To close it you would delete the Firebase room/chat repos, delete the `rooms/`/`hands/`/`chat/`

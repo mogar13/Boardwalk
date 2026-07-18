@@ -53,7 +53,7 @@ const NATIVE_DIALOGS = [
 
 export default tseslint.config(
   {
-    // boardwalk-api/ is a standalone Node service (see plans/BACKEND_PLAN.md) with its OWN
+    // boardwalk-api/ is a standalone Node service (see plans/done/BACKEND_PLAN.md) with its OWN
     // tsconfig, eslint and vitest. This config is React/browser-shaped and points at the app's
     // tsconfig, which does not include the API's files — linting them here would only produce
     // "file not in project" parser errors.

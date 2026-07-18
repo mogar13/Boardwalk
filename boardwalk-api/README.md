@@ -1,6 +1,6 @@
 # boardwalk-api — the referee
 
-Node + Express + SQLite. The server half of [`../plans/BACKEND_PLAN.md`](../plans/BACKEND_PLAN.md).
+Node + Express + SQLite. The server half of [`../plans/done/BACKEND_PLAN.md`](../plans/done/BACKEND_PLAN.md).
 This is the thing a browser is not allowed to be: it verifies Firebase ID tokens and owns the
 **ledger**, so the bankroll becomes a derived sum no client can overwrite.
 
@@ -16,7 +16,7 @@ browser plays, from `@boardwalk/game-logic` — see [Where the rules live](#wher
 The frontend is wired to it as primary, and it is **live on the Pi**, deployed from `cb42e44`: the
 backfill has run, backups and the restore drill are real on the box, and the money round-trip is
 verified in prod — see
-[Verified in prod](../plans/BACKEND_PLAN.md#verified-in-prod-2026-07-18). Phase C runs on top of the
+[Verified in prod](../plans/done/BACKEND_PLAN.md#verified-in-prod-2026-07-18). Phase C runs on top of the
 same process: rooms and chat are served by the WS gateway here rather than RTDB, with
 `VITE_WS_ROOMS=0` as the client-side kill switch back.
 
@@ -147,4 +147,4 @@ follow the same steps. The precondition below is the part that nearly failed the
    could not resolve on its own. `packages/game-logic/` is now rsync'd to `~/packages/game-logic`
    beside it, which makes the deploy **two** rsyncs rather than one. Flagging this as unverified was
    worth more than guessing it. Procedure and the `--omit=optional` trap:
-   [The deploy delta](../plans/BACKEND_PLAN.md#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be).
+   [The deploy delta](../plans/done/BACKEND_PLAN.md#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be).

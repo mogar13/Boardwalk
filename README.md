@@ -54,9 +54,10 @@ unspellable rather than documenting "don't."
 |---|---|
 | [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
 | [CLAUDE.md](CLAUDE.md) | The rules, and what enforces each one. Short on purpose — every rule is paid for by a specific v1 bug. |
-| [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | The referee. Node + SQLite, server-authoritative economy — **Phases A–D shipped and deployed**. |
+| [plans/done/BACKEND_PLAN.md](plans/done/BACKEND_PLAN.md) | The referee. Node + SQLite, server-authoritative economy — **Phases A–D shipped and deployed**. |
 | [plans/ROADMAP.md](plans/ROADMAP.md) | **What's left, in order.** Every plan closed at once; this is the honest list of what outlived them. |
-| [plans/PROGRESSION_PLAN.md](plans/PROGRESSION_PLAN.md) | Store, achievements, leaderboards, assets. **P1–P5 all shipped.** |
+| [plans/done/](plans/done/) | Closed plans, kept for the *why*: ARCHITECTURE, BACKEND_PLAN (A–D), PROGRESSION_PLAN (P1–P5), BACKFILL_RUNBOOK. A plan moves here when it has nothing open left. |
+| [plans/done/PROGRESSION_PLAN.md](plans/done/PROGRESSION_PLAN.md) | Store, achievements, leaderboards, assets. **P1–P5 all shipped.** |
 | [boardwalk-api/README.md](boardwalk-api/README.md) | The server's own docs — routes, schema, deploy target. |
 
 Two tiers, deliberately: rules live in `CLAUDE.md` in present tense and must have a guard behind them;

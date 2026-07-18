@@ -8,7 +8,7 @@ dropped on purpose, and the OS-level things we eventually *want* have a written 
 finally needs one.
 
 > **Written 2026-07-16, before the progression overhaul.** Rows 5 and 11 have since been largely
-> delivered by [PROGRESSION_PLAN.md](PROGRESSION_PLAN.md) P1–P4 — the "Boardwalk today" columns
+> delivered by [PROGRESSION_PLAN.md](done/PROGRESSION_PLAN.md) P1–P4 — the "Boardwalk today" columns
 > below are corrected inline where they were flatly wrong. Every `src/system/…` path predates Phase
 > D, which moved the economy, profile, progress, store, rewards and the five rulebooks into
 > `packages/game-logic/src/…`.

@@ -257,7 +257,7 @@ economy and leaderboard all resolve to the API.
    reports `0 migrated, 1 already migrated`, so the idempotency marker is confirmed against real
    production data rather than only in tests. See [BACKFILL_RUNBOOK.md](BACKFILL_RUNBOOK.md).
 4. ✅ **Backup timer installed and the off-box copy confirmed** — done on the box 2026-07-18, along
-   with the full stop/swap/start restore rehearsal. See [BACKUP.md](../boardwalk-api/BACKUP.md).
+   with the full stop/swap/start restore rehearsal. See [BACKUP.md](../../boardwalk-api/BACKUP.md).
 5. ✅ **Verified in prod** — bet/settle/purchase/daily round-tripped against the live Pi on a
    throwaway account, a replayed nonce moved nothing, a $1M payout with no open wager was refused,
    and a hostile `PUT /profile` left the balance alone. The table is at the top of this file:

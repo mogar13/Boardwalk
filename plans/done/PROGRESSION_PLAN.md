@@ -5,7 +5,7 @@ contract, kept as written; §9 carries the build log and is the honest record of
 for the phase(s) that build it, in the same spirit as [BACKEND_PLAN.md](BACKEND_PLAN.md).
 
 > This is OS work, not game-count creep. It makes the five games we already have *deeper*, which is
-> exactly the kind of expansion [Scope discipline](../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated)
+> exactly the kind of expansion [Scope discipline](../../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated)
 > wants. No new games are proposed here.
 
 ---
@@ -54,7 +54,7 @@ Grounded in the actual code, so the design proposes real deltas, not fantasy.
 | **Daily** | `system/rewards/daily.ts` | 7-day streak ladder $500→$5,000, then flat. UTC day index. |
 | **Award pipeline** | `system/economy/result.ts` | `applyResult` — the **one** pure call that moves bankroll+xp+stats+achievements together. XP flat by outcome (win 100 / push 20 / loss 10). |
 
-**The load-bearing constraint, and why the store is thin.** [`catalog.ts`](../packages/game-logic/src/store/catalog.ts)
+**The load-bearing constraint, and why the store is thin.** [`catalog.ts`](../../packages/game-logic/src/store/catalog.ts)
 says it outright: a cosmetic *must have a reader* or it's `loadout.color` — v1's cosmetic written by
 the store and read by nothing. Avatars are the only cosmetic with a reader today (the top bar + profile
 card render `profile.avatar`). Card backs, felts, dice have **no reader** — nothing drew a game board
@@ -63,7 +63,7 @@ your equipped card back, the boards read your equipped felt. That's the honest s
 it's the real (well-scoped) work.
 
 **The other load-bearing constraint: `$other: false`.** Every profile field, every per-game stat, and
-every leaderboard field is pinned in [`database.rules.json`](../database.rules.json) with `$other: false`
+every leaderboard field is pinned in [`database.rules.json`](../../database.rules.json) with `$other: false`
 — the server *refuses* an unknown key. So **any new stored field is a rules change + a `.validate` +
 a test that the refusal holds**, in the same commit. This is the migration surface, tabulated in §7.
 
@@ -86,7 +86,7 @@ never before — that's the rule.
 | `dice` | (no dice game yet) | ⚠️ **NOT until a dice game exists to read it.** Listed so the union is designed, but it does not ship in this plan — that would be the exact dead cosmetic we're fixing. |
 
 > **Glow-budget caution.** The theme's glow budget is *fixed and nearly spent* (blue=act, cyan=here,
-> gold=money — [CLAUDE.md](../CLAUDE.md#ui)). `frame` cosmetics must **not** mint new neon meanings.
+> gold=money — [CLAUDE.md](../../CLAUDE.md#ui)). `frame` cosmetics must **not** mint new neon meanings.
 > They draw from a pre-approved palette of frame treatments added to `packages/theme` as tokens, never
 > inline colors. If frames threaten the budget, they get cut before the budget does.
 
