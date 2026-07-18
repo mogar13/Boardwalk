@@ -19,6 +19,36 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Stale-build boot guard. Pages caches this file for 10 minutes (max-age=600) while a
+         deploy replaces every content-hashed chunk, so a cached copy asks for an entry chunk
+         that 404s and NOTHING renders — no app JS runs, so the handler in
+         src/system/staleBuild/staleBuild.ts cannot help here. This snippet can, because it
+         lives in the cached HTML itself. Resource load errors do not bubble, hence capture.
+         KEY and COOLDOWN_MS are duplicated from that module and pinned by
+         tests/stale-build.test.ts — change them in both places or the test fails. -->
+    <script>
+      (function () {
+        var KEY = 'boardwalk:stale-build-reload';
+        var COOLDOWN_MS = 10000;
+        window.addEventListener(
+          'error',
+          function (event) {
+            var el = event.target;
+            if (!el || (el.tagName !== 'SCRIPT' && el.tagName !== 'LINK')) return;
+            try {
+              var last = Number(sessionStorage.getItem(KEY));
+              var now = Date.now();
+              if (isFinite(last) && last > 0 && last <= now && now - last < COOLDOWN_MS) return;
+              sessionStorage.setItem(KEY, String(now));
+              location.reload();
+            } catch (e) {
+              /* storage blocked: no loop guard available, so do nothing rather than spin */
+            }
+          },
+          true
+        );
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
