@@ -412,6 +412,20 @@ describe('leaderboard/<uid> — the public projection', () => {
     await assertSucceeds(set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 3 }));
   });
 
+  it('now ALLOWS played — the Win Rate board projects the denominator', async () => {
+    // The projection grew by one again, for the same reason and with the same discipline: the Win
+    // Rate board ranks on wins/played, so both halves must be public. `played` is added here with
+    // its writer (profileRepo projects `totalPlayed`), and `$other: false` below still refuses a
+    // seventh field. A projected field and its rule land together, always.
+    await assertSucceeds(
+      set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, wins: 3, played: 10 })
+    );
+    // Pinned to a non-negative number, like every count here — a string denominator is malformed.
+    await assertFails(
+      set(ref(asUser(ME), `leaderboard/${ME}`), { ...validProfile, played: 'many' })
+    );
+  });
+
   it('STILL refuses a field beyond the pinned set — the leak this pin exists to stop', async () => {
     // The load-bearing line survives the growth. This node is world-readable, so anything that
     // reaches it is public forever; the projection grew by exactly one named field, and
