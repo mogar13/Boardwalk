@@ -13,6 +13,7 @@ import {
   type BlackjackState as HandState,
 } from '@boardwalk/game-logic/games/blackjack';
 import type {
+  EconomyOutcome,
   BlackjackDealInput,
   BlackjackMoveInput,
   BlackjackRepo,
@@ -81,6 +82,19 @@ export interface LocalBlackjackDeps {
   readonly rng?: () => number;
 }
 
+
+/**
+ * Unwrap an economy answer to just the profile.
+ *
+ * `EconomyRepo.apply` grew a `{profile, pull}` result when packs moved server-side — `pull` is the
+ * one outcome a client cannot compute, and it is `null` for every intent except a pack open. The
+ * blackjack repo only ever sends `bet` and `settle`, so it takes the profile and drops a field
+ * that is structurally always null here.
+ */
+function profileOf(r: RepoResult<EconomyOutcome>): RepoResult<Profile> {
+  return r.ok ? { ok: true, value: r.value.profile } : r;
+}
+
 export function localBlackjackRepo(deps: LocalBlackjackDeps): BlackjackRepo {
   const rng = deps.rng ?? Math.random;
 
@@ -107,10 +121,12 @@ export function localBlackjackRepo(deps: LocalBlackjackDeps): BlackjackRepo {
     profile: Profile,
     amountCents: number
   ): Promise<RepoResult<Profile>> {
-    return await deps.economy.apply(
-      uid,
-      { kind: 'bet', nonce, gameId: GAME_ID, amountCents },
-      { ...profile, bankrollCents: profile.bankrollCents - amountCents }
+    return profileOf(
+      await deps.economy.apply(
+        uid,
+        { kind: 'bet', nonce, gameId: GAME_ID, amountCents },
+        { ...profile, bankrollCents: profile.bankrollCents - amountCents }
+      )
     );
   }
 
@@ -142,17 +158,19 @@ export function localBlackjackRepo(deps: LocalBlackjackDeps): BlackjackRepo {
     };
     const predicted = applyResult(profile, GAME_ID, report, Date.now());
 
-    return await deps.economy.apply(
-      uid,
-      {
-        kind: 'settle',
-        nonce,
-        gameId: GAME_ID,
-        outcome: report.outcome,
-        payoutCents: report.payoutCents,
-        ...(report.feats !== undefined ? { feats: report.feats } : {}),
-      },
-      predicted.profile
+    return profileOf(
+      await deps.economy.apply(
+        uid,
+        {
+          kind: 'settle',
+          nonce,
+          gameId: GAME_ID,
+          outcome: report.outcome,
+          payoutCents: report.payoutCents,
+          ...(report.feats !== undefined ? { feats: report.feats } : {}),
+        },
+        predicted.profile
+      )
     );
   }
 

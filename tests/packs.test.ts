@@ -24,7 +24,7 @@ import {
   packById,
   packPool,
   type Pack,
-} from '@/system/store/packs';
+} from '@boardwalk/game-logic';
 import type { Profile } from '@boardwalk/game-logic';
 
 const RARITIES: readonly Rarity[] = ['common', 'rare', 'epic', 'legendary'];

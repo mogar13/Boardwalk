@@ -150,6 +150,34 @@ CREATE TABLE IF NOT EXISTS blackjack_hands (
   updated_at  INTEGER NOT NULL
 );
 
+-- PACKS. The OUTCOME of a pack open, keyed by the same (uid, nonce) that makes the mutation
+-- idempotent. This table exists for exactly one reason, and it is the reason packs were the hard
+-- intent to move server-side:
+--
+-- EVERY OTHER MUTATION IS DETERMINISTIC ON REPLAY. A repeated bet, settle, purchase or daily finds
+-- its nonce in mutations, does nothing, and re-answers with the current profile — and that answer
+-- is right, because nothing about those intents was ever a coin flip. A PACK OPEN IS RANDOM. If a
+-- replay took the same "do nothing, return the profile" path, the second response would carry no
+-- pull at all and the client's reveal would have nothing to show; if it re-rolled, the player would
+-- be told they got two different items for one payment, and a retry on a flaky connection would
+-- become a way to reroll a common into a legendary.
+--
+-- So the roll is PERSISTED at the moment it is made, and a replay REPLAYS IT VERBATIM: same item,
+-- same duplicate flag, same dust, no money moved. The row is written inside the same transaction as
+-- the ledger entry and the inventory grant, so there is no window in which a player has been
+-- charged for a pull that was never recorded.
+CREATE TABLE IF NOT EXISTS pack_opens (
+  uid         TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  nonce       TEXT NOT NULL,
+  pack_id     TEXT NOT NULL,
+  item_id     TEXT NOT NULL,
+  -- 0/1. SQLite has no boolean; the coercion back to one lives in mutations.ts.
+  duplicate   INTEGER NOT NULL,
+  dust_cents  INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (uid, nonce)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;

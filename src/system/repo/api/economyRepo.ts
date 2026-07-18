@@ -1,6 +1,12 @@
 import type { Profile } from '@boardwalk/game-logic';
 import { apiFetch, type ApiClientConfig } from '@/system/repo/api/client';
-import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types';
+import type {
+  EconomyIntent,
+  EconomyOutcome,
+  EconomyRepo,
+  PackPullWire,
+  RepoResult,
+} from '@/system/repo/types';
 
 /**
  * THE SERVER-AUTHORITATIVE ECONOMY — BACKEND_PLAN.md Phase B, client half.
@@ -13,16 +19,21 @@ import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types
  * the second one survives someone reading the source.
  */
 
+// Keyed by `EconomyIntent['kind']`, so adding an intent to that union red-lines HERE until it is
+// given a route. That is the type doing the routing table's bookkeeping instead of a reviewer.
 const PATHS: Readonly<Record<EconomyIntent['kind'], string>> = {
   bet: '/bet',
   settle: '/settle',
   purchase: '/purchase',
   daily: '/daily',
+  pack: '/pack',
 };
 
 interface MutationBody {
   readonly profile: Profile;
   readonly replayed?: boolean;
+  /** Present only on `/pack`. On a REPLAYED pack open this is the original roll, re-served. */
+  readonly pull?: PackPullWire;
 }
 
 export function httpEconomyRepo(cfg: ApiClientConfig): EconomyRepo {
@@ -31,7 +42,7 @@ export function httpEconomyRepo(cfg: ApiClientConfig): EconomyRepo {
       _uid: string,
       intent: EconomyIntent,
       _clientNext: Profile
-    ): Promise<RepoResult<Profile>> {
+    ): Promise<RepoResult<EconomyOutcome>> {
       const res = await apiFetch(cfg, PATHS[intent.kind], {
         method: 'POST',
         body: JSON.stringify(intent),
@@ -47,7 +58,7 @@ export function httpEconomyRepo(cfg: ApiClientConfig): EconomyRepo {
       if (!res.ok) throw new Error(`${intent.kind} failed: ${String(res.status)}`);
 
       const body = (await res.json()) as MutationBody;
-      return { ok: true, value: body.profile };
+      return { ok: true, value: { profile: body.profile, pull: body.pull ?? null } };
     },
   };
 }

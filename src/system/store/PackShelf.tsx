@@ -30,7 +30,7 @@ import {
   packPool,
   type Pack,
   type PackPull,
-} from '@/system/store/packs';
+} from '@boardwalk/game-logic';
 import { RARITY_ORDER, RARITY_TEXT } from '@/system/store/rarity';
 import { useStore } from '@/system/store/useStore';
 import { Button, Card, Modal, cx } from '@/ui';
