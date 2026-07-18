@@ -30,9 +30,9 @@ summing to exactly the `551000` the API reported. Refused mutations still claime
 wrote no ledger row, which is what makes a retry replay the refusal instead of re-deciding it.
 
 **"Editing devtools changes nothing durable" is now a demonstrated claim rather than a design.**
-🚧 **Phase D is code-complete and green, and NOT deployed** — see
-[The deploy delta](#the-deploy-delta-phase-d) for what it adds to that same trip, including one
-thing that must be **checked before deploying**, because it can fail the deploy at `npm install`.
+✅ **Phase D is DEPLOYED too** (2026-07-18) — see
+[The deploy delta](#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be) for what it turned
+out to be, including the `npm install` trap it very nearly failed on.
 Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
 `boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
 below (with the append-only `ledger`), profile + leaderboard endpoints, the money routes, the WS room
@@ -411,8 +411,8 @@ enforced by RTDB rules and a host-as-dealer client, not by this server.
 **Counts:** frontend 435 across 26 files, `boardwalk-api` 171 across 8 (45 in economy, 22 in
 blackjack).
 
-**Still owed — and it rides along with Phase B's deploy, it does not add a second one:**
-see [The deploy delta](#the-deploy-delta-phase-d) below.
+**How it shipped — it rode along with Phase B's deploy and did not add a second one:**
+see [The deploy delta](#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be) below.
 
 ### The deploy delta (Phase D) — DONE, and what it turned out to be
 
