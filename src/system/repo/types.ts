@@ -173,21 +173,26 @@ export type EconomyIntent =
   /** Stake a wager. The server checks it against the LEDGER balance, not the one we hold. */
   | (IntentBase & { readonly kind: 'bet'; readonly gameId: string; readonly amountCents: number })
   /**
-   * Settle a hand. `payoutCents` is a CLAIM, bounded server-side by the open wager it consumes —
-   * the server cannot yet know whether the hand was really won (that is Phase D, where the game's
-   * rules run there too), but it can refuse a payout with no stake behind it.
+   * Settle a hand of a game the SERVER DOES NOT DEAL — the four that do not bet (chess, uno,
+   * solitaire, tic-tac-toe). Their honest payout is 0, and `checkSettle`'s zero-wager branch
+   * enforces exactly that, so the only thing this can move is XP and a stat.
    *
-   * `unlockedAchievementIds`/`grantedItemIds` are the honest residual: the achievement catalogue
-   * still lives in the frontend, so these are computed here and recorded additively there. They
-   * are a cosmetic surface and move no money.
+   * Blackjack does NOT come through here any more. The server deals that hand and settles it
+   * from its own cards (`kind: 'blackjack'` on `GameSessionRepo`), which is what makes the
+   * payout stop being a claim for the one game where a claim was worth money.
+   *
+   * `feats` is the only achievement input left on the wire, because no state predicate can see a
+   * two-card 21 or a Solitaire cleared without a recycle. The server filters it to ids marked
+   * `feat: true` and recomputes every other badge from its own tables — so a chain tier and the
+   * earn-only cosmetic it grants can no longer be asked for. Phase D removed
+   * `unlockedAchievementIds`/`grantedItemIds` rather than validating them.
    */
   | (IntentBase & {
       readonly kind: 'settle';
       readonly gameId: string;
       readonly outcome: 'win' | 'loss' | 'push';
       readonly payoutCents: number;
-      readonly unlockedAchievementIds: readonly string[];
-      readonly grantedItemIds: readonly string[];
+      readonly feats?: readonly string[];
     })
   /** Buy a cosmetic. Names the ITEM; the price is the server's to look up. */
   | (IntentBase & { readonly kind: 'purchase'; readonly itemId: string })

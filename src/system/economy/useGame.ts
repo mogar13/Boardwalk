@@ -43,10 +43,15 @@ export function useGame(): GameApi {
       const applied = applyResult(profile, manifest.id, report, Date.now());
 
       // The result becomes an INTENT. Note what travels and what does not: the outcome, the
-      // claimed payout, and the achievement ids the pure logic just unlocked — but never the new
-      // bankroll, never the XP, never a stat count. The server recomputes those three from the
-      // outcome alone, so a tampered client can misreport what happened in a hand it played but
-      // cannot report a hand it did not play into a fortune.
+      // payout, and any FEATS the game observed — but never the new bankroll, never the XP,
+      // never a stat count, and since Phase D never an achievement id either. The server
+      // recomputes all of those from the outcome and its own tables, so a tampered client can
+      // misreport what happened in a hand it played but cannot report a hand it did not play
+      // into a fortune, and cannot award itself a badge at all.
+      //
+      // `applied` is still computed above, and it is now a PREDICTION: it drives the optimistic
+      // profile and the unlock toast, and the authoritative profile the server answers with
+      // replaces it a beat later.
       void applyEconomy(
         {
           kind: 'settle',
@@ -54,10 +59,7 @@ export function useGame(): GameApi {
           gameId: manifest.id,
           outcome: report.outcome,
           payoutCents: Math.round(report.payoutCents ?? 0),
-          unlockedAchievementIds: applied.unlocked.map((a) => a.id),
-          grantedItemIds: applied.unlocked
-            .map((a) => a.grants)
-            .filter((id): id is string => id !== undefined),
+          ...(report.feats !== undefined ? { feats: report.feats } : {}),
         },
         applied.profile
       ).then(

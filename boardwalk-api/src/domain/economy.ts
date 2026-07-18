@@ -3,118 +3,82 @@
  * its inputs and returns a decision, so the routes are thin and the rules are testable to the
  * cent.
  *
- * WHY THIS FILE IS A SECOND COPY, AND WHY THAT IS NOT THE DUPLICATION IT LOOKS LIKE.
+ * THIS FILE IS NO LONGER A SECOND COPY (Phase D).
  *
- * The frontend already has these rules, pure, in `src/system/economy/bet.ts`,
- * `src/system/store/catalog.ts` and `src/system/rewards/daily.ts`. Sharing them is the right end
- * state and it is exactly what BACKEND_PLAN.md's Phase D describes — `packages/game-logic`, one
- * module imported by both sides. Phase B does not do that move, for one concrete reason: the
- * frontend is ESM built by Vite, this service is CommonJS compiled by `tsc` with `rootDir: src`,
- * and `boardwalk-api` is not in the root npm workspace. Wiring a shared package across that seam
- * changes the API's build output layout and therefore the Pi's systemd entrypoint — a
- * deploy-coupled change, made blind, in the same commit that moves the source of truth for money.
- * That is two risky things at once.
+ * It used to be. Until Phase D it carried its own `STARTING_BANKROLL_CENTS`, `XP_BY_OUTCOME`,
+ * `DAILY_REWARDS_CENTS` and a hand-maintained `PRICES_CENTS` table, and
+ * `tests/economy-parity.test.ts` in the frontend suite asserted the two sides agreed. That guard
+ * was real — it caught live drift more than once, including P4's new card backs landing on the
+ * client only, which would have made the server refuse a purchase the store was happily
+ * offering. But a guarded duplication is still a duplication, and a guard can only ever check
+ * the constants somebody remembered to list.
  *
- * So the copy is deliberate AND IT IS GUARDED: `tests/economy-parity.test.ts` in the FRONTEND
- * suite imports this file and the frontend's originals and asserts they agree — every price, the
- * daily ladder, the XP table, over the whole catalogue. A drift is red, not silent. That is the
- * repo's standing rule (CLAUDE.md: "A convention is only real if something red happens when it's
- * broken"), applied to a duplication instead of a doc.
+ * So the numbers now come from `@boardwalk/game-logic`, the package BOTH sides import, and the
+ * parity test is deleted. Deleting a guard is normally the wrong move; it is right here for the
+ * one reason that makes it right: there is nothing left to compare. `PRICES_CENTS` in particular
+ * is now DERIVED from the shared `CATALOG` rather than transcribed from it, so an item added on
+ * one side cannot be missing on the other — there is no other side.
  *
- * WHAT THE SERVER OWNS AFTER PHASE B, stated honestly:
+ * What stays here is what is genuinely the SERVER'S and has no client counterpart: the payout
+ * ceiling, and the four `check*` functions that phrase a rule as a decision about a request.
+ * They are thin, because the rules they enforce live in the shared package.
+ *
+ * WHAT THE SERVER OWNS AFTER PHASE D:
  *
  *   ✅ the bankroll        — a derived `SUM(ledger.delta_cents)`; no route accepts a balance
  *   ✅ bet legality        — bounds and affordability, checked against that derived balance
- *   ✅ the payout CEILING  — a settle must consume a real open wager, capped per game
- *   ✅ store prices        — the server owns the catalogue; the client cannot name its own price
- *   ✅ the daily clock     — server time, server streak; a wound-back client clock buys nothing
+ *   ✅ store prices        — derived from the shared catalogue; a client cannot name its own
+ *   ✅ the daily clock     — server time, server streak, shared ladder
  *   ✅ XP and stats        — computed here from the outcome, never accepted from the wire
+ *   ✅ achievements        — recomputed from server-owned state (see `domain/achievements.ts`);
+ *                            a chain badge and its earn-only grant can no longer be forged
+ *   ✅ the payout AMOUNT for blackjack — the server deals the hand and settles it
+ *                            (see `domain/blackjack.ts`); `payoutCents` is not on that wire
  *
- *   ⚠️ the payout AMOUNT within that ceiling is still the client's claim, because the server does
- *      not yet run the game's rules. That is Phase D and it is not smuggled in here.
- *   ⚠️ achievements (and the cosmetics they grant) are still computed client-side and recorded
- *      additively, because the catalogue lives in the frontend. Cosmetic-only surface; it moves
- *      when the shared package does.
+ *   ⚠️ The other four games do not bet, so their only honest payout is 0 and `checkSettle`'s
+ *      zero-wager branch enforces it — but their OUTCOME is still self-reported. Making chess or
+ *      uno server-authoritative means the server holding the match, which is the rooms half of
+ *      Phase D and is NOT done. What a dishonest client can still take there is XP and a stat,
+ *      never a chip.
  */
+import {
+  CATALOG,
+  DAILY_REWARDS_CENTS,
+  DAY_MS,
+  STARTING_BANKROLL_CENTS,
+  XP_BY_OUTCOME,
+  claimDaily,
+  cosmeticById,
+  type DailyState,
+  type Outcome,
+} from '@boardwalk/game-logic';
 
-export type Outcome = 'win' | 'loss' | 'push';
+export { DAILY_REWARDS_CENTS, DAY_MS, STARTING_BANKROLL_CENTS, XP_BY_OUTCOME };
+export type { DailyState, Outcome };
 
 /**
- * A new account's opening position, in cents. The server grants this itself on profile creation
- * — it does NOT trust the `bankrollCents` in the create body, which is the whole difference
- * between Phase A (mirror the client) and Phase B (be the referee). Must equal the frontend's
- * `STARTING_BANKROLL_CENTS`; the parity test asserts it.
- */
-export const STARTING_BANKROLL_CENTS = 500_000;
-
-/**
- * XP per result, flat by outcome. Mirrors the frontend's `XP_BY_OUTCOME` — one knob, not scaled
- * by wager, so the non-betting games (chess, solitaire) are not second-class. Parity-tested.
- */
-export const XP_BY_OUTCOME: Readonly<Record<Outcome, number>> = {
-  win: 100,
-  push: 20,
-  loss: 10,
-};
-
-/** The daily ladder in cents, day 1 → day 7+. Mirrors `DAILY_REWARDS_CENTS`. Parity-tested. */
-export const DAILY_REWARDS_CENTS: readonly number[] = [
-  50_000, 75_000, 100_000, 150_000, 200_000, 250_000, 500_000,
-];
-
-export const DAY_MS = 86_400_000;
-
-/**
- * The store, as the server sees it: id → price in cents, `null` meaning EARN-ONLY (unbuyable at
- * any balance — it is granted by an achievement, never sold). A `0` is a free starter.
+ * The store as the server prices it: id → cents, `null` meaning EARN-ONLY (unbuyable at any
+ * balance — the achievement pipeline grants it, it is never sold). A `0` is a free starter.
  *
- * This is the half of `catalog.ts` that money depends on. The names, emoji and rarities are
- * presentation and stay in the frontend; a price is a fact the referee must own, because a client
- * that names its own price owns the store. Parity-tested against `CATALOG` id-for-id, so an item
- * added or repriced on one side and not the other fails the build rather than mispricing quietly.
+ * DERIVED, not transcribed. This is the shared package's whole point in one expression: the
+ * table that used to be maintained by hand alongside `CATALOG` is built from it, so "an item
+ * priced on one side and not the other" has stopped being a state the system can be in.
  */
-export const PRICES_CENTS: Readonly<Record<string, number | null>> = {
-  // avatars — free starters
-  av_person: 0,
-  av_smile: 0,
-  av_dice: 0,
-  // avatars — buyable
-  av_cowboy: 100_000,
-  av_tophat: 250_000,
-  av_clover: 500_000,
-  av_crown: 1_000_000,
-  av_shark: 1_500_000,
-  av_diamond: 2_500_000,
-  av_fire: 4_000_000,
-  av_rocket: 7_500_000,
-  av_dragon: 10_000_000,
-  // card backs
-  cb_blue1: 0,
-  cb_red1: 40_000,
-  cb_green1: 40_000,
-  cb_blue3: 250_000,
-  cb_red3: 250_000,
-  cb_green4: 900_000,
-  cb_blue5: 900_000,
-  cb_red5: 6_000_000,
-  // titles — two buyable, two earn-only
-  ttl_regular: 150_000,
-  ttl_highroller: 1_000_000,
-  ttl_thehouse: null,
-  ttl_grandmaster: null,
-};
+export const PRICES_CENTS: Readonly<Record<string, number | null>> = Object.freeze(
+  Object.fromEntries(CATALOG.map((item) => [item.id, item.priceCents]))
+);
 
 /**
  * The most a game can EVER return on a wager, as a multiple of the stake, gross.
  *
- * Blackjack's best case is a 3:2 natural — stake back plus 1.5× = 2.5× gross — and a double-down
- * commits a second wager of its own through `/bet`, so it is two stakes and two ceilings rather
- * than one bigger one. The default is deliberately loose (3×) because a ceiling that is too tight
- * silently refuses legitimate wins, which is a worse failure than one that is too loose: a loose
- * ceiling still kills "pay me a million on a $1 bet", which is the attack.
+ * This is a BACKSTOP now rather than blackjack's primary defence — the server deals and settles
+ * that game itself (`domain/blackjack.ts`) and computes the payout from its own hand, never from
+ * a client number. The ceiling still stands guard over the generic `/settle` path, which exists
+ * for the games the server does not deal.
  *
- * A game absent here uses `DEFAULT_PAYOUT_MULTIPLE`. A game with no betting never reaches this —
- * a zero-wager settle must have a zero payout, checked separately.
+ * The default is deliberately loose (3×) because a ceiling that is too tight silently refuses
+ * legitimate wins, which is a worse failure than one that is too loose: a loose ceiling still
+ * kills "pay me a million on a $1 bet", which is the attack.
  */
 export const PAYOUT_MULTIPLE: Readonly<Record<string, number>> = {
   blackjack: 2.5,
@@ -137,11 +101,10 @@ const accept = <T>(value: T): Decision<T> => ({ ok: true, value });
 /**
  * Is this bet legal against the balance the LEDGER says the player has?
  *
- * The client checks the same thing before staging a chip (`validateBet`), and that check is for
- * feel — instant feedback, no round-trip. This one is the one that decides. They agree on the
- * rule; only this one is authoritative, which is the entire point of Phase B.
+ * The client checks the same thing before staging a chip (`validateBet` — now literally the same
+ * package), and that check is for feel: instant feedback, no round-trip. This one decides.
  *
- * `min`/`max` come from the game's manifest, which lives in the frontend — so they arrive on the
+ * The game's `min`/`max` come from a manifest that lives in the frontend, so they arrive on the
  * wire and are NOT trusted as a lower bound on the real check: whatever bounds are claimed, the
  * bet must still be a positive integer the balance covers. A lying client can only tighten its
  * own table, never mint money.
@@ -164,9 +127,9 @@ export function checkBet(req: BetRequest): Decision<{ readonly amountCents: numb
  * Is this settle legal? `openWagerCents` is the stake the server has on record for the wager the
  * client named — `null` when there is no such open wager, which is a refusal and not a 0.
  *
- * The zero-wager case is the non-betting games (chess, solitaire): they report an outcome to earn
- * XP and a stat, and their payout must be exactly 0. Letting a zero-stake settle pay anything is
- * a mint, and it is the shape a "just report a win" call would take.
+ * The zero-wager case is the non-betting games (chess, solitaire, uno, tic-tac-toe): they report
+ * an outcome to earn XP and a stat, and their payout must be exactly 0. Letting a zero-stake
+ * settle pay anything is a mint, and it is the shape a "just report a win" call would take.
  */
 export interface SettleRequest {
   readonly gameId: string;
@@ -196,6 +159,9 @@ export function checkSettle(req: SettleRequest): Decision<{ readonly payoutCents
  * Three refusals, and the middle one is the interesting one: an EARN-ONLY item is unbuyable at
  * ANY balance. The frontend refuses to render a buy button for it; this refuses to honour one
  * that was fabricated, which is the difference between a UI rule and a rule.
+ *
+ * The price comes from `cosmeticById` — the shared catalogue, the same row the store card
+ * rendered its price from.
  */
 export interface PurchaseRequest {
   readonly itemId: string;
@@ -204,48 +170,33 @@ export interface PurchaseRequest {
 }
 
 export function checkPurchase(req: PurchaseRequest): Decision<{ readonly priceCents: number }> {
-  const price = PRICES_CENTS[req.itemId];
-  if (price === undefined) return refuse('no such item');
-  if (price === null) return refuse('that item cannot be bought — it is earned');
+  const item = cosmeticById(req.itemId);
+  if (item === undefined) return refuse('no such item');
+  if (item.priceCents === null) return refuse('that item cannot be bought — it is earned');
   if (req.owned) return refuse('already owned');
-  if (price > req.balanceCents) return refuse('insufficient funds');
-  return accept({ priceCents: price });
+  if (item.priceCents > req.balanceCents) return refuse('insufficient funds');
+  return accept({ priceCents: item.priceCents });
 }
 
-/** UTC day index. Equal indices are the same day — the whole trick, mirrored from `daily.ts`. */
+/** UTC day index. Equal indices are the same day — the whole trick, from the shared module. */
 export function dayIndex(nowMs: number): number {
   return Math.floor(nowMs / DAY_MS);
-}
-
-function rewardForStreak(streak: number): number {
-  const idx = Math.min(Math.max(streak, 1), DAILY_REWARDS_CENTS.length) - 1;
-  return DAILY_REWARDS_CENTS[idx] ?? DAILY_REWARDS_CENTS[DAILY_REWARDS_CENTS.length - 1] ?? 0;
-}
-
-export interface DailyState {
-  readonly lastClaimDay: number;
-  readonly streak: number;
 }
 
 /**
  * Claim today's reward against SERVER time, or refuse.
  *
- * `nowMs` is injected so this is testable to the millisecond, but the ROUTE passes the server's
- * clock and never the client's — which is the point of moving this here. The client's copy of
- * this rule already refuses a wound-back clock (`today > lastClaimDay`, not `!==`); that defends
- * an honest player against their own device. This one defends the economy against a dishonest
- * one, and it is the same comparison for the same reason.
+ * The streak arithmetic and the ladder are the shared `claimDaily` — the same function the
+ * client's card calls to render "claiming now gives you $1,500". What is server-only is WHOSE
+ * CLOCK: the route passes its own `Date.now()` and the request has no time field at all, so
+ * winding a device's clock back buys exactly nothing. That is the single cheapest cheat in a
+ * client-authoritative economy, and this closes it by omission rather than by validation.
  */
 export function checkDaily(
   state: DailyState,
   nowMs: number
 ): Decision<{ readonly state: DailyState; readonly rewardCents: number }> {
-  const today = dayIndex(nowMs);
-  if (today <= state.lastClaimDay) return refuse('already claimed today');
-  const consecutive = state.lastClaimDay > 0 && today === state.lastClaimDay + 1;
-  const nextStreak = consecutive ? state.streak + 1 : 1;
-  return accept({
-    state: { lastClaimDay: today, streak: nextStreak },
-    rewardCents: rewardForStreak(nextStreak),
-  });
+  const claimed = claimDaily(state, nowMs);
+  if (claimed === null) return refuse('already claimed today');
+  return accept(claimed);
 }

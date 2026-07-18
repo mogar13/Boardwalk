@@ -1,4 +1,5 @@
 import type { Db } from '../db/db';
+import { awardAchievements, viewFor } from './achievements';
 import { balanceOf, loadProfile } from './profile';
 import {
   checkBet,
@@ -69,6 +70,14 @@ function claimNonce(db: Db, uid: string, nonce: string, kind: string, now: numbe
   return info.changes > 0;
 }
 
+/** The player's XP as this transaction has just left it — the `AchievementView`'s `xp`. */
+function xpOf(db: Db, uid: string): number {
+  const row = db.prepare('SELECT xp FROM profiles WHERE uid = ?').get(uid) as
+    | { xp: number }
+    | undefined;
+  return row?.xp ?? 0;
+}
+
 function appendLedger(
   db: Db,
   uid: string,
@@ -122,16 +131,20 @@ export interface SettleInput {
   readonly gameId: string;
   readonly outcome: Outcome;
   /**
-   * Achievement ids the CLIENT determined unlocked on this result, and the cosmetic ids those
-   * achievements granted. Recorded additively — never removed, never a source of money.
+   * FEAT ids the game earned on this result — and the ONLY achievement input still on the wire.
    *
-   * These are the honest residual of Phase B: the achievement catalogue lives in the frontend, so
-   * the server cannot recompute them and does not pretend to. A dishonest client can award itself
-   * a badge and an earn-only cosmetic. It CANNOT award itself a chip, which is the surface that
-   * matters and the one the ledger closes. See `economy.ts`'s header.
+   * Phase B took `unlockedAchievementIds` and `grantedItemIds` here and recorded whatever it was
+   * handed, because the catalogue lived in the frontend and the server could not recompute it.
+   * Phase D moved the catalogue into `@boardwalk/game-logic`, so both fields are GONE rather than
+   * validated — a chain badge and the earn-only cosmetic it grants are now computed from server
+   * state in `domain/achievements.ts`, and the request has nowhere to ask for one.
+   *
+   * Feats stay because no state predicate can see them: a two-card 21, a Solitaire cleared
+   * without recycling the stock. They are filtered through the shared `recordedFeats`, which
+   * keeps only ids marked `feat: true` — so this channel cannot smuggle a tier, and no feat row
+   * carries a `grants`.
    */
-  readonly unlockedAchievementIds?: readonly string[];
-  readonly grantedItemIds?: readonly string[];
+  readonly feats?: readonly string[];
   /** Gross cents claimed back. Bounded by the open wager's ceiling — see `checkSettle`. */
   readonly payoutCents: number;
 }
@@ -140,10 +153,6 @@ interface OpenWagerRow {
   id: number;
   wager_cents: number;
 }
-
-const ID_MAX_LEN = 64;
-const cleanIds = (ids: readonly string[] | undefined): readonly string[] =>
-  (ids ?? []).filter((id) => typeof id === 'string' && id !== '' && id.length <= ID_MAX_LEN);
 
 /**
  * Settle a hand: consume the oldest open wager for this game, credit the (bounded) payout, bump
@@ -154,9 +163,11 @@ const cleanIds = (ids: readonly string[] | undefined): readonly string[] =>
  * whichever is largest. It also means an abandoned hand's wager is the one a later settle
  * consumes — which is the conservative direction: it can only ever LOWER a ceiling.
  *
- * Note what this does NOT do: it does not verify the player actually won. It cannot, until the
- * game's rules run here (Phase D). It verifies that a stake existed and that the payout is inside
- * what the game could conceivably return.
+ * Note what this does NOT do: it does not verify the player actually won. This is the GENERIC
+ * settle path, for games the server does not deal — it verifies that a stake existed and that the
+ * payout is inside what the game could conceivably return. Blackjack no longer comes through
+ * here: the server deals that hand and computes its own payout (`domain/blackjack.ts`), which is
+ * what makes `payoutCents` stop being a claim for the one game that can win money.
  */
 export function applySettle(db: Db, uid: string, input: SettleInput, now: number): MutationResult {
   const tx = db.transaction((): MutationResult => {
@@ -174,6 +185,10 @@ export function applySettle(db: Db, uid: string, input: SettleInput, now: number
       openWagerCents: open ? open.wager_cents : null,
     });
     if (!checked.ok) return refuse(checked.error);
+
+    // The stake this settle consumed — 0 for the non-betting games, which is what makes
+    // `big_win`/`high_roller` correctly refuse to fire on a chess win.
+    const wagerCents = open ? open.wager_cents : 0;
 
     if (open) {
       db.prepare('UPDATE wagers SET settled_at = ? WHERE id = ?').run(now, open.id);
@@ -203,15 +218,18 @@ export function applySettle(db: Db, uid: string, input: SettleInput, now: number
       uid
     );
 
-    const insAch = db.prepare(
-      'INSERT OR IGNORE INTO achievements (uid, achievement_id, unlocked_at) VALUES (?, ?, ?)'
+    // Achievements: RECOMPUTED, not accepted. The view is read back from the tables this
+    // transaction has just written — the stat bump, the XP award and the ledger row are all
+    // above — so the predicates are asked about the state the player is actually in, not the
+    // state a request claimed. See `domain/achievements.ts` for what this closes.
+    const view = viewFor(
+      db,
+      uid,
+      { bankrollCents: balanceOf(db, uid), xp: xpOf(db, uid) },
+      wagerCents,
+      checked.value.payoutCents - wagerCents
     );
-    for (const id of cleanIds(input.unlockedAchievementIds)) insAch.run(uid, id, now);
-
-    const insItem = db.prepare(
-      'INSERT OR IGNORE INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)'
-    );
-    for (const id of cleanIds(input.grantedItemIds)) insItem.run(uid, id, now);
+    awardAchievements(db, uid, view, input.feats, now);
 
     return authoritative(db, uid, false);
   });

@@ -11,7 +11,13 @@ import {
   checkSettle,
   payoutCeiling,
 } from '../src/domain/economy';
-import { applyBet, applyDaily, applyPurchase, applySettle } from '../src/domain/mutations';
+import {
+  applyBet,
+  applyDaily,
+  applyPurchase,
+  applySettle,
+  type SettleInput,
+} from '../src/domain/mutations';
 
 /**
  * PHASE B'S CENTRAL CLAIM, under test: the client cannot move its own money.
@@ -298,7 +304,64 @@ describe('applySettle', () => {
     expect(p?.stats.chess).toEqual({ played: 2, won: 0, lost: 1, pushed: 1 });
   });
 
-  it('records reported achievements and grants additively, once', () => {
+  /**
+   * PHASE D: the server decides which badges were earned, and the request has nowhere to ask.
+   *
+   * Through Phase B this test asserted the opposite — that `unlockedAchievementIds` and
+   * `grantedItemIds` were recorded as handed. That was the honest residual of a catalogue the
+   * server could not see. It can see it now (`@boardwalk/game-logic`), so the fields are gone and
+   * these tests are their replacement: the badge lands because the player won, and a client that
+   * asks for one gets nothing.
+   */
+  it('awards first_win itself, on a real win, with nobody reporting it', () => {
+    const db = seeded();
+    applySettle(db, 'u1', { nonce: 'a', gameId: 'chess', outcome: 'win', payoutCents: 0 }, 6);
+    // `chess_bronze` too, and that is the point: the server evaluates the WHOLE catalogue against
+    // the state it owns — including the per-game mastery chain, which reads the chess win count
+    // out of the `stats` row this same transaction just wrote.
+    expect(Object.keys(loadProfile(db, 'u1')?.achievements ?? {}).sort()).toEqual([
+      'chess_bronze',
+      'first_win',
+    ]);
+  });
+
+  it('does NOT award first_win on a loss — the predicate is asked about real state', () => {
+    const db = seeded();
+    applySettle(db, 'u1', { nonce: 'a', gameId: 'chess', outcome: 'loss', payoutCents: 0 }, 6);
+    expect(loadProfile(db, 'u1')?.achievements).toEqual({});
+  });
+
+  it('unlocks once and never revokes — a second win does not duplicate or drop it', () => {
+    const db = seeded();
+    applySettle(db, 'u1', { nonce: 'a', gameId: 'chess', outcome: 'win', payoutCents: 0 }, 6);
+    applySettle(db, 'u1', { nonce: 'b', gameId: 'chess', outcome: 'win', payoutCents: 0 }, 7);
+    const p = loadProfile(db, 'u1');
+    expect(Object.keys(p?.achievements ?? {}).sort()).toEqual(['chess_bronze', 'first_win']);
+    // The timestamp is the FIRST unlock, not the latest — `INSERT OR IGNORE`, not upsert.
+    expect(p?.achievements.first_win).toBe(6);
+  });
+
+  it('a replayed settle nonce does not re-award or re-grant', () => {
+    const db = seeded();
+    applySettle(db, 'u1', { nonce: 'a', gameId: 'chess', outcome: 'win', payoutCents: 0 }, 6);
+    const before = loadProfile(db, 'u1');
+    const again = applySettle(
+      db,
+      'u1',
+      { nonce: 'a', gameId: 'chess', outcome: 'win', payoutCents: 0 },
+      9
+    );
+    expect(again.ok && again.value.replayed).toBe(true);
+    expect(loadProfile(db, 'u1')).toEqual(before);
+  });
+
+  /**
+   * THE FORGERY, ATTEMPTED. `ttl_grandmaster` is earn-only — the store refuses to sell it at any
+   * price, and only the Platinum rung of the chess mastery chain grants it. A Phase-B client
+   * could name it in `grantedItemIds` and be believed. This body carries every field that used to
+   * work, plus the chain ids themselves through the feats channel.
+   */
+  it('refuses a forged badge, a forged grant, and a chain id smuggled through feats', () => {
     const db = seeded();
     applySettle(
       db,
@@ -306,29 +369,44 @@ describe('applySettle', () => {
       {
         nonce: 'a',
         gameId: 'chess',
-        outcome: 'win',
+        outcome: 'loss',
         payoutCents: 0,
-        unlockedAchievementIds: ['first_win'],
+        // `recordedFeats` keeps only ids marked `feat: true`; these are chain tiers and a
+        // standalone, so all three are dropped.
+        feats: ['chess_platinum', 'bankroll_gold', 'first_win'],
+        // The Phase-B fields, still on the wire from a stale client. Not read at all.
+        unlockedAchievementIds: ['chess_platinum'],
         grantedItemIds: ['ttl_grandmaster'],
-      },
+      } as SettleInput,
       6
     );
+    const p = loadProfile(db, 'u1');
+    expect(p?.achievements).toEqual({});
+    expect(p?.inventory).toEqual({});
+  });
+
+  it('records a real feat, which no state predicate could have seen', () => {
+    const db = seeded();
     applySettle(
       db,
       'u1',
       {
-        nonce: 'b',
-        gameId: 'chess',
+        nonce: 'a',
+        gameId: 'blackjack',
         outcome: 'win',
         payoutCents: 0,
-        unlockedAchievementIds: ['first_win'],
-        grantedItemIds: ['ttl_grandmaster'],
+        feats: ['feat_natural'],
       },
-      7
+      6
     );
     const p = loadProfile(db, 'u1');
-    expect(Object.keys(p?.achievements ?? {})).toEqual(['first_win']);
-    expect(p?.inventory).toEqual({ ttl_grandmaster: true });
+    // `first_win` + `blackjack_bronze` from the predicates, `feat_natural` from the report —
+    // two sources, one diff.
+    expect(Object.keys(p?.achievements ?? {}).sort()).toEqual([
+      'blackjack_bronze',
+      'feat_natural',
+      'first_win',
+    ]);
   });
 
   /**

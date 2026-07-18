@@ -108,8 +108,12 @@ export function economyRouter(db: Db, clock: () => number = Date.now): Router {
           gameId,
           outcome,
           payoutCents,
-          unlockedAchievementIds: stringList(b.unlockedAchievementIds),
-          grantedItemIds: stringList(b.grantedItemIds),
+          // Feats only. `unlockedAchievementIds` and `grantedItemIds` used to be read here and
+          // are deliberately NOT read any more — the server recomputes both from its own state
+          // (Phase D). A client still sending them is ignored rather than refused: the fields are
+          // harmless noise on a body, and 400-ing a stale client mid-hand would cost a player
+          // their result to punish a request that can no longer do anything.
+          feats: stringList(b.feats),
         },
         clock()
       )

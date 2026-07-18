@@ -81,7 +81,7 @@ export interface AppliedResult {
  * the tables. A loss still pays a little — you played, and a progression bar that only moves
  * on wins punishes the exact players who need a reason to keep going.
  */
-const XP_BY_OUTCOME: Record<Outcome, number> = {
+export const XP_BY_OUTCOME: Readonly<Record<Outcome, number>> = {
   win: 100,
   push: 20,
   loss: 10,
