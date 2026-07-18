@@ -1,0 +1,73 @@
+# Guard boardwalk-api — the money referee.
+#
+# WHY THIS IS ITS OWN WORKFLOW, AND WHY IT DID NOT EXIST. deploy.yml builds and publishes the
+# FRONTEND to GitHub Pages. boardwalk-api is not in that artifact, is not in the npm workspace,
+# and was therefore in no CI job at all: its lint (which resolved the root config, matched its
+# `boardwalk-api/**` ignore, and errored out), its typecheck and its 143 tests all ran only when
+# a human remembered to cd into the package. The package that owns the ledger was the least
+# guarded thing in the repo.
+#
+# It runs on `pull_request` as well as `main`, because a push-only guard tells you about the
+# breakage after it has landed. `paths` keeps it off PRs that never touch the API — with the
+# workflow file itself included, so a change that disables this guard is checked BY this guard.
+name: API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'boardwalk-api/**'
+      - '.github/workflows/api.yml'
+  pull_request:
+    paths:
+      - 'boardwalk-api/**'
+      - '.github/workflows/api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: boardwalk-api
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22, matching the package's own @types/node — deploy.yml pins 24 for the frontend for the
+      # same reason. Typechecking against a different Node's types than the service runs on is a
+      # difference that only ever surfaces in CI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: boardwalk-api/package-lock.json
+
+      # `ci` not `install`: it fails on a lockfile that disagrees with package.json rather than
+      # quietly resolving something the local tree never saw.
+      - run: npm ci
+
+      # Three separate steps on purpose. A lint failure, a type error and a failing test are three
+      # different problems and should not share one red X in the log.
+      - name: Lint
+        run: npm run lint
+
+      # `tsc -p tsconfig.test.json` — the config that spans src AND tests. vitest strips types
+      # without checking them, so this is the only thing that type-checks the test suite.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # The build config is stricter about layout than the typecheck one (rootDir: src, real
+      # emit), so a green typecheck does not imply a shippable dist/.
+      - name: Build
+        run: npm run build

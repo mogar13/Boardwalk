@@ -1,6 +1,7 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** 🚧 Phase A shadow mode is WIRED. The launch five have shipped, so the gate is passed.
+**Status:** 🚧 **Phase B is code-complete and green, and NOT yet deployed** (see Phase B below for
+the five owed non-code steps, all of which need the Pi). Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
 `boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
 below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests — and is
 **deployed live** on the Pi at `https://boardwalk-pi.tail1bed2f.ts.net` (Tailscale Funnel). The
@@ -12,8 +13,10 @@ write is never blocked or failed by the mirror. It is gated off under the emulat
 `demo-boardwalk` tokens the Pi's `boardwalk-fca02` verifier rejects). **Still owed to close Phase A:**
 end-to-end verification on the deployed site (a real token against the live Pi — CORS `ALLOWED_ORIGIN`
 is `https://mogar13.github.io`, so this runs in prod, not localhost), and an empty shadow diff for a
-week of real play before cut-over. Deploy host is a Raspberry Pi on the LAN; the DB stick is mounted
-at `/mnt/boardwalk-db`. **Last updated:** 2026-07-17
+week of real play before cut-over. **Neither was ever completed — Phase B went ahead without them**,
+which is a real risk accepted knowingly: the shadow diff would have caught the missing `equipped`
+field months earlier than the code read did. Deploy host is a Raspberry Pi on the LAN; the DB stick
+is mounted at `/mnt/boardwalk-db`. **Last updated:** 2026-07-18
 
 **Phase-B decisions (locked 2026-07-17):** guests stay **local-only** (localStorage remains a real
 offline mode; only accounts sync to SQLite). Offline wins are **ranked with sync-on-reconnect** —
@@ -138,6 +141,67 @@ SQLite becomes the source of truth for everything that isn't realtime.
   restored is a rumor.
 
 **Done when:** editing devtools changes nothing durable, and the leaderboard is server-computed.
+
+**✅ CODE COMPLETE, NOT YET DEPLOYED (2026-07-18).** The composition root now wires `api.profile`,
+`api.economy` and `api.leaderboard` as primary wherever `VITE_API_BASE_URL` is set;
+**`VITE_API_ECONOMY=0`** is the kill switch back to the Phase-A arrangement (Firebase
+authoritative, API a shadow mirror) with a rebuild and no code change — the twin of Phase C's
+`VITE_WS_ROOMS=0`, which is why `shadowProfileRepo` stays in the tree.
+
+**Money moves as an INTENT, never as a number.** `EconomyRepo.apply(uid, intent, clientNext)` is
+the one path; the four intents are `bet`, `settle`, `purchase`, `daily`, and none of them has a
+field for a balance, a price, an XP amount, a stat count or a clock — a client cannot ask for money
+because the request has nowhere to put the ask. The server computes each delta itself
+(`boardwalk-api/src/domain/mutations.ts`, one transaction per mutation) and answers with the whole
+authoritative profile, which the store swaps in over its optimistic copy. `useBet().commit()` stays
+**synchronous** on purpose so no game's deal path changed: the local check decides whether the chip
+leaves the rack, the server reconciles a beat later and reverts with a toast if it disagrees.
+
+**What the server now owns:** the bankroll (`SUM(ledger.delta_cents)`, no stored column anywhere),
+bet legality against that derived balance, store prices, the daily clock and streak, and XP + stats
+computed from the reported outcome. `PUT /profile` shrank from a whole Profile to **three fields**
+(name, avatar, equipped) — the write that used to be able to set a balance no longer has anywhere
+to put one.
+
+**Replay-hardening, the thing this phase owed.** Every intent carries a client-minted `nonce`;
+`mutations(uid, nonce)` is claimed with `INSERT OR IGNORE` **inside the same transaction** as the
+work, so a retry, a double-tap, or an offline result re-sent on reconnect all collapse to one
+effect and replay the first answer.
+
+**Two live bugs found and fixed on the way.** The API's `Profile` had **no `equipped` field at
+all**, so Phase A's mirror silently dropped every player's card back and title on every write —
+cutting over without that would have unequipped everyone. And `LeaderboardEntry` had no `played`,
+so the API could never have served the Win Rate board. Both are now columns, coerced and tested;
+`COLUMN_MIGRATIONS` in `db/schema.ts` brings the Pi's existing database forward (a
+`CREATE TABLE IF NOT EXISTS` never adds a column, which is how a schema change passes every test
+and breaks only in production).
+
+**The honest residuals, not smuggled past:**
+- **The payout AMOUNT is still the client's claim**, bounded but not verified. A settle must consume
+  a real open `wagers` row and is capped at a per-game multiple of that stake (blackjack 2.5× for
+  the 3:2 natural, default 3×), so "pay me a million on a $1 bet" and "pay me with no bet at all"
+  are both dead — but the server cannot know whether the hand was actually won until Phase D runs
+  the rules here.
+- **Achievements are still computed client-side** and recorded additively, because the catalogue
+  lives in the frontend. A dishonest client can award itself a badge and an earn-only cosmetic. It
+  cannot award itself a chip.
+- **The server's money rules are a second copy** of the frontend's pure ones (prices, ladder, XP,
+  opening stake). Sharing them is Phase D's `packages/game-logic` move and was not done here on
+  purpose: the API is CommonJS with `rootDir: src` and is not in the root npm workspace, so wiring a
+  shared package changes the build output layout and therefore the Pi's systemd entrypoint —
+  a deploy-coupled change made blind in the same commit that moves the source of truth for money.
+  The copy is **guarded**: `tests/economy-parity.test.ts` imports both sides and asserts every price,
+  every rung of the daily ladder, the XP table and the opening stake agree. It caught a real drift
+  the first time it ran (two title ids wrong on the server).
+
+**Still owed before this is actually done — none of it is code:**
+1. **Deploy to the Pi** (needs SSH; the migration runs at boot, but take a backup first).
+2. **Run the restore drill on the real Pi** — `boardwalk-api/BACKUP.md` has the commands and says
+   plainly that it has not been run there yet.
+3. **Install the backup timer and confirm the off-box copy lands.**
+4. **Verify in prod** that a bet/settle/purchase/claim round-trips, and that devtools cannot move
+   the bankroll.
+5. Then, and only then, is "editing devtools changes nothing durable" a claim rather than a design.
 
 ### Phase C — Realtime rooms over WebSocket
 Retire the RTDB *database* (Auth stays). Biggest phase — budget accordingly.

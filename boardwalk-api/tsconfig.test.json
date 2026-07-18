@@ -7,5 +7,8 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  // `vitest.config.ts` is in here so it is typechecked AND lintable. It is the file that decides
+  // which tests run at all; leaving it out of every program is how a config quietly stops matching
+  // the tests it is supposed to collect.
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

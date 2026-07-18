@@ -13,7 +13,10 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src tests"
+    "backup": "node scripts/backup.mjs",
+    "backfill": "node scripts/backfill.mjs",
+    "restore:drill": "node scripts/restore-drill.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
@@ -23,15 +26,20 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.5",
     "@types/supertest": "^6.0.2",
     "@types/ws": "^8.18.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^2.1.8"
   }
 }

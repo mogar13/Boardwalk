@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
-import { useAuthStore } from '@/system/auth/authStore';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { clampBet, maxBet, validateBet, type BetBounds, type BetCheck } from '@/system/economy/bet';
 import { useGameContext } from '@/system/economy/gameContext';
 import { useBankroll } from '@/system/profile/useProfile';
+import { useToast } from '@/ui';
 
 /**
  * `useBet()` — the chip rack. Bounds from the manifest, balance from the store, math from
@@ -46,7 +47,8 @@ export function useBet(): BetApi {
   const { manifest } = useGameContext();
   const bounds: BetBounds = manifest.betting ?? NO_BETTING;
   const balance = useBankroll();
-  const mutateProfile = useAuthStore((s) => s.mutateProfile);
+  const applyEconomy = useAuthStore((s) => s.applyEconomy);
+  const toast = useToast();
   const [amountCents, setAmount] = useState(bounds.min);
 
   const set = useCallback(
@@ -69,9 +71,29 @@ export function useBet(): BetApi {
     // bet could have settled between staging and committing.
     const checked = validateBet(amountCents, profile.bankrollCents, bounds);
     if (!checked.ok) return null;
-    void mutateProfile({ ...profile, bankrollCents: profile.bankrollCents - checked.amountCents });
+
+    // STAYS SYNCHRONOUS, on purpose. The server is the referee (Phase B) but a game calls this
+    // inline — `const wager = bet.commit(); if (wager === null) return;` — and making it async
+    // would rewrite every table's deal path to satisfy a boundary that is not theirs. So the
+    // local check decides whether the chip leaves the rack, the deduction renders immediately,
+    // and the server's answer reconciles a beat later. The two disagree only if the client's
+    // balance was stale, and then the server wins and the bet is reverted with a toast.
+    void applyEconomy(
+      {
+        kind: 'bet',
+        nonce: mintNonce(),
+        gameId: manifest.id,
+        amountCents: checked.amountCents,
+      },
+      { ...profile, bankrollCents: profile.bankrollCents - checked.amountCents }
+    ).then(
+      (result) => {
+        if (!result.ok) toast.error(result.error);
+      },
+      () => toast.error('Could not place your bet — check your connection.')
+    );
     return checked.amountCents;
-  }, [amountCents, bounds, mutateProfile]);
+  }, [amountCents, bounds, applyEconomy, manifest.id, toast]);
 
   // The guard, AFTER every hook so the hook order is unconditional (rules-of-hooks). A betting
   // game never trips it; a non-betting game that wrongly renders a rack fails loudly here.

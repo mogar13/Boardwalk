@@ -1,5 +1,6 @@
 import type { Db } from '../db/db';
-import type { DailyState, GameStat, LeaderboardEntry, Profile } from './types';
+import { STARTING_BANKROLL_CENTS } from './economy';
+import type { DailyState, Equipped, GameStat, LeaderboardEntry, Profile } from './types';
 
 /**
  * Profile persistence — the seam's server half. Three operations, all synchronous:
@@ -25,6 +26,8 @@ interface ProfileRow {
   xp: number;
   daily_last_claim_day: number;
   daily_streak: number;
+  equipped_cardback: string | null;
+  equipped_title: string | null;
 }
 interface StatRow {
   game_id: string;
@@ -49,6 +52,7 @@ interface LeaderRow {
   avatar: string;
   xp: number;
   wins: number | null;
+  played: number | null;
   bal: number | null;
 }
 
@@ -63,7 +67,9 @@ export function balanceOf(db: Db, uid: string): number {
 export function loadProfile(db: Db, uid: string): Profile | null {
   const p = db
     .prepare(
-      'SELECT name, avatar, xp, daily_last_claim_day, daily_streak FROM profiles WHERE uid = ?'
+      `SELECT name, avatar, xp, daily_last_claim_day, daily_streak,
+              equipped_cardback, equipped_title
+       FROM profiles WHERE uid = ?`
     )
     .get(uid) as ProfileRow | undefined;
   if (!p) return null;
@@ -98,6 +104,13 @@ export function loadProfile(db: Db, uid: string): Profile | null {
     streak: count(p.daily_streak),
   };
 
+  // Absent, not null — see the `Equipped` doc. `exactOptionalPropertyTypes` is on, so a key must
+  // be omitted rather than set to undefined, which is also exactly what the frontend expects back.
+  const equipped: Equipped = {
+    ...(p.equipped_cardback ? { cardback: p.equipped_cardback } : {}),
+    ...(p.equipped_title ? { title: p.equipped_title } : {}),
+  };
+
   return {
     name: str(p.name, 'Player'),
     avatar: str(p.avatar, '👤'),
@@ -106,81 +119,85 @@ export function loadProfile(db: Db, uid: string): Profile | null {
     stats,
     achievements,
     inventory,
+    equipped,
     daily,
   };
 }
 
+/** What a client is allowed to tell the server about itself. Note what is NOT here. */
+export interface ProfileUpsert {
+  readonly name: string;
+  readonly avatar: string;
+  readonly equipped: Equipped;
+}
+
 export interface SaveOptions {
-  /** Ledger reason for a bankroll delta. Phase A mirrors the client, so this is 'sync'/'signup'. */
-  readonly reason: string;
   /** Injected clock, so tests are deterministic. Defaults to wall time. */
   readonly now?: number;
 }
 
 /**
- * Create-or-update. Idempotent in every table EXCEPT the ledger, which is append-only by design:
- * re-saving the same profile appends nothing (delta is 0), but a bankroll that moved appends one
- * row. The whole write is a single transaction, so a partial save can never leave stats credited
- * without the money — the exact split BACKEND_PLAN.md and the frontend's `writeBoth` both guard.
+ * Create-or-update the parts of a profile a CLIENT IS ALLOWED TO DECIDE: its display name, its
+ * avatar, and which cosmetics are equipped. That is the entire list, and the shrinking of that
+ * list from "the whole profile" is what Phase B is.
+ *
+ * WHAT THIS DELIBERATELY NO LONGER DOES, each of which was a Phase-A behaviour:
+ *
+ *   • It does not read `bankrollCents`. Phase A diffed the incoming balance against the ledger
+ *     and appended the difference — which faithfully mirrored a client-authoritative economy and
+ *     would, the moment this became the source of truth, have let anyone POST themselves a
+ *     million. Money now moves ONLY through `mutations.ts`, and this route has no field for it.
+ *   • It does not read `xp`, `stats`, `achievements` or `inventory`. Those are earned through
+ *     `/settle`, `/purchase` and `/daily`. Phase A replaced each set wholesale from the body,
+ *     so a client could have deleted a loss or granted itself a badge by omission.
+ *   • It does not read `daily`. The streak clock is the server's — see `applyDaily`.
+ *
+ * A brand-new profile gets its opening bankroll HERE, as a `signup` ledger row of the server's
+ * own `STARTING_BANKROLL_CENTS` — not the number in the body. `INSERT OR IGNORE` on users plus a
+ * check for an existing profile row makes the grant fire exactly once per uid, so a client
+ * replaying create cannot mint a second stake.
  */
-export function saveProfile(db: Db, uid: string, profile: Profile, opts: SaveOptions): void {
+export function upsertProfile(
+  db: Db,
+  uid: string,
+  input: ProfileUpsert,
+  opts: SaveOptions = {}
+): void {
   const now = opts.now ?? Date.now();
   const tx = db.transaction(() => {
     db.prepare(
       'INSERT INTO users (uid, username, is_admin, created_at) VALUES (?, NULL, 0, ?) ON CONFLICT(uid) DO NOTHING'
     ).run(uid, now);
 
+    const existed =
+      db.prepare('SELECT 1 FROM profiles WHERE uid = ?').get(uid) !== undefined;
+
     db.prepare(
-      `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak, updated_at)
-       VALUES (@uid, @name, @avatar, @xp, @lastClaimDay, @streak, @now)
+      `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak,
+                             equipped_cardback, equipped_title, updated_at)
+       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @now)
        ON CONFLICT(uid) DO UPDATE SET
          name = excluded.name,
          avatar = excluded.avatar,
-         xp = excluded.xp,
-         daily_last_claim_day = excluded.daily_last_claim_day,
-         daily_streak = excluded.daily_streak,
+         equipped_cardback = excluded.equipped_cardback,
+         equipped_title = excluded.equipped_title,
          updated_at = excluded.updated_at`
     ).run({
       uid,
-      name: profile.name,
-      avatar: profile.avatar,
-      xp: count(profile.xp),
-      lastClaimDay: count(profile.daily.lastClaimDay),
-      streak: count(profile.daily.streak),
+      name: str(input.name, 'Player'),
+      avatar: str(input.avatar, '👤'),
+      cardback: input.equipped.cardback ?? null,
+      title: input.equipped.title ?? null,
       now,
     });
 
-    // Bankroll → ledger delta. Derive the current balance, append only the difference.
-    const current = balanceOf(db, uid);
-    const delta = Math.round(profile.bankrollCents) - current;
-    if (delta !== 0) {
+    // The opening stake, granted by the server, once. A profile that already existed keeps the
+    // balance its ledger says it has — this branch is the only place a `signup` row is written.
+    if (!existed) {
       db.prepare(
         'INSERT INTO ledger (uid, game_id, delta_cents, reason, created_at) VALUES (?, NULL, ?, ?, ?)'
-      ).run(uid, delta, opts.reason, now);
+      ).run(uid, STARTING_BANKROLL_CENTS, 'signup', now);
     }
-
-    // Sets are replaced wholesale — the frontend always sends the complete profile, so the
-    // authoritative set is exactly what arrived. (Phase B's server-authoritative writes will
-    // mutate these in place instead of trusting the client's copy.)
-    db.prepare('DELETE FROM stats WHERE uid = ?').run(uid);
-    const insStat = db.prepare(
-      'INSERT INTO stats (uid, game_id, played, won, lost, pushed) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    for (const [gameId, s] of Object.entries(profile.stats)) {
-      insStat.run(uid, gameId, count(s.played), count(s.won), count(s.lost), count(s.pushed));
-    }
-
-    db.prepare('DELETE FROM achievements WHERE uid = ?').run(uid);
-    const insAch = db.prepare(
-      'INSERT INTO achievements (uid, achievement_id, unlocked_at) VALUES (?, ?, ?)'
-    );
-    for (const [id, at] of Object.entries(profile.achievements)) insAch.run(uid, id, count(at));
-
-    db.prepare('DELETE FROM inventory WHERE uid = ?').run(uid);
-    const insInv = db.prepare(
-      'INSERT INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)'
-    );
-    for (const id of Object.keys(profile.inventory)) insInv.run(uid, id, now);
   });
   tx();
 }
@@ -195,6 +212,7 @@ export function leaderboard(db: Db, limit: number): LeaderboardEntry[] {
     .prepare(
       `SELECT p.uid AS uid, p.name AS name, p.avatar AS avatar, p.xp AS xp,
               (SELECT COALESCE(SUM(s.won), 0) FROM stats s WHERE s.uid = p.uid) AS wins,
+              (SELECT COALESCE(SUM(s.played), 0) FROM stats s WHERE s.uid = p.uid) AS played,
               (SELECT COALESCE(SUM(l.delta_cents), 0) FROM ledger l WHERE l.uid = p.uid) AS bal
        FROM profiles p
        ORDER BY wins DESC, p.xp DESC
@@ -209,5 +227,6 @@ export function leaderboard(db: Db, limit: number): LeaderboardEntry[] {
     bankrollCents: r.bal ?? 0,
     xp: r.xp,
     wins: r.wins ?? 0,
+    played: r.played ?? 0,
   }));
 }

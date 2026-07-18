@@ -190,6 +190,31 @@ lint rule that matches nothing reports success.
   pack open (`openPack` — spends the price, credits dust on a duplicate) and the daily claim, are
   the *only* callers of the one internal writer (`authStore.mutateProfile`). A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
+- **Money moves as an INTENT, and the server prices it.** ✅ Live (BACKEND_PLAN.md Phase B, code
+  complete — **not yet deployed**). The four money paths call `authStore.applyEconomy(intent,
+  optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily`.
+  **None of those types has a field for a balance, a price, an XP amount, a stat count or a clock**
+  — the wrong thing is unspellable rather than validated. The server computes each delta from the
+  ledger and answers with the whole authoritative profile, which replaces the optimistic one. With
+  no `VITE_API_BASE_URL` (fresh clone, emulator) `firebaseEconomyRepo` persists the client's own
+  arithmetic instead — the pre-Phase-B economy, unchanged, and the kill switch is
+  `VITE_API_ECONOMY=0`.
+- **The bankroll is a SUM, not a column.** ✅ Live — `SUM(ledger.delta_cents)` in
+  `boardwalk-api`; `profiles` has no bankroll column, on purpose, because a stored number is one
+  something will eventually write. `PUT /profile` accepts exactly three fields (name, avatar,
+  equipped): the write that could once set a balance has nowhere to put one.
+- **Every money mutation carries a `nonce` and is idempotent.** ✅ Live — `mutations(uid, nonce)`
+  claimed with `INSERT OR IGNORE` inside the same transaction as the work, so a retry, a double-tap
+  or an offline result re-sent on reconnect all collapse to one effect and replay the first answer.
+  A browser retries; an economy that is not replay-safe is one flaky connection from a duplicate
+  payout.
+- **The server's copy of the money rules is guarded, not trusted.** ✅ `tests/economy-parity.test.ts`
+  imports both `boardwalk-api/src/domain/economy.ts` and the frontend's pure modules and asserts
+  every price, every rung of the daily ladder, the XP table and the opening stake agree. The copy
+  exists because sharing the modules is Phase D's `packages/game-logic` move (the API is CommonJS
+  with `rootDir: src` and outside the npm workspace, so a shared package changes the Pi's
+  entrypoint). **Do not add a rule to one side without the other** — this test caught a real drift
+  the first time it ran.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
   back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
@@ -428,17 +453,24 @@ builds the thing it guards.
 | Packs pull at the published rate, and can never drop what money must not buy | `tests/packs.test.ts` (29) — odds sum to 1 and the empirical distribution matches them over 20k seeds (the card's table IS the roll), every weighted rarity has a non-empty bucket, the pool excludes **every earn-only cosmetic and every free starter** (asserted over the catalogue AND exhaustively over the roll; the earn-only half is additionally unspellable — `PackPull.item` is a `PackableCosmetic` reachable only via `isPackable`), a seeded roll is deterministic, a fresh pull spends exactly the price and grants the id, a duplicate refunds **completion-scaled** dust and grants nothing, dust is monotonic in completion and never exceeds the price at any completion (incl. clamped nonsense input), the roll pays the same number the shelf quoted, `completion` is derived per-pool and ignores foreign inventory, `canOpen` refuses a short bankroll and a completed pool, every pool item is reachable, bankroll floored at 0, input unmutated |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
+| The client cannot move its own money (Phase B) | `boardwalk-api/tests/economy.test.ts` (39) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, and every mutation replay-safe (a repeated nonce moves nothing and does not double a stat) |
+| `PUT /profile` cannot set a balance, XP, stats, achievements or inventory | `boardwalk-api/tests/api.test.ts` (19) — a hostile body carrying all five is accepted and changes none of them; the opening stake is the server's `signup` grant and fires exactly once per uid; 409 (not 400) for a refusal, 400 for a missing nonce |
+| The server's money rules match the client's | `tests/economy-parity.test.ts` (8) — catalogue ids both directions + every price, earn-only stays `null` (a `0` would make it free), the daily ladder and `DAY_MS`, the XP table, bet-validation agreement, and a ten-day streak run reward-for-reward |
+| The Firebase→SQLite backfill cannot lose an account or mint one | `boardwalk-api/tests/backfill.test.ts` (34) — the RTDB wire coerced (stripped-empty objects, hostile types, a missing bankroll defaulting to the opening stake rather than $0, a legacy `level` ignored); one `migration` ledger row sized to LAND on the Firebase balance; the `migration:v1` marker making a re-run a total no-op (ten runs, and a re-run that must NOT refund a loss the player has since taken); **a backfilled player signing in afterwards is refused a second signup stake**; per-uid transactions so one malformed record does not roll back the batch; a dry run that writes nothing and does not burn the marker; and `reconcile` catching two swapped balances that a matching grand total would hide |
+| A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
+| `boardwalk-api/` is linted, typechecked, tested and built in CI | `boardwalk-api/eslint.config.mjs` (flat, type-aware over `tsconfig.test.json` so **src, tests and `vitest.config.ts`** are all in the program — the build config includes only `src`, and the usual cure for the resulting "not in project" noise is to stop linting tests) + `.github/workflows/api.yml` on push **and pull_request**, `paths`-filtered to the package *and the workflow file*, so a change disabling the guard is checked by it |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
+| Phase B is deployed, and the backfill has been RUN | unguarded, but **DONE** (2026-07-18) — the API answers `{"ok":true,"db":"up"}` on the Funnel URL, `VITE_API_BASE_URL` is set in Actions secrets, and the [backfill runbook](plans/BACKFILL_RUNBOOK.md) has been executed, so SQLite holds the real players rather than one shadow profile. **Nothing in this repo can prove any of that** — it is an operational fact checked by hand, and the `migration:v1` marker (which makes a re-run a no-op) is the only thing standing between a second run and a double grant |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
 
@@ -479,6 +511,18 @@ npm run build          # prebuild (lint + filesize) → tsc -b → vite build. F
 npm run guard:filesize -- --init   # re-lock the ratchet after a file SHRANK
 npm run rules:test     # just the security rules, against the emulator
 npm run rules:deploy   # push database.rules.json to Firebase. NOTHING IN CI DOES THIS.
+```
+
+`boardwalk-api/` is a **separate package** — not in the npm workspace, its own lockfile, its own
+tooling. The root's `lint`/`test`/`build` do not reach it and are not supposed to; it has its own,
+gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
+
+```bash
+cd boardwalk-api && npm ci
+npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
+npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
+npm test            # vitest — 143
+npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 
 `npm run dev` works on a fresh clone with no credentials — the page renders a panel naming the

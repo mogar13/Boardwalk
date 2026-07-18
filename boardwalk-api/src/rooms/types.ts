@@ -43,7 +43,8 @@ export interface RoomMeta {
 export interface RoomSnapshot {
   readonly meta: RoomMeta;
   readonly seats: readonly Seat[];
-  readonly state: unknown | null;
+  /** `null` before the host starts. `unknown` already admits it — see protocol.ts. */
+  readonly state: unknown;
   readonly presence: Readonly<Record<string, true>>;
 }
 

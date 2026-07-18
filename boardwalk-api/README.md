@@ -4,9 +4,12 @@ Node + Express + SQLite. The server half of [`../plans/BACKEND_PLAN.md`](../plan
 This is the thing a browser is not allowed to be: it verifies Firebase ID tokens and owns the
 **ledger**, so the bankroll becomes a derived sum no client can overwrite.
 
-**Status: Phase A scaffold.** Profile + leaderboard endpoints, token verification, and the
-append-only ledger are live and tested. It is NOT wired into the frontend yet (see "Wiring" below)
-— shadow mode and cut-over are the next phases.
+**Status: Phase B — the referee is real, and not yet deployed.** The four money routes (`/bet`,
+`/settle`, `/purchase`, `/daily`) compute every delta server-side against the append-only ledger,
+`PUT /profile` accepts only cosmetics, and every mutation is idempotent on a client-minted nonce.
+The frontend is wired to it as primary. **The Pi is still running the Phase-A build** — deploying,
+running the restore drill there, and verifying in prod are the owed steps in
+[`../plans/BACKEND_PLAN.md`](../plans/BACKEND_PLAN.md#phase-b--cut-over-profile-economy-stats).
 
 ## What it is not
 
@@ -52,6 +55,14 @@ To verify **emulator-minted** tokens for real (not the bypass), set
 | GET    | `/profile`              | token | The caller's own profile (`404` → frontend maps to `null`) |
 | PUT    | `/profile`              | token | Upsert the caller's own profile (create AND save) |
 | GET    | `/leaderboard?limit=N`  | token | Server-computed standings, ranked by wins |
+| POST   | `/bet`                  | token | `{nonce, gameId, amountCents}` — deduct a legal, affordable wager |
+| POST   | `/settle`               | token | `{nonce, gameId, outcome, payoutCents?}` — credit a bounded payout, bump stats + XP |
+| POST   | `/purchase`             | token | `{nonce, itemId}` — buy at the **server's** price |
+| POST   | `/daily`                | token | `{nonce}` — claim against the **server's** clock |
+
+Every money route answers with the whole authoritative profile, returns **409** for a refusal
+("insufficient funds", "already claimed today" — game state, not a malformed request) and **400**
+only for a body it cannot parse. A repeated `nonce` is a no-op that replays the first answer.
 
 The uid always comes from the verified token — never the body or path — so a caller can only ever
 read or write its own record.
@@ -64,13 +75,16 @@ so `reportResult()`'s save becomes a ledger entry, exactly as the plan predicts,
 change. In Phase A the reason is `sync` (mirroring the client); in Phase B the server computes the
 delta itself (`bet`/`settle`) and the client can no longer set its own money.
 
-## Wiring (not done yet, on purpose)
+## Wiring
 
-The frontend's server-backed repos already exist at `../src/system/repo/api/` and implement the same
-`ProfileRepo` / `LeaderboardRepo` interfaces as the Firebase ones. They are **not** in the
-composition root (`../src/system/repo/index.ts`) — flipping that is Phase A shadow mode / Phase B
-cut-over, which needs a deployed server and a diff proving agreement first. Building the swap before
-it has earned trust would be the mistake the whole repo boundary exists to avoid.
+`../src/system/repo/index.ts` now uses `api.profile`, `api.economy` and `api.leaderboard` as
+primary wherever `VITE_API_BASE_URL` is set. **`VITE_API_ECONOMY=0`** forces the whole economy back
+to Firebase-authoritative with a rebuild and no code change — the kill switch for a Pi outage, the
+twin of Phase C's `VITE_WS_ROOMS=0`. Rooms and chat ride the WebSocket gateway in this same service.
+
+No game, hook or component was touched by the cutover. That is the repo boundary paying out:
+`useBet`, `reportResult`, the store and the daily card all call one new store method, and the games
+below them cannot see far enough to be affected.
 
 ## Deploy target
 

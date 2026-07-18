@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { GameManifest } from '@/games/registry';
-import { useAuthStore } from '@/system/auth/authStore';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { useGameContext } from '@/system/economy/gameContext';
 import { applyResult, type ResultReport } from '@/system/economy/result';
 import { useToast } from '@/ui';
@@ -29,7 +29,7 @@ export interface GameApi {
 
 export function useGame(): GameApi {
   const { manifest } = useGameContext();
-  const mutateProfile = useAuthStore((s) => s.mutateProfile);
+  const applyEconomy = useAuthStore((s) => s.applyEconomy);
   const toast = useToast();
 
   const reportResult = useCallback(
@@ -41,16 +41,38 @@ export function useGame(): GameApi {
       if (profile === null) return;
 
       const applied = applyResult(profile, manifest.id, report, Date.now());
-      void mutateProfile(applied.profile).catch(() => {
-        toast.error('Could not save your result — check your connection.');
-      });
+
+      // The result becomes an INTENT. Note what travels and what does not: the outcome, the
+      // claimed payout, and the achievement ids the pure logic just unlocked — but never the new
+      // bankroll, never the XP, never a stat count. The server recomputes those three from the
+      // outcome alone, so a tampered client can misreport what happened in a hand it played but
+      // cannot report a hand it did not play into a fortune.
+      void applyEconomy(
+        {
+          kind: 'settle',
+          nonce: mintNonce(),
+          gameId: manifest.id,
+          outcome: report.outcome,
+          payoutCents: Math.round(report.payoutCents ?? 0),
+          unlockedAchievementIds: applied.unlocked.map((a) => a.id),
+          grantedItemIds: applied.unlocked
+            .map((a) => a.grants)
+            .filter((id): id is string => id !== undefined),
+        },
+        applied.profile
+      ).then(
+        (result) => {
+          if (!result.ok) toast.error(result.error);
+        },
+        () => toast.error('Could not save your result — check your connection.')
+      );
       // Gold-adjacent flourish stays as a plain success toast: an achievement is a moment, not a
       // sign, and the theme keeps status toots flat on purpose. One toast per badge unlocked.
       for (const a of applied.unlocked) {
         toast.success(`${a.emoji}  ${a.name} unlocked`);
       }
     },
-    [manifest.id, mutateProfile, toast]
+    [manifest.id, applyEconomy, toast]
   );
 
   return { manifest, reportResult };

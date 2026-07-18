@@ -2,11 +2,12 @@ import { apiRepos, apiRoomChat } from '@/system/repo/api';
 import { firebaseAuth, firebaseReady } from '@/system/repo/firebase/app';
 import { firebaseAuthRepo } from '@/system/repo/firebase/authRepo';
 import { firebaseChatRepo } from '@/system/repo/firebase/chatRepo';
+import { firebaseEconomyRepo } from '@/system/repo/firebase/economyRepo';
 import { firebaseLeaderboardRepo } from '@/system/repo/firebase/leaderboardRepo';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
 import { firebaseRoomRepo } from '@/system/repo/firebase/roomRepo';
 import { shadowProfileRepo } from '@/system/repo/shadow/profileRepo';
-import type { ProfileRepo, Repos } from '@/system/repo/types';
+import type { EconomyRepo, ProfileRepo, Repos } from '@/system/repo/types';
 
 /**
  * The composition root. The ONE file in `src/` that names an implementation.
@@ -49,21 +50,51 @@ const getToken = async (): Promise<string | null> => {
 };
 
 /**
- * Shadow is DEV-emulator-aware: an emulator session mints `demo-boardwalk` tokens that the live Pi's
- * `boardwalk-fca02` verifier rejects, so mirroring under the emulator would be a stream of 401s. Gate
- * it off there. In prod (or a non-emulator dev run against real Firebase) a real token is available
- * and the mirror is live.
+ * The API is DEV-emulator-aware: an emulator session mints `demo-boardwalk` tokens that the live
+ * Pi's `boardwalk-fca02` verifier rejects, so calling it under the emulator would be a stream of
+ * 401s. Gate it off there. In prod (or a non-emulator dev run against real Firebase) a real token
+ * is available.
  */
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 const useEmulator = import.meta.env.DEV && import.meta.env.VITE_USE_EMULATOR === '1';
-const shadowApi =
+const api =
   apiBaseUrl !== undefined && apiBaseUrl !== '' && !useEmulator
     ? apiRepos({ baseUrl: apiBaseUrl, getToken })
     : null;
 
-const profile: ProfileRepo = shadowApi
-  ? shadowProfileRepo(firebaseProfileRepo, shadowApi.profile)
-  : firebaseProfileRepo;
+/**
+ * PHASE B CUTOVER — SQLite is now the source of truth for the profile, the economy and the stats.
+ *
+ * `VITE_API_ECONOMY=0` is the kill switch back to the Phase-A arrangement (Firebase authoritative,
+ * the API a shadow mirror) with a rebuild and no code change — the twin of Phase C's
+ * `VITE_WS_ROOMS=0`, and it exists for the same reason: a Pi outage should be one env var, not a
+ * revert. `shadowProfileRepo` therefore stays in the tree rather than being deleted.
+ *
+ * WHAT ACTUALLY CHANGED, because "flip the wiring" undersells it. The bankroll is no longer a
+ * number the client sends; it is `SUM(ledger.delta_cents)` on the server, and the four money paths
+ * became four intents the server prices itself (`repos.economy`). `ProfileRepo.save` still exists
+ * and still runs, but it now carries only a name, an avatar and the equipped cosmetics — the
+ * server's `PUT /profile` reads three fields and nothing else, so the write that used to be able
+ * to set a balance no longer has anywhere to put one.
+ */
+const apiEconomyOn = api !== null && import.meta.env.VITE_API_ECONOMY !== '0';
+
+const profile: ProfileRepo = apiEconomyOn
+  ? api.profile
+  : api
+    ? shadowProfileRepo(firebaseProfileRepo, api.profile)
+    : firebaseProfileRepo;
+
+const economy: EconomyRepo = apiEconomyOn ? api.economy : firebaseEconomyRepo;
+
+/**
+ * The leaderboard follows the profile, and it has to: it ranks the same numbers. Reading standings
+ * from Firebase while the balances that feed them live in SQLite would rank a projection nothing
+ * writes any more — a board that silently freezes on the day of the cutover. Phase A deliberately
+ * left this on Firebase because the API's store was empty; after the flip the API's store is the
+ * only one being filled.
+ */
+const leaderboard = apiEconomyOn ? api.leaderboard : firebaseLeaderboardRepo;
 
 /**
  * PHASE C CUTOVER — room + chat run over the WebSocket referee instead of RTDB. Now **on by default**
@@ -88,7 +119,8 @@ const wsRooms =
 export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile,
-  leaderboard: firebaseLeaderboardRepo,
+  economy,
+  leaderboard,
   room: wsRooms ? wsRooms.room : firebaseRoomRepo,
   chat: wsRooms ? wsRooms.chat : firebaseChatRepo,
 };
@@ -103,6 +135,8 @@ export { firebaseReady } from '@/system/repo/firebase/app';
 export type {
   AuthRepo,
   ChatRepo,
+  EconomyIntent,
+  EconomyRepo,
   LeaderboardEntry,
   LeaderboardRepo,
   ProfileRepo,

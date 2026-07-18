@@ -26,6 +26,7 @@ import type { TokenVerifier } from '../auth/verify';
 import { RoomStore } from './store';
 import { seatsHeldBy } from './seats';
 import type { ClientMsg, ServerMsg } from './protocol';
+import { decodeFrame } from './protocol';
 import type { RoomStatus, SeatOccupant } from './types';
 
 /** Per-connection state — its identity and everything it is currently subscribed to. */
@@ -97,7 +98,7 @@ export class RoomGateway {
     ws.on('message', (raw) => {
       let msg: unknown;
       try {
-        msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString()) as unknown;
+        msg = JSON.parse(decodeFrame(raw)) as unknown;
       } catch {
         return; // junk frame — ignore, never crash the socket
       }

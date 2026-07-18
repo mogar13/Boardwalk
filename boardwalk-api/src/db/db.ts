@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
-import { SCHEMA } from './schema';
+import { COLUMN_MIGRATIONS, SCHEMA } from './schema';
 
 export type Db = Database.Database;
 
@@ -23,5 +23,26 @@ export function openDb(dbPath: string): Db {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrateColumns(db);
   return db;
+}
+
+interface TableInfoRow {
+  name: string;
+}
+
+/**
+ * Apply the additive column migrations to a database that predates them. Idempotent: a column
+ * that is already there is skipped, so this runs on every boot and does nothing after the first.
+ *
+ * Exported for the test that proves a Phase-A-shaped database is brought forward rather than
+ * left one column short — the failure mode this exists to prevent is invisible on a fresh DB.
+ */
+export function migrateColumns(db: Db): void {
+  for (const m of COLUMN_MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as TableInfoRow[];
+    if (cols.length === 0) continue; // table absent entirely — the DDL above owns creating it
+    if (cols.some((c) => c.name === m.column)) continue;
+    db.exec(m.ddl);
+  }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useAuthStore } from '@/system/auth/authStore';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { formatMoney } from '@/system/profile/money';
 import { useProfile } from '@/system/profile/useProfile';
 import { claimDaily, dailyStatus, type DailyStatus } from '@/system/rewards/daily';
@@ -21,7 +21,7 @@ export interface DailyRewardApi {
 
 export function useDailyReward(): DailyRewardApi {
   const profile = useProfile();
-  const mutateProfile = useAuthStore((s) => s.mutateProfile);
+  const applyEconomy = useAuthStore((s) => s.applyEconomy);
   const toast = useToast();
 
   // The day, snapshotted once at mount. `Date.now()` is impure and must not run during render, so
@@ -43,17 +43,27 @@ export function useDailyReward(): DailyRewardApi {
       bankrollCents: p.bankrollCents + result.rewardCents,
       daily: result.state,
     };
-    void mutateProfile(next).then(
-      () => {
+    // The intent carries NO clock. `claimDaily` above still runs against `Date.now()` because the
+    // card needs something to show instantly, but the streak and the reward that actually land
+    // are computed from the server's time — so the oldest cheat in a client-authoritative economy
+    // (wind the device clock forward, claim again) has nothing to act on.
+    void applyEconomy({ kind: 'daily', nonce: mintNonce() }, next).then(
+      (applied) => {
+        if (!applied.ok) {
+          toast.warning(applied.error);
+          return;
+        }
+        // Announce the SERVER'S streak, not the one we guessed — they agree unless the local
+        // clock was off, and in that case the honest number is the one that was banked.
         toast.success(
-          `Day ${String(result.state.streak)} — ${formatMoney(result.rewardCents)} claimed`
+          `Day ${String(applied.value.daily.streak)} — ${formatMoney(result.rewardCents)} claimed`
         );
       },
       () => {
         toast.error('Could not claim your reward — try again.');
       }
     );
-  }, [mutateProfile, toast]);
+  }, [applyEconomy, toast]);
 
   return { status, claim };
 }
