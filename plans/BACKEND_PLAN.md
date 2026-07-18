@@ -196,14 +196,42 @@ and breaks only in production).
   every rung of the daily ladder, the XP table and the opening stake agree. It caught a real drift
   the first time it ran (two title ids wrong on the server).
 
-**Still owed before this is actually done — none of it is code:**
-1. **Deploy to the Pi** (needs SSH; the migration runs at boot, but take a backup first).
-2. **Run the restore drill on the real Pi** — `boardwalk-api/BACKUP.md` has the commands and says
-   plainly that it has not been run there yet.
-3. **Install the backup timer and confirm the off-box copy lands.**
-4. **Verify in prod** that a bet/settle/purchase/claim round-trips, and that devtools cannot move
-   the bankroll.
-5. Then, and only then, is "editing devtools changes nothing durable" a claim rather than a design.
+**✅ CUT OVER 2026-07-18.** Merged (PR #23), deployed, and the frontend economy is live against the
+referee — verified in the shipped bundle, not inferred: `apiEconomyOn` folds to `!0`, so profile,
+economy and leaderboard all resolve to the API.
+
+1. ✅ **Deployed to the Pi.** (`~/boardwalk-api` is NOT a git clone — code arrives by rsync.)
+2. ✅ **Restore drill run on the real Pi**, for the first time: `integrity_check ok`, 8 tables,
+   balances recomputed from the restored ledger, `restore drill PASSED`. An off-box copy was pulled
+   and re-verified on another machine.
+3. ✅ **The Firebase→SQLite backfill has been RUN** — `1 migrated, reconcile OK`, and a re-run
+   reports `0 migrated, 1 already migrated`, so the idempotency marker is confirmed against real
+   production data rather than only in tests. See [BACKFILL_RUNBOOK.md](BACKFILL_RUNBOOK.md).
+4. ⬜ **Install the backup timer and confirm the off-box copy lands** — still owed. Backups are
+   currently taken by hand.
+5. ⬜ **Verify in prod** that a bet/settle/purchase/claim round-trips end-to-end in a browser, and
+   that devtools cannot move the bankroll. Until that is driven, "editing devtools changes nothing
+   durable" is a design, not a claim.
+
+**What the cutover actually found, recorded because the plan's premise was wrong.** This phase was
+written expecting a population of real players whose accounts had to survive the migration. There
+are none: RTDB holds **one** `users/` node and Firebase Auth holds **two** accounts — the owner's,
+and one `@boardwalk.invalid` throwaway from a browser-verification run. The one real profile was
+already mirrored into SQLite with a matching balance, so the backfill moved **$0.00** and wrote no
+ledger row. The migration tooling is therefore insurance for a future that has not arrived, not a
+rescue of data that was at risk. **Check the row count before treating a data migration here as
+urgent** — it is one query and it dissolved a whole incident.
+
+**Two real defects surfaced on the way, both worth more than the migration:**
+- **Neither kill switch had ever worked in prod.** `VITE_API_ECONOMY` and `VITE_WS_ROOMS` were
+  documented in CLAUDE.md and here, read by the composition root, and injected by
+  `.github/workflows/deploy.yml` — never. Vite only embeds a `VITE_*` present in the build
+  environment, so setting the secret did nothing while the deploy went green. Fixed, and guarded by
+  `tests/deploy-env.test.ts`, which requires every `import.meta.env.VITE_*` the source reads to be
+  injected by the workflow.
+- **The backfill CLI hung after succeeding** — firebase-admin's RTDB socket keeps the event loop
+  alive. It printed `reconcile OK` and never exited, which invites the Ctrl-C-and-re-run that the
+  idempotency marker exists to survive. Fixed with `closeFirebase()`.
 
 ### Phase C — Realtime rooms over WebSocket
 Retire the RTDB *database* (Auth stays). Biggest phase — budget accordingly.

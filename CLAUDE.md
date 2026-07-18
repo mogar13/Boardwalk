@@ -191,7 +191,7 @@ lint rule that matches nothing reports success.
   the *only* callers of the one internal writer (`authStore.mutateProfile`). A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
 - **Money moves as an INTENT, and the server prices it.** ✅ Live (BACKEND_PLAN.md Phase B, code
-  complete — **not yet deployed**). The four money paths call `authStore.applyEconomy(intent,
+  complete, **deployed and LIVE in prod since 2026-07-18**). The four money paths call `authStore.applyEconomy(intent,
   optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily`.
   **None of those types has a field for a balance, a price, an XP amount, a stat count or a clock**
   — the wrong thing is unspellable rather than validated. The server computes each delta from the
