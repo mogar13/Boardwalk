@@ -27,6 +27,12 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   app.use(cors({ origin: cfg.allowedOrigin }));
   app.use(express.json({ limit: '256kb' }));
 
+  // A friendly, unauthenticated root so opening the bare URL in a browser shows something
+  // reassuring instead of the auth middleware's 401. Mounted before auth, like /health.
+  app.get('/', (_req, res) => {
+    res.json({ name: 'boardwalk-api', status: 'ok', health: '/health' });
+  });
+
   app.use(healthRouter(db));
 
   const tokenVerifier =
