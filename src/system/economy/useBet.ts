@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
-import { clampBet, maxBet, validateBet, type BetBounds, type BetCheck } from '@boardwalk/game-logic';
+import {
+  clampBet,
+  maxBet,
+  validateBet,
+  type BetBounds,
+  type BetCheck,
+} from '@boardwalk/game-logic';
 import { useGameContext } from '@/system/economy/gameContext';
 import { useBankroll } from '@/system/profile/useProfile';
 import { useToast } from '@/ui';

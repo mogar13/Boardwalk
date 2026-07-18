@@ -1,9 +1,11 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** ✅ **Phase B's SERVER is deployed and live** (2026-07-18, from `cb42e44`) — backups,
-restore drill and the nightly timer landed first, then the migration and cutover. Owed steps 1–3 of
-the five are done; **step 4 (prod round-trip verify) needs the frontend merged**, and the one-shot
-**backfill has NOT been run** (`mutations` has 0 `migration:v1` markers; SQLite holds one profile).
+**Status:** ✅ **Phase B is DEPLOYED — server, client and backfill** (2026-07-18, from `cb42e44`).
+Backups, the restore drill and the nightly timer landed first, then the migration and cutover; the
+frontend merged (PR #23) and the Pages build carries the Funnel URL. The one-shot **backfill has now
+run** — one `migration:v1` marker, and SQLite matches Firebase field for field. Owed steps 1–3 done.
+**Step 4, the live money round-trip, is the one thing still open** (it needs a real sign-in), along
+with the full stop/swap/start restore rehearsal in `boardwalk-api/BACKUP.md`.
 🚧 **Phase D is code-complete and green, and NOT deployed** — see
 [The deploy delta](#the-deploy-delta-phase-d) for what it adds to that same trip, including one
 thing that must be **checked before deploying**, because it can fail the deploy at `npm install`.

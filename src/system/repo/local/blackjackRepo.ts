@@ -56,7 +56,6 @@ import type {
 /** From `manifest.id`, never a string literal spelled twice — the `texas_holdem`→`"poker"` rule. */
 const GAME_ID = 'blackjack';
 
-
 /**
  * The stake check, mirroring the referee's `checkBet`: a whole number of cents, positive, and
  * covered by the balance. Deliberately NOT the table's min/max — those are the chip rack's job

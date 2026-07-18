@@ -6,7 +6,6 @@
  * client's cached idea of its own admin-ness is meaningless. Nothing here is a game rule.
  */
 
-
 /**
  * A signed-in identity. Distinct from Profile because they have different lifetimes
  * and different owners: this comes from Firebase Auth and the `admins/` node and
