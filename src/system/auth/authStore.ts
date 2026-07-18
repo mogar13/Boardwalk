@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { cleanUsername } from '@/system/auth/credentials';
 import { defaultProfile } from '@/system/profile/defaults';
-import type { Profile, Session } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
+import type { Session } from '@/system/auth/session';
 import { firebaseReady, repos } from '@/system/repo';
 import type { EconomyIntent, RepoResult, SignInInput, SignUpInput } from '@/system/repo';
 

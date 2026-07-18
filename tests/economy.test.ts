@@ -10,10 +10,10 @@
  * in milliseconds — which is the argument for the functions being pure in the first place.
  */
 import { describe, expect, it } from 'vitest';
-import { clampBet, maxBet, validateBet } from '@/system/economy/bet';
-import { applyResult } from '@/system/economy/result';
+import { clampBet, maxBet, validateBet } from '@boardwalk/game-logic';
+import { applyResult } from '@boardwalk/game-logic';
 import { defaultProfile } from '@/system/profile/defaults';
-import { statFor } from '@/system/progress/stats';
+import { statFor } from '@boardwalk/game-logic';
 
 const BOUNDS = { min: 200, max: 50_000 } as const; // $2 .. $500
 

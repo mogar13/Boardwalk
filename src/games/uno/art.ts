@@ -1,4 +1,4 @@
-import type { Card } from '@/games/uno/logic/uno';
+import type { Card } from '@boardwalk/game-logic/games/uno';
 
 /**
  * A UNO card → its staged image, and the back. This is NOT in `logic/` on purpose: it reads

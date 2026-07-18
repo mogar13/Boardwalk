@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 import { diffProfiles } from '@/system/repo/shadow/diff';
 import {
   mirrorProfile,

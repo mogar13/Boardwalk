@@ -148,5 +148,6 @@ export type {
   Unsubscribe,
 } from '@/system/repo/types';
 export type { ChatMessage } from '@/system/chat/types';
-export type { Profile, Session } from '@/system/profile/types';
+export type { Profile } from '@boardwalk/game-logic';
+export type { Session } from '@/system/auth/session';
 export type { RoomMeta, RoomSnapshot, Seat, SeatOccupant } from '@/system/room/types';

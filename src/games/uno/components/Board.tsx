@@ -5,7 +5,7 @@ import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
-import { canPlay, submitMove, type Card as UnoCard, type UnoColor, type UnoState } from '@/games/uno/logic/uno';
+import { canPlay, submitMove, type Card as UnoCard, type UnoColor, type UnoState } from '@boardwalk/game-logic/games/uno';
 import { unoBackSrc, unoCardSrc } from '@/games/uno/art';
 import { useUnoHost } from '@/games/uno/components/useUnoHost';
 

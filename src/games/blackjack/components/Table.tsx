@@ -4,7 +4,7 @@ import { useAudio } from '@/system/audio/useAudio';
 import { useBet } from '@/system/economy/useBet';
 import { useGame } from '@/system/economy/useGame';
 import { useBankroll } from '@/system/profile/useProfile';
-import { formatMoney } from '@/system/profile/money';
+import { formatMoney } from '@boardwalk/game-logic';
 import { Hand } from '@/games/blackjack/components/Hand';
 import {
   canDouble,
@@ -16,7 +16,7 @@ import {
   resultOutcome,
   shuffle,
   type Result,
-} from '@/games/blackjack/logic/blackjack';
+} from '@boardwalk/game-logic/games/blackjack';
 
 /**
  * The table — the only part of Blackjack that is not tested pure logic. It holds the hand in a

@@ -33,13 +33,24 @@ import { dirname, resolve, relative, sep } from 'node:path';
  * game has, and the import boundary is the half that is enforceable without false positives.
  * `logic/` reaching for a bare global is caught by review, the same place v1's were not.
  *
- * SCOPE: files whose path contains a `/logic/` segment under `src/games/`. A game's components,
+ * SCOPE: files whose path contains a `/logic/` segment under either games tree (see
+ * `GAMES_DIRS`). A game's components,
  * its manifest, and the registry are all deliberately outside — they SHOULD import the OS; that
  * is what they are for. The rule governs exactly the tree whose whole value is being importless.
  */
 
-/** The games tree. Outside it there is no `logic/` this rule means. */
-const GAMES_DIR = 'src/games';
+/**
+ * The games trees. Two of them since Phase D: the five rulebooks moved into the shared
+ * `@boardwalk/game-logic` package (so `boardwalk-api` runs the SAME rules), and their
+ * components stayed behind under `src/games/`. Both halves keep the shape
+ * `<games-dir>/<game>/logic/<file>.ts`, which is what lets one rule govern both.
+ *
+ * THIS LIST IS THE RULE. A guard aimed at a directory the code has left matches nothing, and a
+ * rule that matches nothing reports success — which is exactly the failure CLAUDE.md warns
+ * about, landing on the guard instead of the code. `tests/lint-rules.test.ts` writes its
+ * fixtures into BOTH trees for that reason.
+ */
+const GAMES_DIRS = ['src/games', 'packages/game-logic/src/games'];
 
 /** Where `@/`-and-relative specifiers resolve, so the ban survives a relative escape. */
 const GOVERNED_ROOT = 'src';
@@ -68,7 +79,7 @@ const isInside = (path, base) => path === base || path.startsWith(`${base}/`);
 
 /** Does this file live under a `logic/` directory within the games tree? */
 function isLogicFile(relDir) {
-  if (!isInside(relDir, GAMES_DIR)) return false;
+  if (!GAMES_DIRS.some((dir) => isInside(relDir, dir))) return false;
   return relDir.split('/').includes('logic');
 }
 

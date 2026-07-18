@@ -14,7 +14,7 @@ import {
   turnSeat,
   type ChessState,
   type PieceType,
-} from '@/games/chess/logic/chess';
+} from '@boardwalk/game-logic/games/chess';
 
 /**
  * The board — the only part of Chess that is not the OS or the tested pure `logic/`. It is a reader

@@ -22,12 +22,12 @@ import {
   recordedFeats,
   satisfiedAchievements,
   type AchievementView,
-} from '@/system/progress/achievements';
-import { applyResult } from '@/system/economy/result';
-import { cosmeticById, isEarnOnly } from '@/system/store/catalog';
+} from '@boardwalk/game-logic';
+import { applyResult } from '@boardwalk/game-logic';
+import { cosmeticById, isEarnOnly } from '@boardwalk/game-logic';
 import { defaultProfile } from '@/system/profile/defaults';
-import { xpThresholdForLevel } from '@/system/profile/xp';
-import type { GameStat, Profile } from '@/system/profile/types';
+import { xpThresholdForLevel } from '@boardwalk/game-logic';
+import type { GameStat, Profile } from '@boardwalk/game-logic';
 
 const NOW = 1_700_000_000_000;
 

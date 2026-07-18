@@ -5,7 +5,7 @@ import {
   completionPct,
   type Achievement,
   type Tier,
-} from '@/system/progress/achievements';
+} from '@boardwalk/game-logic';
 import { useProfile } from '@/system/profile/useProfile';
 
 /**

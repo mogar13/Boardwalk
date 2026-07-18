@@ -10,7 +10,7 @@
  * otherwise hide.
  */
 import { describe, it, expect } from 'vitest';
-import { LEVEL_STEP, levelFromXp, xpProgress, xpThresholdForLevel } from '@/system/profile/xp';
+import { LEVEL_STEP, levelFromXp, xpProgress, xpThresholdForLevel } from '@boardwalk/game-logic';
 
 describe('xpThresholdForLevel', () => {
   it('starts level 1 at 0 XP', () => {

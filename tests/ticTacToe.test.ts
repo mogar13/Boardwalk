@@ -23,7 +23,7 @@ import {
   type Cell,
   type Player,
   type TicTacToeState,
-} from '@/games/tic-tac-toe/logic/ticTacToe';
+} from '@boardwalk/game-logic/games/tic-tac-toe';
 
 /** Build a state from a raw board and whose turn it is, deriving the outcome the honest way. */
 function stateFrom(board: Cell[], turn: Player, round = 0): TicTacToeState {

@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
-import { formatDollars } from '@/system/profile/money';
-import { applyEquip, applyPurchase, canBuy, isOwned, type Cosmetic } from '@/system/store/catalog';
+import { formatDollars } from '@boardwalk/game-logic';
+import { applyEquip, applyPurchase, canBuy, isOwned, type Cosmetic } from '@boardwalk/game-logic';
 import { useConfirm, useToast } from '@/ui';
 
 /**

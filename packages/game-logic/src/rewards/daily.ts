@@ -13,7 +13,7 @@
  * `Date.now()` internally cannot be tested without mocking time, and this one is tested by
  * passing the millisecond of three specific days.
  */
-import type { DailyState } from '@/system/profile/types';
+import type { DailyState } from '../profile/types';
 
 /** Milliseconds in a day. Named so `nowMs / DAY_MS` reads as what it is. */
 export const DAY_MS = 86_400_000;

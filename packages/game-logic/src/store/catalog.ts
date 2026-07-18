@@ -24,9 +24,9 @@
  * the store locked with its `unlock` line. That split is the whole fix for "paying for emojis
  * feels cheap": the best titles cannot be bought, so wearing one means you earned it.
  */
-import { DEFAULT_AVATAR } from '@/system/profile/defaults';
-import { formatDollars } from '@/system/profile/money';
-import type { Profile } from '@/system/profile/types';
+import { DEFAULT_AVATAR } from '../profile/defaults';
+import { formatDollars } from '../profile/money';
+import type { Profile } from '../profile/types';
 
 /** The cosmetic families, each with a reader (see the header). `title` and `cardback` land in P2. */
 export type CosmeticKind = 'avatar' | 'cardback' | 'title';

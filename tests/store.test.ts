@@ -18,7 +18,7 @@ import {
   isEquipped,
   isOwned,
   type Cosmetic,
-} from '@/system/store/catalog';
+} from '@boardwalk/game-logic';
 import { defaultProfile } from '@/system/profile/defaults';
 
 const paidAvatar = (): Cosmetic => {

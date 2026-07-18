@@ -3,8 +3,8 @@ import { Button, Card, Input, Modal } from '@/ui';
 import { useAuth, useIsAdmin } from '@/system/auth/useAuth';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { useProfileEditor } from '@/system/profile/useProfileEditor';
-import { xpProgress } from '@/system/profile/xp';
-import { equippedTitle } from '@/system/store/catalog';
+import { xpProgress } from '@boardwalk/game-logic';
+import { equippedTitle } from '@boardwalk/game-logic';
 
 /**
  * The signed-in player, in full. The top bar (`src/shell/TopBar`) shows a compact version

@@ -1,5 +1,5 @@
 import { Button, Card } from '@/ui';
-import { formatMoney } from '@/system/profile/money';
+import { formatMoney } from '@boardwalk/game-logic';
 import { useDailyReward } from '@/system/rewards/useDailyReward';
 
 /**

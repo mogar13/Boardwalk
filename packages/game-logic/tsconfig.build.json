@@ -1,0 +1,45 @@
+{
+  /* The CommonJS build, and its ONLY consumer is boardwalk-api.
+   *
+   * The frontend never reads `dist/` — it reads `src/` through a `paths` alias, so nothing in
+   * the browser build depends on this file having been run. That asymmetry is the seam: the API
+   * is CommonJS with `rootDir: src` and a systemd unit that runs `dist/server.js`, so the shared
+   * rules have to arrive as an ordinary resolved dependency rather than as extra input to the
+   * API's own `tsc`. Compiled here, they do.
+   *
+   * The strictness matches the frontend's tsconfig.app.json rather than being relaxed to
+   * whatever compiles: this is the one tree where a `noUncheckedIndexedAccess` slip is a payout
+   * rule that is wrong on both sides at once. */
+  "compilerOptions": {
+    "target": "ES2022",
+    /* node16, not the deprecated node10: package.json says `"type": "commonjs"`, so this
+       emits CommonJS `require`s — which is what boardwalk-api needs — while resolving through
+       the modern algorithm that TS 7 will keep. */
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2023"],
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+
+    /* No `lib: DOM`. This is the type-level half of the purity rule: a rule module that reaches
+       for `document` or `window` does not compile here, whatever the lint rule thinks. */
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

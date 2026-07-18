@@ -24,7 +24,7 @@ import {
   rankOrder,
   reducer,
   shuffle,
-} from '@/games/solitaire/logic/solitaire';
+} from '@boardwalk/game-logic/games/solitaire';
 
 /** Compact card builder — face up by default (the common case in these fixtures). */
 function c(rank: Rank, suit: Suit, faceUp = true): Card {

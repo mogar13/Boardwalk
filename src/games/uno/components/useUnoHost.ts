@@ -9,7 +9,7 @@ import {
   type Card,
   type UnoGame,
   type UnoState,
-} from '@/games/uno/logic/uno';
+} from '@boardwalk/game-logic/games/uno';
 
 /**
  * THE DEALER. UNO's one genuinely-multiplayer-hard piece, and it lives on the HOST alone. Because a

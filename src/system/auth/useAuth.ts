@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useAuthStore, subscribeToSession } from '@/system/auth/authStore';
-import type { Session } from '@/system/profile/types';
+import type { Session } from '@/system/auth/session';
 import type { RepoResult, SignInInput, SignUpInput } from '@/system/repo';
 
 /**

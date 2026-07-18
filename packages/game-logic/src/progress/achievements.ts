@@ -33,7 +33,7 @@
  * `bankroll_bronze`) fires exactly once, the first time, and a later poorer state never revokes
  * it. See `@/system/economy/result`.
  */
-import { levelFromXp } from '@/system/profile/xp';
+import { levelFromXp } from '../profile/xp';
 
 /**
  * Everything a predicate is allowed to look at, assembled once by `applyResult` from the

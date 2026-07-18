@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Card, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
-import { formatMoney } from '@/system/profile/money';
-import { xpProgress } from '@/system/profile/xp';
+import { formatMoney } from '@boardwalk/game-logic';
+import { xpProgress } from '@boardwalk/game-logic';
 import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@/system/progress/boards';
 import { useLeaderboard } from '@/system/progress/useLeaderboard';
 import type { LeaderboardEntry } from '@/system/repo';

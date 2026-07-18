@@ -12,7 +12,7 @@
  * off-by-one in a counter buried in a component surfaces as "the leaderboard is wrong" weeks
  * later, and only a unit test finds it in the second it happens.
  */
-import type { GameStat, Stats } from '@/system/profile/types';
+import type { GameStat, Stats } from '../profile/types';
 
 /**
  * What a single settled game was, from the bankroll's point of view. `push` is a tie /

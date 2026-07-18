@@ -16,7 +16,7 @@
  * REFUSES a non-integer rather than rounding one, because a non-integer bet reaching here is a
  * bug upstream and silently rounding it hides the bug.
  */
-import { formatDollars, formatMoney } from '@/system/profile/money';
+import { formatDollars, formatMoney } from '../profile/money';
 
 /** A game's betting limits, in cents. Comes from `manifest.betting`; absent means no betting. */
 export interface BetBounds {

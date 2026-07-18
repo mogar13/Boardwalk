@@ -25,7 +25,7 @@ import {
   resultOutcome,
   settle,
   shuffle,
-} from '@/games/blackjack/logic/blackjack';
+} from '@boardwalk/game-logic/games/blackjack';
 
 /** Compact card builder: `c('A')` is the ace of spades; suit rarely matters to the rules. */
 function c(rank: Rank, suit: Suit = 'spades'): Card {

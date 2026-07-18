@@ -18,7 +18,7 @@ import {
   validateUsername,
   type IdentityMode,
 } from '@/system/auth/credentials';
-import type { Session } from '@/system/profile/types';
+import type { Session } from '@/system/auth/session';
 import { firebaseAuth, firebaseDb } from '@/system/repo/firebase/app';
 import type {
   AuthRepo,

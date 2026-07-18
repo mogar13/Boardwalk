@@ -1,8 +1,8 @@
 import { Card } from '@/ui';
 import { findGame } from '@/games/registry';
 import { useProfile } from '@/system/profile/useProfile';
-import { ACHIEVEMENTS } from '@/system/progress/achievements';
-import { totalPlayed, totalWins } from '@/system/progress/stats';
+import { ACHIEVEMENTS } from '@boardwalk/game-logic';
+import { totalPlayed, totalWins } from '@boardwalk/game-logic';
 
 /**
  * The play record — totals across everything, then a per-game breakdown with a win rate for each

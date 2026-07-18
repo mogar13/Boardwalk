@@ -27,7 +27,7 @@ import {
   toFen,
   turnSeat,
   type ChessState,
-} from '@/games/chess/logic/chess';
+} from '@boardwalk/game-logic/games/chess';
 
 /** Legal moves from a FEN, as "e2e4"-style strings (with a promotion suffix), sorted for stable compare. */
 function movesFrom(fen: string): string[] {

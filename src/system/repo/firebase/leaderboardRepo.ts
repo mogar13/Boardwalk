@@ -1,5 +1,5 @@
 import { get, ref } from 'firebase/database';
-import { DEFAULT_AVATAR } from '@/system/profile/defaults';
+import { DEFAULT_AVATAR } from '@boardwalk/game-logic';
 import { boardById, rankFor } from '@/system/progress/boards';
 import { firebaseDb } from '@/system/repo/firebase/app';
 import type { LeaderboardEntry, LeaderboardRepo } from '@/system/repo/types';

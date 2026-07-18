@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { unoBackSrc, unoCardSrc } from '@/games/uno/art';
-import { freshDeck } from '@/games/uno/logic/uno';
+import { freshDeck } from '@boardwalk/game-logic/games/uno';
 
 const UNO_DIR = fileURLToPath(new URL('../public/cards/uno/', import.meta.url));
 

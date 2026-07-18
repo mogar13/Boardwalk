@@ -44,8 +44,14 @@
     "erasableSyntaxOnly": true,
 
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      /* The shared rules, read as SOURCE. See packages/game-logic/src/index.ts for why the
+         frontend aliases the source while boardwalk-api consumes the built CommonJS. Mirrored
+         in vite.config.ts's `resolve.alias` — both must agree or the editor and the bundler
+         disagree about what a module is. */
+      "@boardwalk/game-logic": ["./packages/game-logic/src/index.ts"],
+      "@boardwalk/game-logic/games/*": ["./packages/game-logic/src/games/*/index.ts"]
     }
   },
-  "include": ["tests"]
+  "include": ["tests", "packages/game-logic/src"]
 }

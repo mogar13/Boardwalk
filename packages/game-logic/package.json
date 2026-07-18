@@ -1,0 +1,28 @@
+{
+  "name": "@boardwalk/game-logic",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The pure rules both sides run: the five games' rulebooks, the economy, achievements, the store catalogue and the daily ladder. The frontend reads the source; boardwalk-api reads the built CommonJS.",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./games/*": {
+      "types": "./dist/games/*/index.d.ts",
+      "default": "./dist/games/*/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+  }
+}

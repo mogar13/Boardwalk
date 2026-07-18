@@ -1,4 +1,4 @@
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 import { apiFetch, type ApiClientConfig } from '@/system/repo/api/client';
 import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types';
 

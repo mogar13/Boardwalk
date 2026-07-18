@@ -21,7 +21,7 @@ import {
   shuffle,
   submitMove,
   toPublic,
-} from '@/games/uno/logic/uno';
+} from '@boardwalk/game-logic/games/uno';
 
 // A tiny seeded PRNG so a shuffle is deterministic in a test without stubbing Math.random.
 function seeded(seed: number): () => number {

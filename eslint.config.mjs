@@ -57,7 +57,7 @@ export default tseslint.config(
     // tsconfig, eslint and vitest. This config is React/browser-shaped and points at the app's
     // tsconfig, which does not include the API's files — linting them here would only produce
     // "file not in project" parser errors. It is quality-checked by its own tooling instead.
-    ignores: ['**/node_modules/**', 'dist/**', 'coverage/**', '**/*.min.js', 'boardwalk-api/**'],
+    ignores: ['**/node_modules/**', '**/dist/**', 'coverage/**', '**/*.min.js', 'boardwalk-api/**'],
   },
 
   js.configs.recommended,

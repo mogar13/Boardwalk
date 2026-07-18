@@ -1,4 +1,4 @@
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 
 /**
  * The Phase-A shadow diff — pure, so it is unit-testable and could run server-side too.

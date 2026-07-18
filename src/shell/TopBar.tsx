@@ -3,7 +3,7 @@ import { Button, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { useAudio } from '@/system/audio/useAudio';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
-import { xpProgress } from '@/system/profile/xp';
+import { xpProgress } from '@boardwalk/game-logic';
 import { Wordmark } from '@/shell/Wordmark';
 
 /**

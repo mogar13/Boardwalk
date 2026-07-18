@@ -77,9 +77,31 @@ export default defineConfig(({ command, mode }) => {
     // wants to maintain. Mirrored in tsconfig.app.json's `paths` — both must agree or
     // the editor and the bundler disagree about what a module is.
     resolve: {
-      alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url)),
-      },
+      // The ARRAY form, not the object form: entries are tried in order, and the shared
+      // package needs its longer subpath matched before its bare name. The object form's
+      // ordering is not something to rely on for that.
+      alias: [
+        {
+          find: '@',
+          replacement: fileURLToPath(new URL('./src', import.meta.url)),
+        },
+        // The shared rules, aliased to SOURCE — the frontend never reads the package's
+        // dist/ (boardwalk-api does; see packages/game-logic/src/index.ts). The games
+        // subpath is first because '@boardwalk/game-logic/games/uno' must not fall through
+        // to the bare-name entry.
+        {
+          find: /^@boardwalk\/game-logic\/games\/(.*)$/,
+          replacement:
+            fileURLToPath(new URL('./packages/game-logic/src/games', import.meta.url)) +
+            '/$1/index.ts',
+        },
+        {
+          find: '@boardwalk/game-logic',
+          replacement: fileURLToPath(
+            new URL('./packages/game-logic/src/index.ts', import.meta.url)
+          ),
+        },
+      ],
     },
 
     test: {

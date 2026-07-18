@@ -1,7 +1,7 @@
 import { Button, Card, cx } from '@/ui';
 import { cardBackSrc } from '@/system/cards/cards';
-import { formatDollars } from '@/system/profile/money';
-import type { Profile } from '@/system/profile/types';
+import { formatDollars } from '@boardwalk/game-logic';
+import type { Profile } from '@boardwalk/game-logic';
 import { useProfile } from '@/system/profile/useProfile';
 import {
   cosmeticsOfKind,
@@ -11,7 +11,7 @@ import {
   type Cosmetic,
   type CosmeticKind,
   type Rarity,
-} from '@/system/store/catalog';
+} from '@boardwalk/game-logic';
 import { useStore } from '@/system/store/useStore';
 
 /**

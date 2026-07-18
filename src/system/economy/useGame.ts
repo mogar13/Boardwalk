@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import type { GameManifest } from '@/games/registry';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { useGameContext } from '@/system/economy/gameContext';
-import { applyResult, type ResultReport } from '@/system/economy/result';
+import { applyResult, type ResultReport } from '@boardwalk/game-logic';
 import { useToast } from '@/ui';
 
 /**

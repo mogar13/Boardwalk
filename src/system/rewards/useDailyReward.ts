@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
-import { formatMoney } from '@/system/profile/money';
+import { formatMoney } from '@boardwalk/game-logic';
 import { useProfile } from '@/system/profile/useProfile';
-import { claimDaily, dailyStatus, type DailyStatus } from '@/system/rewards/daily';
+import { claimDaily, dailyStatus, type DailyStatus } from '@boardwalk/game-logic';
 import { useToast } from '@/ui';
 
 /**

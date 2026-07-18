@@ -10,7 +10,7 @@ import {
   initialState,
   reducer,
   shuffle,
-} from '@/games/solitaire/logic/solitaire';
+} from '@boardwalk/game-logic/games/solitaire';
 
 /**
  * Solitaire — the whole game, and the shape of a room-LESS one, exactly like Blackjack. There is no

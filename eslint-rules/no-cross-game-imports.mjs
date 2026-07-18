@@ -33,7 +33,18 @@ import { dirname, resolve, relative, sep } from 'node:path';
  * substring, so only resolving the path reveals it crossing a game boundary.
  */
 
-const GAMES_DIR = 'src/games';
+/**
+ * The games trees. Two of them since Phase D: the five rulebooks moved into the shared
+ * `@boardwalk/game-logic` package (so `boardwalk-api` runs the SAME rules), and their
+ * components stayed behind under `src/games/`. Both halves keep the shape
+ * `<games-dir>/<game>/logic/<file>.ts`, which is what lets one rule govern both.
+ *
+ * THIS LIST IS THE RULE. A guard aimed at a directory the code has left matches nothing, and a
+ * rule that matches nothing reports success — which is exactly the failure CLAUDE.md warns
+ * about, landing on the guard instead of the code. `tests/lint-rules.test.ts` writes its
+ * fixtures into BOTH trees for that reason.
+ */
+const GAMES_DIRS = ['src/games', 'packages/game-logic/src/games'];
 const GOVERNED_ROOT = 'src';
 
 const MSG =
@@ -53,9 +64,14 @@ const isInside = (path, base) => path === base || path.startsWith(`${base}/`);
  * one function classify both the importer and its target.
  */
 function gameOf(relPath) {
-  if (!isInside(relPath, GAMES_DIR)) return null;
-  const rest = relPath.slice(GAMES_DIR.length + 1).split('/');
-  return rest.length >= 2 ? rest[0] : null;
+  for (const dir of GAMES_DIRS) {
+    if (!isInside(relPath, dir)) continue;
+    const rest = relPath.slice(dir.length + 1).split('/');
+    // A segment must follow the game name: `src/games/registry.ts` (rest `['registry.ts']`)
+    // belongs to no game, and neither does the package's own `games/` barrel level.
+    return rest.length >= 2 ? rest[0] : null;
+  }
+  return null;
 }
 
 function targetOf(specifier, fileDir, cwd) {

@@ -1,7 +1,7 @@
 import { cardBackSrc, cardSrc } from '@/system/cards/cards';
 import { useEquippedCardBack } from '@/system/cards/useCardBack';
 import { cx } from '@/ui';
-import type { Card } from '@/games/blackjack/logic/blackjack';
+import type { Card } from '@boardwalk/game-logic/games/blackjack';
 
 /**
  * A row of cards — the one place a logic `Card` becomes an image. It hands the card straight to

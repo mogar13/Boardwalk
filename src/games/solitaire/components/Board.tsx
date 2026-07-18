@@ -9,7 +9,7 @@ import {
   type Pile,
   type SolitaireState,
   liftable,
-} from '@/games/solitaire/logic/solitaire';
+} from '@boardwalk/game-logic/games/solitaire';
 
 /**
  * The play surface — the only part of Solitaire that is not tested pure logic. It draws the state

@@ -24,6 +24,19 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
+/**
+ * The SHARED package's source tree — the second half of the games tree since Phase D.
+ *
+ * The five rulebooks moved to `packages/game-logic/src/games/<game>/logic/` so `boardwalk-api`
+ * could run the same code, and `src/games/<game>/` kept only the components. Both Phase-6 rules
+ * are path-scoped to "the games tree", so after that move a rule that still named only
+ * `src/games` would have gone silent on every line of logic in the repo while continuing to
+ * report success — the precise failure CLAUDE.md's enforcement table exists to prevent, landing
+ * on the guard instead of the code. So each rule is proven TWICE, once per tree.
+ */
+const PKG_SRC = join(ROOT, 'packages', 'game-logic', 'src');
+/** Fixture keys under the shared package are marked with this prefix; see `fixturePath`. */
+const PKG_PREFIX = 'pkg:';
 
 /**
  * Fixture paths are relative to `src/`, not to one fixture directory.
@@ -50,6 +63,9 @@ const FIXTURE_DIRS = [
   // only as the sibling `_fixgame_a` is caught reaching into.
   join(SRC, 'games', '_fixgame_a'),
   join(SRC, 'games', '_fixgame_b'),
+  // Phase D. The same two games, in the shared package's tree — see PKG_SRC.
+  join(PKG_SRC, 'games', '_fixgame_a'),
+  join(PKG_SRC, 'games', '_fixgame_b'),
 ];
 
 /**
@@ -309,6 +325,27 @@ export const x = Board;`,
   // OK — importing WITHIN the same game. Must stay silent or a game cannot use its own logic/.
   'games/_fixgame_a/same-game-ok.ts': `import { s } from '@/games/_fixgame_a/logic/pure-ok';
 export const x = s;`,
+
+  // ── Phase D: the SAME two rules, in the shared package's games tree ────────
+  // These are the fixtures that fail if `GAMES_DIRS` in either rule forgets the package. Note
+  // there is no `@/` alias here — it does not resolve inside the package, which is itself part
+  // of the point: the only road from this tree into the OS is a relative escape, so that is what
+  // has to be caught. (`no-restricted-imports` fires on it too, for the `../../` depth. Both
+  // firing is correct; the assertions name the rule they are about.)
+  'pkg:games/_fixgame_a/logic/impure-system.ts': `import { emptyTable } from '../../../../../../src/system/room/seats';
+export const x = emptyTable;`,
+  'pkg:games/_fixgame_a/logic/impure-react.ts': `import { useState } from 'react';
+export const x = useState;`,
+  // OK — pure code built out of pure code, inside the package.
+  'pkg:games/_fixgame_a/logic/pure-ok.ts': `import { helper } from './helper';
+export const s = helper;`,
+  // BAN — one rulebook reaching into a sibling rulebook. A single '../', no telltale substring:
+  // only resolving the specifier reveals it crossing a game boundary.
+  'pkg:games/_fixgame_a/cross-relative-bad.ts': `import { Board } from '../_fixgame_b/index';
+export const x = Board;`,
+  // OK — a game reaching its OWN logic/, which is the structure the package exists to hold.
+  'pkg:games/_fixgame_a/same-game-ok.ts': `import { s } from './logic/pure-ok';
+export const x = s;`,
 };
 
 /**
@@ -318,6 +355,7 @@ export const x = s;`,
  * starting with a LITERAL_PREFIX.
  */
 function fixturePath(rel: string): string {
+  if (rel.startsWith(PKG_PREFIX)) return join(PKG_SRC, rel.slice(PKG_PREFIX.length));
   return LITERAL_PREFIXES.some((p) => rel.startsWith(p))
     ? join(SRC, rel)
     : join(SRC, '__lint_fixtures__', rel);
@@ -545,6 +583,21 @@ describe('game logic/ is pure', () => {
     // game root, not logic/, and imports useGame — if this ever goes red, every game is an error.
     expect(await rulesFiredOn('games/_fixgame_a/Board.tsx')).not.toContain(RULE);
   });
+
+  // ── the shared package's tree — where the logic ACTUALLY lives since Phase D ──
+  // Delete `packages/game-logic/src/games` from the rule's GAMES_DIRS and these three go red
+  // while every test above stays green: that is the whole reason they are separate cases.
+
+  it.each([
+    ['a relative escape into the OS', 'pkg:games/_fixgame_a/logic/impure-system.ts'],
+    ['a React import', 'pkg:games/_fixgame_a/logic/impure-react.ts'],
+  ])('fires on %s inside packages/game-logic', async (_label, fixture) => {
+    expect(await rulesFiredOn(fixture)).toContain(RULE);
+  });
+
+  it('does NOT fire on pure-importing-pure inside packages/game-logic', async () => {
+    expect(await rulesFiredOn('pkg:games/_fixgame_a/logic/pure-ok.ts')).not.toContain(RULE);
+  });
 });
 
 describe('no game imports another game', () => {
@@ -565,6 +618,16 @@ describe('no game imports another game', () => {
   it('does NOT fire on importing within the same game', async () => {
     // Must stay silent, or a game cannot import its own logic/.
     expect(await rulesFiredOn('games/_fixgame_a/same-game-ok.ts')).not.toContain(RULE);
+  });
+
+  // ── the shared package's tree — see the matching pair under 'game logic/ is pure' ──
+
+  it('fires on a sibling-game escape inside packages/game-logic', async () => {
+    expect(await rulesFiredOn('pkg:games/_fixgame_a/cross-relative-bad.ts')).toContain(RULE);
+  });
+
+  it('does NOT fire on a same-game import inside packages/game-logic', async () => {
+    expect(await rulesFiredOn('pkg:games/_fixgame_a/same-game-ok.ts')).not.toContain(RULE);
   });
 });
 

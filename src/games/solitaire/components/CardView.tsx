@@ -1,6 +1,6 @@
 import { cardBackSrc, cardSrc } from '@/system/cards/cards';
 import { cx } from '@/ui';
-import type { Card } from '@/games/solitaire/logic/solitaire';
+import type { Card } from '@boardwalk/game-logic/games/solitaire';
 
 /**
  * One card on the felt — the single place a logic `Card` becomes an image. It hands the card

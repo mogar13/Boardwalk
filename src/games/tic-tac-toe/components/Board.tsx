@@ -11,7 +11,7 @@ import {
   play,
   type Player,
   type TicTacToeState,
-} from '@/games/tic-tac-toe/logic/ticTacToe';
+} from '@boardwalk/game-logic/games/tic-tac-toe';
 
 /**
  * The board — the only part of Tic-Tac-Toe that is not the OS. It is a reader of `useRoom`,

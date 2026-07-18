@@ -1,5 +1,5 @@
 import { get, ref, update } from 'firebase/database';
-import { DEFAULT_AVATAR, STARTING_BANKROLL_CENTS } from '@/system/profile/defaults';
+import { DEFAULT_AVATAR, STARTING_BANKROLL_CENTS } from '@boardwalk/game-logic';
 import type {
   AchievementSet,
   DailyState,
@@ -8,8 +8,8 @@ import type {
   Inventory,
   Profile,
   Stats,
-} from '@/system/profile/types';
-import { totalPlayed, totalWins } from '@/system/progress/stats';
+} from '@boardwalk/game-logic';
+import { totalPlayed, totalWins } from '@boardwalk/game-logic';
 import { firebaseDb } from '@/system/repo/firebase/app';
 import type { ProfileRepo } from '@/system/repo/types';
 

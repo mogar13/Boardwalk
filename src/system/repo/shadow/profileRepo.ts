@@ -1,4 +1,4 @@
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 import { diffProfiles, type ProfileDiff } from '@/system/repo/shadow/diff';
 import type { ProfileRepo } from '@/system/repo/types';
 

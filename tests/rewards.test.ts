@@ -10,8 +10,8 @@ import {
   DAY_MS,
   dailyStatus,
   dayIndex,
-} from '@/system/rewards/daily';
-import type { DailyState } from '@/system/profile/types';
+} from '@boardwalk/game-logic';
+import type { DailyState } from '@boardwalk/game-logic';
 
 /** Noon on day `d`, so tests are never sitting exactly on a boundary by accident. */
 const at = (d: number) => d * DAY_MS + DAY_MS / 2;

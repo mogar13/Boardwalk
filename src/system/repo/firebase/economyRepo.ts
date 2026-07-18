@@ -1,4 +1,4 @@
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
 import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types';
 

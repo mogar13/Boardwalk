@@ -9,16 +9,18 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.test.json",
+    "build": "npm --prefix ../packages/game-logic run build && tsc -p tsconfig.json",
+    "typecheck": "npm --prefix ../packages/game-logic run build && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "backup": "node scripts/backup.mjs",
     "backfill": "node scripts/backfill.mjs",
     "restore:drill": "node scripts/restore-drill.mjs",
-    "lint": "eslint src tests"
+    "lint": "eslint src tests",
+    "pretest": "npm --prefix ../packages/game-logic run build"
   },
   "dependencies": {
+    "@boardwalk/game-logic": "file:../packages/game-logic",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",

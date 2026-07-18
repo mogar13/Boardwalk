@@ -1,6 +1,7 @@
 import type { IdentityMode } from '@/system/auth/credentials';
 import type { ChatMessage } from '@/system/chat/types';
-import type { Profile, Session } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
+import type { Session } from '@/system/auth/session';
 // Type-only, and type-only is why the cycle is fine: boards.ts imports the `LeaderboardEntry`
 // type from here, this imports the `BoardId` type from there, and both erase at compile — there
 // is no runtime import cycle, only a compile-time one the type checker resolves.

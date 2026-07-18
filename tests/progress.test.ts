@@ -5,9 +5,9 @@
  * "did it count right" and "does the badge fire at the boundary" are assertions here.
  */
 import { describe, expect, it } from 'vitest';
-import { satisfiedAchievements, type AchievementView } from '@/system/progress/achievements';
-import { bumpStats, EMPTY_STAT, statFor, totalPlayed, totalWins } from '@/system/progress/stats';
-import { xpThresholdForLevel } from '@/system/profile/xp';
+import { satisfiedAchievements, type AchievementView } from '@boardwalk/game-logic';
+import { bumpStats, EMPTY_STAT, statFor, totalPlayed, totalWins } from '@boardwalk/game-logic';
+import { xpThresholdForLevel } from '@boardwalk/game-logic';
 
 describe('bumpStats', () => {
   it('increments played plus exactly one outcome counter', () => {

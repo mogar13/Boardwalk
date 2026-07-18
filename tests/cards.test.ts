@@ -22,7 +22,7 @@ import {
   SUITS,
   type Card,
 } from '@/system/cards/cards';
-import { CATALOG } from '@/system/store/catalog';
+import { CATALOG } from '@boardwalk/game-logic';
 
 const STANDARD_DIR = fileURLToPath(new URL('../public/cards/standard/', import.meta.url));
 

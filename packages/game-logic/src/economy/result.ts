@@ -20,15 +20,15 @@
  * Pure, `now` injected: the only impurity an achievement unlock needs is the timestamp, and a
  * parameter keeps this testable to the millisecond instead of racing `Date.now()`.
  */
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '../profile/types';
 import {
   achievementById,
   recordedFeats,
   satisfiedAchievements,
   type Achievement,
   type AchievementView,
-} from '@/system/progress/achievements';
-import { bumpStats, totalPlayed, totalWins, type Outcome } from '@/system/progress/stats';
+} from '../progress/achievements';
+import { bumpStats, totalPlayed, totalWins, type Outcome } from '../progress/stats';
 
 export type { Outcome };
 

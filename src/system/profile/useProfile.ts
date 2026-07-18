@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/system/auth/authStore';
-import type { Profile } from '@/system/profile/types';
+import type { Profile } from '@boardwalk/game-logic';
 
 /**
  * Re-exported, not redefined. `formatMoney` moved to the pure `@/system/profile/money` so
@@ -7,7 +7,7 @@ import type { Profile } from '@/system/profile/types';
  * the components that already say `import { formatMoney } from '@/system/profile/useProfile'`
  * keep working, because there is still exactly one definition and this is a pointer to it.
  */
-export { formatMoney, formatDollars } from '@/system/profile/money';
+export { formatMoney, formatDollars } from '@boardwalk/game-logic';
 
 /**
  * The player, or `null` if nobody is signed in.
