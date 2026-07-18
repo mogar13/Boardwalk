@@ -71,6 +71,13 @@ jobs:
       # If any of these is unset, vite.config.ts FAILS THE BUILD by name rather than
       # deploying a site whose only feature is a panel saying it has no database. A red
       # deploy here means: set the secrets in Settings → Secrets and variables → Actions.
+      #
+      # VITE_API_BASE_URL is the ONE exception to "unset fails the build" — it is OPTIONAL
+      # (BACKEND_PLAN.md Phase A shadow mode). An unset secret expands to empty here, and the
+      # composition root reads that as "shadow off", so the deployed site runs pure-Firebase
+      # exactly as before. Set it (= the boardwalk-api Funnel URL) to turn shadow mirroring on
+      # in prod; it is not a secret any more than the Firebase config is (it ships in the
+      # bundle), but it rides the same injection path for one-home consistency.
       - name: Build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -78,6 +85,7 @@ jobs:
           VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build
 
       - uses: actions/configure-pages@v5
