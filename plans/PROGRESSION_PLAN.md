@@ -435,12 +435,15 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   plays `unlock.ogg`, both stingers confirmed loadable-and-playable, **zero console errors, zero
   failed requests, no dead scroll**.
 
-  ⚠️ **TWO manual deploys, and they go BEFORE the frontend merge.** `npm run rules:deploy`
-  (`equipped` now pins four keys — until it runs, prod refuses every profile write carrying a felt
-  or frame, the P1/P2 failure again), and the Pi (`equipped_felt`/`equipped_frame`; the columns land
-  via `COLUMN_MIGRATIONS` on restart, but the code must be rsync'd by hand). The frontend
-  auto-deploys on push, and Phase D already paid ten minutes of broken prod blackjack for the other
-  order.
+  ⚠️ **Deploys: rules DONE, Pi OWED.** ✅ The rules were deployed 2026-07-18 and **read back from
+  the live database** (`GET /.settings/rules.json` shows `equipped` pinning cardback/title/felt/frame
+  with `$other: false`) — the read-back is the evidence, not the CLI's `Deploy complete!`. Worth
+  recording why: the first attempt ran in the PRIMARY checkout, which sits on `main` and does not
+  carry this branch, so Firebase released the old four-key-less file and reported success in
+  identical green. ❌ The Pi still needs `equipped_felt`/`equipped_frame` — columns land via
+  `COLUMN_MIGRATIONS` on restart, code must be rsync'd by hand — and it goes **before** the frontend
+  merge, because the frontend auto-deploys on push and Phase D already paid ten minutes of broken
+  prod blackjack for the other order.
 
 P1 first because it's the cleanest win and the owner asked for it most concretely. Packs (P4) are
 gated behind rarity (P2) existing.
