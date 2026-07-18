@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { BoardId } from '@/system/progress/boards';
 import { repos } from '@/system/repo';
 import type { LeaderboardEntry } from '@/system/repo';
 
@@ -21,7 +22,7 @@ export interface LeaderboardState {
   readonly error: boolean;
 }
 
-export function useLeaderboard(limit = 25): LeaderboardState {
+export function useLeaderboard(board: BoardId = 'wins', limit = 25): LeaderboardState {
   const [state, setState] = useState<LeaderboardState>({
     loading: true,
     entries: [],
@@ -31,11 +32,13 @@ export function useLeaderboard(limit = 25): LeaderboardState {
   useEffect(() => {
     // No synchronous setState here — the state already starts `loading`, and resetting it in the
     // effect body is the cascading-render the react-hooks lint rightly flags. The two async
-    // callbacks below settle it. `limit` is effectively constant (the page passes 25), so there is
-    // no stale-entries-during-reload case to reset for; if a caller ever varies it, a keyed remount
-    // is the honest fix, not a sync setState.
+    // callbacks below settle it. `board` DOES vary (the page's tabs), so `alive` also guards
+    // against an out-of-order settle: switch tabs fast and an earlier board's read must not land
+    // over a later one — the cleanup flips `alive` before the next effect runs, so a stale
+    // response is dropped. That leaves the previous board's rows on screen for a blink during the
+    // switch, which reads as "loading the new board", not a flash of empty.
     let alive = true;
-    repos.leaderboard.top(limit).then(
+    repos.leaderboard.top(limit, board).then(
       (entries) => {
         if (alive) setState({ loading: false, entries, error: false });
       },
@@ -46,7 +49,7 @@ export function useLeaderboard(limit = 25): LeaderboardState {
     return () => {
       alive = false;
     };
-  }, [limit]);
+  }, [board, limit]);
 
   return state;
 }

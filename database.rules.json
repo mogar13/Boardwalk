@@ -167,9 +167,14 @@
         // Phase 4's projected field, added HERE with its writer — the `wins` the Phase 2
         // comment promised would land in the same commit as the stat it ranks. It is a
         // DERIVED sum (totalWins over the private per-game stats), projected as one number so
-        // the board can rank without reading `users/`. A sixth field beyond this set is still
-        // refused by `$other` below — the projection grew by exactly one, on purpose.
+        // the board can rank without reading `users/`.
         "wins": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        // The Win Rate board's denominator — totalPlayed over the private stats, another derived
+        // sum. Projected alongside `wins` so a rate (wins/played) can be computed on read without
+        // reaching into `users/`; the rate itself is NOT stored (derive, don't duplicate). Games
+        // played is no more sensitive than wins, which is already public here. `$other: false`
+        // below still refuses a seventh field — the projection grew by exactly one, on purpose.
+        "played": { ".validate": "newData.isNumber() && newData.val() >= 0" },
         // No `level` here either — it is derived, not projected. See users/$uid/profile.
         "$other": { ".validate": false }
       }

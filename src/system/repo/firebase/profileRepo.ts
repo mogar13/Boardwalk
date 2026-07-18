@@ -8,7 +8,7 @@ import type {
   Profile,
   Stats,
 } from '@/system/profile/types';
-import { totalWins } from '@/system/progress/stats';
+import { totalPlayed, totalWins } from '@/system/progress/stats';
 import { firebaseDb } from '@/system/repo/firebase/app';
 import type { ProfileRepo } from '@/system/repo/types';
 
@@ -151,10 +151,13 @@ function readProfile(wire: ProfileWire): Profile {
  * the private record — which is exactly why Phase 4 adds `wins` by NAME here and by a
  * matching `.validate` in the rules, not by widening a spread.
  *
- * `wins` is `totalWins(p.stats)` — a DERIVED sum, never a stored counter. The full `stats`
- * object stays private (it is the whole per-game record); only the one number the leaderboard
- * ranks by is projected. Computing it here rather than storing it is the same call as deriving
- * `level` from `xp`: one source of truth, so the ranking cannot drift from the record.
+ * `wins` and `played` are `totalWins`/`totalPlayed(p.stats)` — DERIVED sums, never stored counters.
+ * The full `stats` object stays private (it is the whole per-game record); only the two numbers the
+ * boards rank by are projected. `played` joins `wins` so the Win Rate board has both halves of the
+ * ratio public — the rate itself is derived on read, not projected, the same one-source-of-truth
+ * call as deriving `level` from `xp`. Each new projected field is also a new `.validate` line in
+ * database.rules.json's `leaderboard` node (its `$other: false` refuses an unlisted one), added in
+ * this same commit.
  */
 const publicProjection = (p: Profile) => ({
   name: p.name,
@@ -162,6 +165,7 @@ const publicProjection = (p: Profile) => ({
   bankrollCents: p.bankrollCents,
   xp: p.xp,
   wins: totalWins(p.stats),
+  played: totalPlayed(p.stats),
 });
 
 /**
