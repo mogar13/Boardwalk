@@ -22,7 +22,8 @@ import type { GameManifest } from '@/games/registry';
 export const solitaireManifest = {
   id: 'solitaire',
   name: 'Solitaire',
-  blurb: 'Klondike. Build the four suits from Ace to King. Just you, the shuffle, and one more deal.',
+  blurb:
+    'Klondike. Build the four suits from Ace to King. Just you, the shuffle, and one more deal.',
   icon: 'solitaire.png',
   pier: 'arcade',
   seats: { min: 1, max: 1 },

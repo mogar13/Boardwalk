@@ -1,5 +1,4 @@
 import { Button, Card, cx } from '@/ui';
-import { cardBackSrc } from '@/system/cards/cards';
 import { formatDollars } from '@/system/profile/money';
 import type { Profile } from '@/system/profile/types';
 import { useProfile } from '@/system/profile/useProfile';
@@ -10,8 +9,10 @@ import {
   isOwned,
   type Cosmetic,
   type CosmeticKind,
-  type Rarity,
 } from '@/system/store/catalog';
+import { CosmeticPreview } from '@/system/store/CosmeticPreview';
+import { PackShelf } from '@/system/store/PackShelf';
+import { RARITY_TEXT } from '@/system/store/rarity';
 import { useStore } from '@/system/store/useStore';
 
 /**
@@ -30,48 +31,21 @@ import { useStore } from '@/system/store/useStore';
  * until you touch it, and the one you are wearing is cyan (= here).
  */
 
-/** Rarity → its flat label colour token. Literal strings so Tailwind's scan generates each class. */
-const RARITY_TEXT: Record<Rarity, string> = {
-  common: 'text-rarity-common',
-  rare: 'text-rarity-rare',
-  epic: 'text-rarity-epic',
-  legendary: 'text-rarity-legendary',
-};
-
 /** The three kinds, in the order the store stacks them, with the section copy for each. */
 const SECTIONS: readonly { kind: CosmeticKind; title: string; blurb: string }[] = [
-  { kind: 'cardback', title: 'Card Backs', blurb: 'The face-down art on every table you deal — Blackjack and Solitaire draw the one you equip.' },
+  {
+    kind: 'cardback',
+    title: 'Card Backs',
+    blurb:
+      'The face-down art on every table you deal — Blackjack and Solitaire draw the one you equip.',
+  },
   { kind: 'avatar', title: 'Avatars', blurb: 'Your face in the top bar and on your profile.' },
-  { kind: 'title', title: 'Titles', blurb: 'A flex under your name. The best ones are earned, not bought.' },
+  {
+    kind: 'title',
+    title: 'Titles',
+    blurb: 'A flex under your name. The best ones are earned, not bought.',
+  },
 ];
-
-/** The thing itself — an emoji, the card-back art, or the title text set in the display face. */
-function Preview({ item }: { item: Cosmetic }) {
-  if (item.kind === 'avatar') {
-    return (
-      <span className="text-5xl" aria-hidden>
-        {item.emoji}
-      </span>
-    );
-  }
-  if (item.kind === 'cardback') {
-    return (
-      <img
-        src={cardBackSrc(item.id)}
-        alt={`${item.name} card back`}
-        width={140}
-        height={190}
-        className="border-bw-line h-24 w-16 rounded-md border object-contain shadow-md"
-      />
-    );
-  }
-  // title
-  return (
-    <span className="font-display text-base-content flex h-24 items-center text-lg font-bold tracking-[0.12em] uppercase">
-      {item.name}
-    </span>
-  );
-}
 
 function CosmeticCard({
   item,
@@ -92,7 +66,7 @@ function CosmeticCard({
   return (
     <Card className="flex flex-col items-center gap-3 p-5 text-center">
       <div className="flex min-h-24 items-center justify-center">
-        <Preview item={item} />
+        <CosmeticPreview item={item} />
       </div>
 
       <div className="flex flex-col items-center gap-0.5">
@@ -161,9 +135,12 @@ export function Store() {
         </h1>
         <p className="text-bw-muted max-w-2xl text-sm">
           Spend your bankroll on flair — card backs your games actually deal, avatars, and titles.
-          The rarest titles you cannot buy: you earn them.
+          Buy exactly what you want, or gamble on a pack. The rarest titles you cannot buy: you earn
+          them.
         </p>
       </header>
+
+      <PackShelf profile={profile} />
 
       {SECTIONS.map((section) => {
         const items = cosmeticsOfKind(section.kind);

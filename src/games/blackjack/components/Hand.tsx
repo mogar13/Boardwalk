@@ -31,7 +31,9 @@ export function Hand({
         {label}
       </span>
       <div className="flex min-h-[7.5rem] items-end">
-        {cards.length === 0 && <div className="border-bw-line h-28 w-20 rounded-lg border border-dashed" />}
+        {cards.length === 0 && (
+          <div className="border-bw-line h-28 w-20 rounded-lg border border-dashed" />
+        )}
         {cards.map((card, i) => {
           const faceDown = i === hideIndex;
           return (

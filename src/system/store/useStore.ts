@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { formatDollars } from '@/system/profile/money';
 import { applyEquip, applyPurchase, canBuy, isOwned, type Cosmetic } from '@/system/store/catalog';
+import { canOpen, openPack, type Pack, type PackPull } from '@/system/store/packs';
 import { useConfirm, useToast } from '@/ui';
 
 /**
@@ -17,6 +18,15 @@ export interface StoreApi {
   readonly buy: (item: Cosmetic) => void;
   /** Wear an owned cosmetic. A no-op on something not owned — the button is only shown for owned items. */
   readonly equip: (item: Cosmetic) => void;
+  /**
+   * Confirm, then open a pack — spends the price, grants the pull (or credits dust on a duplicate).
+   *
+   * UNLIKE `buy`, THIS ONE RESOLVES WITH ITS RESULT, and the asymmetry is deliberate: a purchase's
+   * outcome is known before you click, so a toast is the whole feedback; a pack's outcome IS the
+   * product, and the caller has to render the reveal. Resolves `null` when nothing happened —
+   * cancelled, refused, or the write failed — so the reveal simply does not open.
+   */
+  readonly open: (pack: Pack) => Promise<PackPull | null>;
 }
 
 export function useStore(): StoreApi {
@@ -92,5 +102,50 @@ export function useStore(): StoreApi {
     [mutateProfile, toast]
   );
 
-  return { buy, equip };
+  const open = useCallback(
+    async (pack: Pack): Promise<PackPull | null> => {
+      const before = useAuthStore.getState().profile;
+      if (before === null) return null;
+
+      const check = canOpen(before, pack);
+      if (!check.ok) {
+        toast.warning(check.error);
+        return null;
+      }
+
+      const ok = await confirm({
+        title: `Open the ${pack.name}?`,
+        body: `Spend ${formatDollars(pack.priceCents)} on one random cosmetic. Duplicates refund dust.`,
+        confirmLabel: `Spend ${formatDollars(pack.priceCents)}`,
+      });
+      if (!ok) return null;
+
+      // Re-read and re-check AFTER the confirm — same reason as `buy`: the bankroll can move while
+      // the dialog is open, and a pack opened against a stale balance is an overdraft.
+      const fresh = useAuthStore.getState().profile;
+      if (fresh === null) return null;
+      const recheck = canOpen(fresh, pack);
+      if (!recheck.ok) {
+        toast.warning(recheck.error);
+        return null;
+      }
+
+      // The seed is minted HERE, not inside `openPack` — the roll stays pure and testable, and the
+      // impurity sits in the hook where every other impurity in this file already lives.
+      const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+      const { profile: after, pull } = openPack(fresh, pack, seed);
+      if (pull === null) return null;
+
+      try {
+        await mutateProfile(after);
+        return pull;
+      } catch {
+        toast.error('Could not open that pack — try again.');
+        return null;
+      }
+    },
+    [confirm, mutateProfile, toast]
+  );
+
+  return { buy, equip, open };
 }

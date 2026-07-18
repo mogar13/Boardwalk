@@ -86,7 +86,7 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     [gameId, roomId]
   );
   const writeHand = useCallback(
-    <TPrivate,>(index: number, data: TPrivate) =>
+    <TPrivate>(index: number, data: TPrivate) =>
       repos.room.writePrivate<TPrivate>(gameId, roomId, index, data),
     [gameId, roomId]
   );

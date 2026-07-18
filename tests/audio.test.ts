@@ -24,9 +24,10 @@ describe('the sound registry', () => {
 
   it('resolves every declared file to one that exists on disk', () => {
     const missing = allSoundFiles().filter((file) => !existsSync(AUDIO_DIR + file));
-    expect(missing, `these registry sounds are not staged in public/audio/: ${missing.join(', ')}`).toEqual(
-      []
-    );
+    expect(
+      missing,
+      `these registry sounds are not staged in public/audio/: ${missing.join(', ')}`
+    ).toEqual([]);
   });
 
   it('lists no file twice within a single role (a variation pool should be distinct takes)', () => {
