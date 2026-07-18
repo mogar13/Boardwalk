@@ -14,11 +14,9 @@ import type { LeaderboardEntry, LeaderboardRepo } from '@/system/repo/types';
 export function httpLeaderboardRepo(cfg: ApiClientConfig): LeaderboardRepo {
   return {
     async top(limit: number, board = 'wins'): Promise<readonly LeaderboardEntry[]> {
-      const res = await apiFetch(
-        cfg,
-        `/leaderboard?limit=${String(limit)}&board=${board}`,
-        { method: 'GET' }
-      );
+      const res = await apiFetch(cfg, `/leaderboard?limit=${String(limit)}&board=${board}`, {
+        method: 'GET',
+      });
       if (!res.ok) throw new Error(`leaderboard load failed: ${String(res.status)}`);
       const body = (await res.json()) as { entries: LeaderboardEntry[] };
       return body.entries;

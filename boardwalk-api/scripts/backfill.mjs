@@ -55,7 +55,8 @@ const main = async () => {
 
   const { openDb } = await load('db/db');
   const { backfillAll, summarizeBackfill } = await load('domain/backfill');
-  const { readFirebaseProfiles, reconcile, summarizeReconcile } = await load('backfill/source');
+  const { readFirebaseProfiles, reconcile, summarizeReconcile, closeFirebase } =
+    await load('backfill/source');
 
   console.log(`reading users/ from ${databaseURL} ...`);
   const timeoutMs = Number.parseInt(process.env.BACKFILL_TIMEOUT_MS ?? '', 10);
@@ -65,6 +66,10 @@ const main = async () => {
     ...(Number.isFinite(timeoutMs) ? { timeoutMs } : {}),
   });
   console.log(`read ${source.length} user node(s)`);
+
+  // Release the RTDB socket as soon as the read is done. Without it the Admin SDK keeps the event
+  // loop alive and this script hangs AFTER succeeding — see closeFirebase.
+  await closeFirebase();
 
   const db = openDb(dbPath);
 

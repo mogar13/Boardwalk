@@ -143,7 +143,10 @@ describe('applyMove — totality & immutability', () => {
 describe('applyMove — a plain play and a draw', () => {
   it('plays a number: new top, new colour, turn advances one', () => {
     const g = game(
-      [[c('red', 'number', 3), c('red', 'number', 6), c('red', 'number', 7)], [c('blue', 'number', 4)]],
+      [
+        [c('red', 'number', 3), c('red', 'number', 6), c('red', 'number', 7)],
+        [c('blue', 'number', 4)],
+      ],
       c('blue', 'number', 3)
     );
     const next = applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id });
@@ -208,7 +211,11 @@ describe('applyMove — action cards', () => {
       [[c('wild', 'wild4'), ...spares()], [c('blue', 'number', 1)], [c('green', 'number', 2)]],
       c('red', 'number', 9)
     );
-    const next = applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id, chosenColor: 'green' });
+    const next = applyMove(g, 0, {
+      type: 'play',
+      cardId: g.hands[0]![0]!.id,
+      chosenColor: 'green',
+    });
     expect(next.color).toBe('green');
     expect(next.hands[1]).toHaveLength(5); // 1 + 4
     expect(next.turn).toBe(2);
@@ -227,14 +234,20 @@ describe('applyMove — action cards', () => {
 
 describe('applyMove — the UNO call and the win', () => {
   it('declaring UNO as you go to one card avoids the penalty', () => {
-    const g = game([[c('red', 'number', 3), c('red', 'number', 6)], [c('blue', 'number', 1)]], c('red', 'number', 9));
+    const g = game(
+      [[c('red', 'number', 3), c('red', 'number', 6)], [c('blue', 'number', 1)]],
+      c('red', 'number', 9)
+    );
     const next = applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id, declareUno: true });
     expect(next.hands[0]).toHaveLength(1);
     expect(next.calledUno[0]).toBe(true);
   });
 
   it('going to one card WITHOUT declaring draws the +2 penalty', () => {
-    const g = game([[c('red', 'number', 3), c('red', 'number', 6)], [c('blue', 'number', 1)]], c('red', 'number', 9));
+    const g = game(
+      [[c('red', 'number', 3), c('red', 'number', 6)], [c('blue', 'number', 1)]],
+      c('red', 'number', 9)
+    );
     const next = applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id });
     expect(next.hands[0]).toHaveLength(3); // 1 left + 2 penalty
     expect(next.calledUno[0]).toBe(false);
@@ -264,7 +277,10 @@ describe('reshuffle on an empty deck', () => {
 
 describe('chooseAiMove', () => {
   it('plays a legal card, preferring a non-wild, and declares UNO when it empties to one', () => {
-    const g = game([[c('red', 'number', 3), c('wild', 'wild')], [c('blue', 'number', 1)]], c('red', 'number', 9));
+    const g = game(
+      [[c('red', 'number', 3), c('wild', 'wild')], [c('blue', 'number', 1)]],
+      c('red', 'number', 9)
+    );
     const move = chooseAiMove(g, 0);
     expect(move.type).toBe('play');
     if (move.type === 'play') {
@@ -279,7 +295,12 @@ describe('chooseAiMove', () => {
   });
 
   it('chooses the most-held colour for a wild', () => {
-    const hand = [c('wild', 'wild'), c('green', 'number', 1), c('green', 'number', 2), c('red', 'number', 3)];
+    const hand = [
+      c('wild', 'wild'),
+      c('green', 'number', 1),
+      c('green', 'number', 2),
+      c('red', 'number', 3),
+    ];
     const g = game([hand, [c('blue', 'number', 1)]], c('yellow', 'number', 9));
     const move = chooseAiMove(g, 0);
     if (move.type === 'play') expect(move.chosenColor).toBe('green');

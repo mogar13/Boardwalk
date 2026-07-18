@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Profile } from '@boardwalk/game-logic';
 import { diffProfiles } from '@/system/repo/shadow/diff';
-import {
-  mirrorProfile,
-  shadowProfileRepo,
-  type ShadowLog,
-} from '@/system/repo/shadow/profileRepo';
+import { mirrorProfile, shadowProfileRepo, type ShadowLog } from '@/system/repo/shadow/profileRepo';
 import type { ProfileRepo } from '@/system/repo/types';
 
 /**
@@ -66,7 +62,10 @@ describe('diffProfiles', () => {
   });
 
   it('diffs the daily clock', () => {
-    const diffs = diffProfiles(baseProfile(), baseProfile({ daily: { lastClaimDay: 19500, streak: 2 } }));
+    const diffs = diffProfiles(
+      baseProfile(),
+      baseProfile({ daily: { lastClaimDay: 19500, streak: 2 } })
+    );
     expect(diffs).toEqual([{ path: 'daily.streak', expected: 3, actual: 2 }]);
   });
 });
@@ -135,7 +134,11 @@ describe('shadowProfileRepo', () => {
   it('reads through the primary alone (no shadow read)', async () => {
     const primary = memoryRepo();
     const mirrorLoad = vi.fn(() => Promise.resolve(null));
-    const mirror: ProfileRepo = { load: mirrorLoad, create: () => Promise.resolve(), save: () => Promise.resolve() };
+    const mirror: ProfileRepo = {
+      load: mirrorLoad,
+      create: () => Promise.resolve(),
+      save: () => Promise.resolve(),
+    };
     await primary.create('u1', baseProfile());
 
     const repo = shadowProfileRepo(primary, mirror, silentLog);

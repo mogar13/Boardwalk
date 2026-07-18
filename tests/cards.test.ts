@@ -82,7 +82,9 @@ describe('the store card-back cosmetics', () => {
     const backs = CATALOG.filter((c) => c.kind === 'cardback');
     expect(backs.length).toBeGreaterThan(0);
     const unresolved = backs
-      .filter((c) => !(c.id in CARD_BACKS) || !existsSync(STANDARD_DIR + basename(cardBackSrc(c.id))))
+      .filter(
+        (c) => !(c.id in CARD_BACKS) || !existsSync(STANDARD_DIR + basename(cardBackSrc(c.id)))
+      )
       .map((c) => c.id);
     expect(unresolved, `cardback cosmetics with no art: ${unresolved.join(', ')}`).toEqual([]);
   });

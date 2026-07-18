@@ -156,9 +156,7 @@ export function Board({
                       backId={backId}
                       selected={isSelected(to, cardIndex)}
                       onClick={() => clickCard(to, cardIndex, card)}
-                      onDoubleClick={
-                        cardIndex === col.length - 1 ? () => autoCard(to) : undefined
-                      }
+                      onDoubleClick={cardIndex === col.length - 1 ? () => autoCard(to) : undefined}
                     />
                   </div>
                 ))

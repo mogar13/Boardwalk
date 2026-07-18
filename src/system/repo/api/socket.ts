@@ -76,8 +76,7 @@ const roomKey = (gameId: string, roomId: string): string => `${gameId}/${roomId}
 const privKey = (gameId: string, roomId: string, index: number): string =>
   `${gameId}/${roomId}/${String(index)}`;
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
 /** Turn the API base URL into the `/rooms` WS endpoint: http→ws, https→wss, path replaced. */
 function toWsUrl(baseUrl: string): string {
@@ -276,7 +275,12 @@ export class RoomSocket {
   private raw(msg: object): void {
     const data = JSON.stringify(msg);
     const ws = this.ws;
-    if (this.phase === 'ready' && ws !== null && ws.readyState === ws.OPEN && ws.bufferedAmount < BUFFER_HIGH_WATER) {
+    if (
+      this.phase === 'ready' &&
+      ws !== null &&
+      ws.readyState === ws.OPEN &&
+      ws.bufferedAmount < BUFFER_HIGH_WATER
+    ) {
       ws.send(data);
       return;
     }

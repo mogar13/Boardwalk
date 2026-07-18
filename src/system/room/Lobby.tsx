@@ -193,8 +193,7 @@ function LobbyRoom({
   // may be one human plus six CPUs, which is a legitimate game the old gate wrongly refused. So the
   // real requirement is a full table (players = `max` ≥ `min`) with a human driver in it — UNO is
   // the design input that surfaced this, the AI-as-occupant sibling of Chess's `allowAi`.
-  const canStart =
-    isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= 1;
+  const canStart = isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= 1;
 
   return (
     <div className="flex flex-col gap-6">

@@ -5,7 +5,13 @@ import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
-import { canPlay, submitMove, type Card as UnoCard, type UnoColor, type UnoState } from '@boardwalk/game-logic/games/uno';
+import {
+  canPlay,
+  submitMove,
+  type Card as UnoCard,
+  type UnoColor,
+  type UnoState,
+} from '@boardwalk/game-logic/games/uno';
 import { unoBackSrc, unoCardSrc } from '@/games/uno/art';
 import { useUnoHost } from '@/games/uno/components/useUnoHost';
 
@@ -124,7 +130,11 @@ export function Board() {
   const others = seats
     .map((seat, index) => ({ seat, index }))
     .filter((o) => o.index !== mySeatIndex)
-    .sort((a, b) => turnDistance(mySeatIndex, a.index, seats.length) - turnDistance(mySeatIndex, b.index, seats.length));
+    .sort(
+      (a, b) =>
+        turnDistance(mySeatIndex, a.index, seats.length) -
+        turnDistance(mySeatIndex, b.index, seats.length)
+    );
 
   return (
     <Card className="flex flex-col items-center gap-5 p-6">
@@ -145,7 +155,9 @@ export function Board() {
                 active ? 'border-secondary bg-base-300' : 'border-bw-line bg-base-200'
               )}
             >
-              <span className="max-w-28 truncate text-xs font-semibold">{seat.name || `Player ${String(index + 1)}`}</span>
+              <span className="max-w-28 truncate text-xs font-semibold">
+                {seat.name || `Player ${String(index + 1)}`}
+              </span>
               <div className="flex h-8 items-center">
                 {Array.from({ length: Math.min(count, 7) }).map((_, k) => (
                   <img
@@ -186,11 +198,25 @@ export function Board() {
         </button>
 
         <div className="flex flex-col items-center gap-2">
-          <img src={unoCardSrc(state.top)} alt="Top of the pile" className="h-28 w-auto rounded-lg" />
+          <img
+            src={unoCardSrc(state.top)}
+            alt="Top of the pile"
+            className="h-28 w-auto rounded-lg"
+          />
           <div className="flex items-center gap-1.5">
-            <span className={cx('inline-block h-3 w-3 rounded-full ring-1 ring-inset', SWATCH[state.color], RING[state.color])} />
-            <span className="text-bw-muted text-[0.65rem] uppercase tracking-wide">{state.color}</span>
-            <span className="text-bw-muted ml-1 text-[0.65rem]">{state.direction === 1 ? '↻' : '↺'}</span>
+            <span
+              className={cx(
+                'inline-block h-3 w-3 rounded-full ring-1 ring-inset',
+                SWATCH[state.color],
+                RING[state.color]
+              )}
+            />
+            <span className="text-bw-muted text-[0.65rem] uppercase tracking-wide">
+              {state.color}
+            </span>
+            <span className="text-bw-muted ml-1 text-[0.65rem]">
+              {state.direction === 1 ? '↻' : '↺'}
+            </span>
           </div>
         </div>
       </div>
@@ -208,7 +234,11 @@ export function Board() {
                   chooseColor(color);
                 }}
                 aria-label={color}
-                className={cx('h-9 w-9 rounded-full ring-2 ring-inset transition hover:scale-110', SWATCH[color], RING[color])}
+                className={cx(
+                  'h-9 w-9 rounded-full ring-2 ring-inset transition hover:scale-110',
+                  SWATCH[color],
+                  RING[color]
+                )}
               />
             ))}
           </div>
@@ -239,11 +269,19 @@ export function Board() {
                 </button>
               );
             })}
-            {myHand.length === 0 && !finished && <span className="text-bw-muted text-sm">No cards.</span>}
+            {myHand.length === 0 && !finished && (
+              <span className="text-bw-muted text-sm">No cards.</span>
+            )}
           </div>
 
           {myHand.length === 2 && myTurn && (
-            <Button variant={unoArmed ? 'primary' : 'ghost'} size="sm" onClick={() => { setUnoArmed((v) => !v); }}>
+            <Button
+              variant={unoArmed ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => {
+                setUnoArmed((v) => !v);
+              }}
+            >
               {unoArmed ? 'UNO armed ✓' : 'Call UNO!'}
             </Button>
           )}
@@ -255,7 +293,9 @@ export function Board() {
           Deal again
         </Button>
       )}
-      {finished && !isHost && <p className="text-bw-muted text-sm">Waiting for the host to deal again…</p>}
+      {finished && !isHost && (
+        <p className="text-bw-muted text-sm">Waiting for the host to deal again…</p>
+      )}
     </Card>
   );
 }
@@ -263,7 +303,7 @@ export function Board() {
 /** Steps from `me` to `seat` going in the (initial, clockwise) direction — for ordering opponents. */
 function turnDistance(me: number, seat: number, n: number): number {
   if (me < 0) return seat;
-  return ((seat - me) % n + n) % n;
+  return (((seat - me) % n) + n) % n;
 }
 
 /** The one line above the table: the result if the game is over, else whose turn it is. */

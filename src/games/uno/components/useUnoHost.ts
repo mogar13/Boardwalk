@@ -53,7 +53,14 @@ export interface UnoHostApi {
   readonly dealAgain: () => void;
 }
 
-export function useUnoHost({ isHost, status, state, seats, patch, writeHand }: UnoHostArgs): UnoHostApi {
+export function useUnoHost({
+  isHost,
+  status,
+  state,
+  seats,
+  patch,
+  writeHand,
+}: UnoHostArgs): UnoHostApi {
   const gameRef = useRef<UnoGame | null>(null);
   const lastGameRef = useRef<UnoGame | null>(null); // for writing only the hands that changed
   const roundRef = useRef(0);
@@ -71,7 +78,9 @@ export function useUnoHost({ isHost, status, state, seats, patch, writeHand }: U
       lastGameRef.current = game;
       const round = roundRef.current;
       const ack = reset ? 0 : ackRef.current;
-      void patch((prev) => toPublic(game, round, reset || prev === null ? NO_PENDING : prev.pending, ack));
+      void patch((prev) =>
+        toPublic(game, round, reset || prev === null ? NO_PENDING : prev.pending, ack)
+      );
     },
     [seats, writeHand, patch]
   );
@@ -105,7 +114,8 @@ export function useUnoHost({ isHost, status, state, seats, patch, writeHand }: U
     if (seats[turn]?.kind !== 'ai') return;
     const timer = setTimeout(() => {
       const cur = gameRef.current;
-      if (cur === null || cur.winner !== -1 || cur.turn !== turn || seats[turn]?.kind !== 'ai') return;
+      if (cur === null || cur.winner !== -1 || cur.turn !== turn || seats[turn]?.kind !== 'ai')
+        return;
       const next = applyMove(cur, turn, chooseAiMove(cur, turn), Math.random);
       gameRef.current = next;
       publish(next);

@@ -6,6 +6,7 @@ import { RoomGateway } from '../src/rooms/gateway';
 import { RoomStore } from '../src/rooms/store';
 import type { TokenVerifier } from '../src/auth/verify';
 import type { ClientMsg, ServerMsg } from '../src/rooms/protocol';
+import { decodeFrame } from '../src/rooms/protocol';
 
 /**
  * The gateway end-to-end over a REAL socket, the half `rooms.test.ts` (the pure store) cannot
@@ -41,7 +42,7 @@ class Client {
   private constructor(ws: WebSocket) {
     this.ws = ws;
     ws.on('message', (raw: WebSocket.RawData) => {
-      const msg = JSON.parse(raw.toString()) as ServerMsg;
+      const msg = JSON.parse(decodeFrame(raw)) as ServerMsg;
       if (msg.t === 'res') {
         this.waiters.get(msg.id)?.(msg);
         this.waiters.delete(msg.id);
@@ -130,7 +131,7 @@ describe('RoomGateway — over a real socket', () => {
     await new Promise<void>((resolve) => ws.once('open', () => resolve()));
     ws.send(JSON.stringify({ t: 'hello', token: 'bad-token' }));
     const msg = await new Promise<ServerMsg>((resolve) =>
-      ws.once('message', (raw: WebSocket.RawData) => resolve(JSON.parse(raw.toString()) as ServerMsg))
+      ws.once('message', (raw: WebSocket.RawData) => resolve(JSON.parse(decodeFrame(raw)) as ServerMsg))
     );
     expect(msg).toEqual({ t: 'denied', error: 'invalid token' });
   });

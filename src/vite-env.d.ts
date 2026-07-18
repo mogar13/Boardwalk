@@ -44,6 +44,17 @@ interface ImportMetaEnv {
    */
   readonly VITE_API_BLACKJACK?: string;
   /**
+   * PHASE B CUTOVER (BACKEND_PLAN.md): SQLite is the source of truth for the profile, the economy
+   * and the stats wherever `VITE_API_BASE_URL` is set. Like `VITE_WS_ROOMS`, this is the KILL
+   * SWITCH and not the enable: `'0'` forces the economy back to the Phase-A arrangement (Firebase
+   * authoritative, the API a shadow mirror) with a rebuild and no code change.
+   *
+   * It was UNDECLARED here and UNWIRED in `.github/workflows/deploy.yml` until 2026-07-18 — Vite
+   * only embeds a `VITE_*` var present in the build environment, so setting the secret did nothing
+   * and the deploy went green while doing it. `tests/deploy-env.test.ts` now guards the wiring.
+   */
+  readonly VITE_API_ECONOMY?: string;
+  /**
    * DEV-ONLY opt-in: `'1'` points the app at the local Firebase emulators (see
    * `@/system/repo/firebase/app`). Gated by `import.meta.env.DEV` there, so it is inert in a
    * production build. This is how the Phase 5 lobby harness drives a real room flow locally.

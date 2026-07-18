@@ -11,9 +11,25 @@ import { buildApp } from '../src/app';
 import type { ApiConfig } from '../src/config';
 import type { TokenVerifier } from '../src/auth/verify';
 import { openDb, type Db } from '../src/db/db';
+import type { Profile } from '../src/domain/types';
 import { dealHand, playMove, viewOf, type HandView } from '../src/domain/blackjack';
 import { STARTING_BANKROLL_CENTS } from '../src/domain/economy';
 import { balanceOf, loadProfile, upsertProfile } from '../src/domain/profile';
+
+/**
+ * supertest types `res.body` as `any`, so every route assertion below was untyped — the checker
+ * saw nothing, and a misspelled `hand.handID` would have compared `undefined` and failed for a
+ * reason with nothing to do with the dealer. Narrow ONCE, here, and a typo is a compile error
+ * again. Same shape as `bodyOf`/`profileOf` in api.test.ts; the API's own eslint config (which
+ * did not exist when this file was written) is what surfaced it.
+ */
+interface TurnBody {
+  readonly profile: Profile;
+  readonly hand: HandView;
+  readonly replayed: boolean;
+}
+const turnOf = (res: { body: unknown }): TurnBody => res.body as TurnBody;
+
 
 /**
  * PHASE D'S CENTRAL CLAIM, under test: the client cannot name its own payout, and cannot see the
@@ -462,9 +478,13 @@ describe('the routes', () => {
       .send({ nonce: 'n1', wagerCents: 1_000 })
       .expect(200);
 
-    expect(res.body.replayed).toBe(false);
-    expect(res.body.hand.handId).toBeGreaterThan(0);
-    expect(res.body.hand.deck).toBeUndefined();
+    expect(turnOf(res).replayed).toBe(false);
+    expect(turnOf(res).hand.handId).toBeGreaterThan(0);
+    // Against the RAW body, not the narrowed view: `HandView` has no `deck` property, so
+    // `turnOf(res).hand.deck` is a compile error rather than an assertion — a stronger guarantee,
+    // and precisely the one this phase is for. What is worth checking at runtime is that the
+    // SERIALISED payload does not carry it under any name.
+    expect(JSON.stringify(res.body)).not.toContain('deck');
 
     // THE STAKE IS ASSERTED THROUGH THE LEDGER, NOT THE BALANCE, because this route shuffles with
     // the real `Math.random` and roughly one deal in twenty-one is a natural — which settles
@@ -477,10 +497,12 @@ describe('the routes', () => {
     expect(bets).toEqual([{ delta_cents: -1_000 }]);
 
     // And the balance still reconciles against what the hand actually did.
-    const settled = res.body.hand.phase === 'settled';
+    const { phase, result } = turnOf(res).hand;
+    // `result` is non-null exactly when the hand is settled — the type says `Result | null`, so
+    // this reads both halves rather than asserting one away.
     expect(balanceOf(db, 'u1')).toBe(
-      settled
-        ? STARTING_BANKROLL_CENTS - 1_000 + payoutCents(res.body.hand.result, 1_000)
+      phase === 'settled' && result !== null
+        ? STARTING_BANKROLL_CENTS - 1_000 + payoutCents(result, 1_000)
         : STARTING_BANKROLL_CENTS - 1_000
     );
   });
@@ -510,7 +532,7 @@ describe('the routes', () => {
     // still in play, and a settled natural could at most have paid 2,500.
     const balance = balanceOf(db, 'u1');
     expect(balance).toBeLessThanOrEqual(STARTING_BANKROLL_CENTS + 1_500);
-    expect(res.body.profile.bankrollCents).toBe(balance);
+    expect(turnOf(res).profile.bankrollCents).toBe(balance);
     expect(
       db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE uid = 'u1' AND delta_cents = 1000000").get()
     ).toEqual({ n: 0 });
@@ -524,14 +546,14 @@ describe('the routes', () => {
       .send({ nonce: 'n1', wagerCents: 1_000 })
       .expect(200);
 
-    if (dealt.body.hand.phase === 'settled') return; // a natural; nothing left to move on
+    if (turnOf(dealt).hand.phase === 'settled') return; // a natural; nothing left to move on
 
     const res = await request(app)
       .post('/blackjack/move')
       .set('Authorization', 'Bearer u1')
       .send({
         nonce: 'n2',
-        handId: dealt.body.hand.handId,
+        handId: turnOf(dealt).hand.handId,
         move: 'stand',
         payoutCents: 999_999,
         result: 'blackjack',
@@ -539,7 +561,7 @@ describe('the routes', () => {
       .expect(200);
 
     const expected = payoutCents(
-      settle(res.body.hand.player as Card[], res.body.hand.dealer as Card[]),
+      settle(turnOf(res).hand.player, turnOf(res).hand.dealer),
       1_000
     );
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - 1_000 + expected);

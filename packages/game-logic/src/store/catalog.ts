@@ -15,8 +15,8 @@
  * switch back, and losing a cosmetic you paid for the moment you try another. Two concepts, two
  * fields, both on the profile.
  *
- * RARITY IS PURE STATUS. `rarity` drives the store card's tier styling and (later, P4) pack-pull
- * odds — and NOTHING functional. A legendary card back deals the same cards. It is the scarcity
+ * RARITY IS PURE STATUS. `rarity` drives the store card's tier styling and the pack-pull odds
+ * (`@/system/store/packs`, P4) — and NOTHING functional. A legendary card back deals the same cards. It is the scarcity
  * signal the store was missing, not a gameplay lever.
  *
  * EARN-VS-BUY. Chips buy flair; skill buys prestige. A cosmetic with `priceCents: null` is
@@ -64,38 +64,129 @@ export interface Cosmetic {
  */
 export const CATALOG: readonly Cosmetic[] = [
   // ── Avatars ────────────────────────────────────────────────────────────────────────────────
-  { id: 'av_person', name: 'Newcomer', kind: 'avatar', rarity: 'common', emoji: DEFAULT_AVATAR, priceCents: 0 },
+  {
+    id: 'av_person',
+    name: 'Newcomer',
+    kind: 'avatar',
+    rarity: 'common',
+    emoji: DEFAULT_AVATAR,
+    priceCents: 0,
+  },
   { id: 'av_smile', name: 'Regular', kind: 'avatar', rarity: 'common', emoji: '🙂', priceCents: 0 },
   { id: 'av_dice', name: 'Roller', kind: 'avatar', rarity: 'common', emoji: '🎲', priceCents: 0 },
 
-  { id: 'av_cowboy', name: 'Gambler', kind: 'avatar', rarity: 'common', emoji: '🤠', priceCents: 100_000 },
-  { id: 'av_tophat', name: 'The House', kind: 'avatar', rarity: 'common', emoji: '🎩', priceCents: 250_000 },
-  { id: 'av_clover', name: 'Lucky', kind: 'avatar', rarity: 'rare', emoji: '🍀', priceCents: 500_000 },
-  { id: 'av_crown', name: 'Royalty', kind: 'avatar', rarity: 'rare', emoji: '👑', priceCents: 1_000_000 },
-  { id: 'av_shark', name: 'Card Shark', kind: 'avatar', rarity: 'rare', emoji: '🦈', priceCents: 1_500_000 },
-  { id: 'av_diamond', name: 'High Society', kind: 'avatar', rarity: 'epic', emoji: '💎', priceCents: 2_500_000 },
-  { id: 'av_fire', name: 'On a Heater', kind: 'avatar', rarity: 'epic', emoji: '🔥', priceCents: 4_000_000 },
-  { id: 'av_rocket', name: 'Moonshot', kind: 'avatar', rarity: 'legendary', emoji: '🚀', priceCents: 7_500_000 },
-  { id: 'av_dragon', name: 'Whale', kind: 'avatar', rarity: 'legendary', emoji: '🐉', priceCents: 10_000_000 },
+  {
+    id: 'av_cowboy',
+    name: 'Gambler',
+    kind: 'avatar',
+    rarity: 'common',
+    emoji: '🤠',
+    priceCents: 100_000,
+  },
+  {
+    id: 'av_tophat',
+    name: 'The House',
+    kind: 'avatar',
+    rarity: 'common',
+    emoji: '🎩',
+    priceCents: 250_000,
+  },
+  {
+    id: 'av_clover',
+    name: 'Lucky',
+    kind: 'avatar',
+    rarity: 'rare',
+    emoji: '🍀',
+    priceCents: 500_000,
+  },
+  {
+    id: 'av_crown',
+    name: 'Royalty',
+    kind: 'avatar',
+    rarity: 'rare',
+    emoji: '👑',
+    priceCents: 1_000_000,
+  },
+  {
+    id: 'av_shark',
+    name: 'Card Shark',
+    kind: 'avatar',
+    rarity: 'rare',
+    emoji: '🦈',
+    priceCents: 1_500_000,
+  },
+  {
+    id: 'av_diamond',
+    name: 'High Society',
+    kind: 'avatar',
+    rarity: 'epic',
+    emoji: '💎',
+    priceCents: 2_500_000,
+  },
+  {
+    id: 'av_fire',
+    name: 'On a Heater',
+    kind: 'avatar',
+    rarity: 'epic',
+    emoji: '🔥',
+    priceCents: 4_000_000,
+  },
+  {
+    id: 'av_rocket',
+    name: 'Moonshot',
+    kind: 'avatar',
+    rarity: 'legendary',
+    emoji: '🚀',
+    priceCents: 7_500_000,
+  },
+  {
+    id: 'av_dragon',
+    name: 'Whale',
+    kind: 'avatar',
+    rarity: 'legendary',
+    emoji: '🐉',
+    priceCents: 10_000_000,
+  },
 
   // ── Card backs (the P2 flagship: read by every standard-deck game) ───────────────────────────
   // Each id is a `CARD_BACKS` key, so the art resolves through `cardBackSrc`; `tests/cards.test.ts`
   // proves every one is a file on disk. `cb_blue1` is the free starter and the default back.
+  // P4 filled the ladder out to all fifteen staged backs: a pack needs DEPTH or every pull is a
+  // duplicate by the third open, which turns the gamble into a dust vending machine.
   { id: 'cb_blue1', name: 'Classic', kind: 'cardback', rarity: 'common', priceCents: 0 },
   { id: 'cb_red1', name: 'Crimson', kind: 'cardback', rarity: 'common', priceCents: 40_000 },
   { id: 'cb_green1', name: 'Clover', kind: 'cardback', rarity: 'common', priceCents: 40_000 },
+  { id: 'cb_blue2', name: 'Azure', kind: 'cardback', rarity: 'common', priceCents: 40_000 },
+  { id: 'cb_red2', name: 'Scarlet', kind: 'cardback', rarity: 'common', priceCents: 40_000 },
+  { id: 'cb_green2', name: 'Emerald', kind: 'cardback', rarity: 'common', priceCents: 40_000 },
   { id: 'cb_blue3', name: 'Sapphire', kind: 'cardback', rarity: 'rare', priceCents: 250_000 },
   { id: 'cb_red3', name: 'Ruby', kind: 'cardback', rarity: 'rare', priceCents: 250_000 },
+  { id: 'cb_blue4', name: 'Indigo', kind: 'cardback', rarity: 'rare', priceCents: 250_000 },
+  { id: 'cb_green3', name: 'Fern', kind: 'cardback', rarity: 'rare', priceCents: 250_000 },
   { id: 'cb_green4', name: 'Jade', kind: 'cardback', rarity: 'epic', priceCents: 900_000 },
   { id: 'cb_blue5', name: 'Cobalt', kind: 'cardback', rarity: 'epic', priceCents: 900_000 },
+  { id: 'cb_red4', name: 'Garnet', kind: 'cardback', rarity: 'epic', priceCents: 900_000 },
   { id: 'cb_red5', name: 'Inferno', kind: 'cardback', rarity: 'legendary', priceCents: 6_000_000 },
+  {
+    id: 'cb_green5',
+    name: 'Viridian',
+    kind: 'cardback',
+    rarity: 'legendary',
+    priceCents: 6_000_000,
+  },
 
   // ── Titles ───────────────────────────────────────────────────────────────────────────────────
   // Two buyable (chips buy flair), two EARN-ONLY (skill buys prestige — `priceCents: null`, granted
   // by an achievement chain in P3, shown locked until then). The earn-only pair is the whole point
   // of the split: no amount of chips wears "Grandmaster".
   { id: 'ttl_regular', name: 'Regular', kind: 'title', rarity: 'common', priceCents: 150_000 },
-  { id: 'ttl_highroller', name: 'High Roller', kind: 'title', rarity: 'rare', priceCents: 1_000_000 },
+  {
+    id: 'ttl_highroller',
+    name: 'High Roller',
+    kind: 'title',
+    rarity: 'rare',
+    priceCents: 1_000_000,
+  },
   {
     id: 'ttl_thehouse',
     name: 'The House',

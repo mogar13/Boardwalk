@@ -190,7 +190,7 @@ export function planBackfill(db: Db, uid: string, wire: unknown): BackfillRecord
     targetCents: source.bankrollCents,
     priorCents: prior,
     deltaCents: source.bankrollCents - prior,
-    bankrollDefaulted: !Number.isFinite(asRecord(wire).bankrollCents as number),
+    bankrollDefaulted: !Number.isFinite(asRecord(wire).bankrollCents),
   };
 }
 

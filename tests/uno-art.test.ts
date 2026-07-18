@@ -31,15 +31,27 @@ describe('unoCardSrc', () => {
   });
 
   it('maps the action kinds to their v1 filenames', () => {
-    expect(rel(unoCardSrc({ id: 'x', color: 'red', kind: 'skip', value: -1 }))).toBe('red/block_red.png');
-    expect(rel(unoCardSrc({ id: 'x', color: 'blue', kind: 'reverse', value: -1 }))).toBe('blue/inverse_blue.png');
-    expect(rel(unoCardSrc({ id: 'x', color: 'green', kind: 'draw2', value: -1 }))).toBe('green/2plus_green.png');
-    expect(rel(unoCardSrc({ id: 'x', color: 'yellow', kind: 'number', value: 0 }))).toBe('yellow/0_yellow.png');
+    expect(rel(unoCardSrc({ id: 'x', color: 'red', kind: 'skip', value: -1 }))).toBe(
+      'red/block_red.png'
+    );
+    expect(rel(unoCardSrc({ id: 'x', color: 'blue', kind: 'reverse', value: -1 }))).toBe(
+      'blue/inverse_blue.png'
+    );
+    expect(rel(unoCardSrc({ id: 'x', color: 'green', kind: 'draw2', value: -1 }))).toBe(
+      'green/2plus_green.png'
+    );
+    expect(rel(unoCardSrc({ id: 'x', color: 'yellow', kind: 'number', value: 0 }))).toBe(
+      'yellow/0_yellow.png'
+    );
   });
 
   it('maps both wilds to their colourless single files', () => {
-    expect(rel(unoCardSrc({ id: 'x', color: 'wild', kind: 'wild', value: -1 }))).toBe('wild/wild_card.png');
-    expect(rel(unoCardSrc({ id: 'x', color: 'wild', kind: 'wild4', value: -1 }))).toBe('wild/4_plus.png');
+    expect(rel(unoCardSrc({ id: 'x', color: 'wild', kind: 'wild', value: -1 }))).toBe(
+      'wild/wild_card.png'
+    );
+    expect(rel(unoCardSrc({ id: 'x', color: 'wild', kind: 'wild4', value: -1 }))).toBe(
+      'wild/4_plus.png'
+    );
   });
 
   it('resolves the card back to a real file', () => {

@@ -124,8 +124,8 @@ its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe + Black
 seq-ordered state, the lobby, presence, lifecycle teardown) and `src/system/chat` (`useChat`,
 uid-pinned messages), over `RoomRepo`/`ChatRepo` and pure, unit-tested seat/ordering/lifecycle/key
 logic. `database.rules.json` now governs `rooms/`, `hands/` (owner-only hidden information) and
-`chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase/a
-daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
+`chat/`, all emulator-tested. Money moves ONLY through `useBet`/`reportResult`/a store purchase or pack
+open/a daily claim via a single internal `mutateProfile` writer — no bankroll setter anywhere; `level` is
 derived from `xp`, `wins` from `stats`, neither stored. `src/system/room` also now carries the private
 hand channel's two game-facing hooks — `useRoom().writeHand(index, data)` (host deals) and
 `useHand<T>(index)` (owner subscribes to its own seat only) — the first callers of the `RoomRepo`
@@ -206,11 +206,12 @@ lint rule that matches nothing reports success.
 ### Money
 
 - **`useBankroll()` returns a readonly balance. There is no setter.** ✅ Live. Wagers go through
-  `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase and
-  the daily claim, are the *only* callers of the one internal writer. A
+  `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase, a
+  pack open (`openPack` — spends the price, credits dust on a duplicate) and the daily claim, are
+  the *only* callers of the one internal writer (`authStore.mutateProfile`). A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
 - **Money moves as an INTENT, and the server prices it.** ✅ Live (BACKEND_PLAN.md Phase B, code
-  complete — **not yet deployed**). The four money paths call `authStore.applyEconomy(intent,
+  complete, **deployed and LIVE in prod since 2026-07-18**). The four money paths call `authStore.applyEconomy(intent,
   optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily`.
   **None of those types has a field for a balance, a price, an XP amount, a stat count or a clock**
   — the wrong thing is unspellable rather than validated. The server computes each delta from the
@@ -507,6 +508,7 @@ builds the thing it guards.
 | The economy is correct — limits, payouts, XP, unlocks | `tests/economy.test.ts` — `validateBet`/`clampBet`, and `applyResult` proving `big_win` fires on *net* not gross and never twice, money floored, input unmutated |
 | Stats count right; achievements fire at the boundary | `tests/progress.test.ts` (10) — `bumpStats` immutability + per-game keys, and `satisfiedAchievements` at the exact threshold for the standalone badges (`first_win`, `big_win`, `high_roller`, `table_regular`) and the level/bankroll chain rungs |
 | Achievements 2.0 — chains, grant, feats, hidden, completion % | `tests/achievements.test.ts` (24) — every chain tier at its boundary and one below (wins 10/50/100/500, bankroll $10k–$1M, level 5/10/25/50, per-game chess & blackjack 1/10/50/100), the mastery chains read the right game's wins, the earn-only grant lands in `inventory` on the completing tier only, not early, and exactly once; `recordedFeats` filtered to `FEAT_IDS` + de-duped; a game **cannot** forge a chain badge (or its grant) through the feats channel; feats fire once and carry no `test`; `completionPct` derivation; and catalogue integrity (unique ids, four ordered tiers per chain, only the two mastery Platinums grant, `feat`⇔no-`test`) |
+| Packs pull at the published rate, and can never drop what money must not buy | `tests/packs.test.ts` (29) — odds sum to 1 and the empirical distribution matches them over 20k seeds (the card's table IS the roll), every weighted rarity has a non-empty bucket, the pool excludes **every earn-only cosmetic and every free starter** (asserted over the catalogue AND exhaustively over the roll; the earn-only half is additionally unspellable — `PackPull.item` is a `PackableCosmetic` reachable only via `isPackable`), a seeded roll is deterministic, a fresh pull spends exactly the price and grants the id, a duplicate refunds **completion-scaled** dust and grants nothing, dust is monotonic in completion and never exceeds the price at any completion (incl. clamped nonsense input), the roll pays the same number the shelf quoted, `completion` is derived per-pool and ignores foreign inventory, `canOpen` refuses a short bankroll and a completed pool, every pool item is reachable, bankroll floored at 0, input unmutated |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | The client cannot move its own money, nor mint its own badge | `boardwalk-api/tests/economy.test.ts` (45) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, open wagers consumed oldest-first, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, every mutation replay-safe (a repeated nonce moves nothing and does not double a stat), and Phase D: **`checkSettle` refuses `gameId: 'blackjack'` outright** (the dealer settles that game), XP and stat counts come from the OUTCOME and never from the wire, the server **awards `first_win` itself on a real win with nobody reporting it** and does not award it on a loss, unlocks once and never revokes, a replayed settle re-awards and re-grants nothing, and **a forged badge, a forged grant, and a chain id smuggled through `feats` all change nothing** — while a real feat, which no state predicate could have seen, is recorded |
@@ -521,15 +523,14 @@ builds the thing it guards.
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
+| `boardwalk-api/` is linted, typechecked, tested and built in CI | `boardwalk-api/eslint.config.mjs` (flat, type-aware over `tsconfig.test.json` so **src, tests and `vitest.config.ts`** are all in the program — the build config includes only `src`, and the usual cure for the resulting "not in project" noise is to stop linting tests) + `.github/workflows/api.yml` on push **and pull_request**, `paths`-filtered to the package *and the workflow file*, so a change disabling the guard is checked by it |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (48 — the two Phase-6 rules proved **twice**, once per games tree, falsified by dropping `packages/game-logic/src/games` from `GAMES_DIRS` and watching exactly the three new cases go red), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
-| `boardwalk-api/` is never linted | **root `eslint.config.mjs` ignores `boardwalk-api/**`**, so `npm run lint` there errors with "all files are ignored" and always has. The API's ~2,000 lines have never been linted by anything. Fixing it means an eslint config inside the package |
-| Phase B is deployed to the Pi | unguarded and **NOT DONE** — the code is green locally; the cutover is live only after the deploy, the restore drill and the prod verify in BACKEND_PLAN.md's owed list |
+| Phase B server is DEPLOYED; the backfill has **NOT** been run | unguarded — deployed by hand 2026-07-18 from commit `cb42e44`: the Pi runs the economy referee (`dist/domain/economy.js` present, `mutations` + `wagers` tables migrated in, 143/143 API tests green ON the Pi, deployed hashes match the commit). `VITE_API_BASE_URL` is set in Actions secrets. **The backfill has NOT run** — `mutations` holds 0 rows and 0 `migration:v1` markers, and SQLite holds exactly one profile, so Firebase is still where the real players live. **Nothing in this repo can prove any of this**; it is an operational fact, and a health check is NOT evidence of it — `/health` answers identically whether Phase A or Phase B is running, which is precisely how this row came to claim the opposite once already |
 | Phase D is deployed to the Pi | unguarded and **NOT DONE**, and it rides along with Phase B's already-owed manual deploy rather than adding a second one. `ExecStart`/`WorkingDirectory` do **not** change — that was the entire point of the build seam — but the Pi now needs `packages/game-logic/` present *next to* `boardwalk-api/` for the `file:../packages/game-logic` dependency to resolve, `npm install` re-run there to create the symlink, and the package built (`boardwalk-api`'s own `npm run build` does that first). **Whether the Pi has the whole repo checked out or only the `boardwalk-api/` directory is UNVERIFIED** — nobody has SSH'd to it in this work. If it is only the directory, the deploy fails at `npm install`. Check before deploying |
-| The backfill has actually been RUN | unguarded and **NOT DONE**. SQLite holds one profile; RTDB holds every real player, so cutting the frontend over *before* the backfill gives every unmigrated player a fresh $5,000 and drops their XP, stats, achievements and inventory. The tool and its tests are green; the procedure is [plans/BACKFILL_RUNBOOK.md](plans/BACKFILL_RUNBOOK.md) and **no step of it has been executed**. Run it before the cutover, never after |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
 
@@ -570,6 +571,18 @@ npm run build          # prebuild (lint + filesize) → tsc -b → vite build. F
 npm run guard:filesize -- --init   # re-lock the ratchet after a file SHRANK
 npm run rules:test     # just the security rules, against the emulator
 npm run rules:deploy   # push database.rules.json to Firebase. NOTHING IN CI DOES THIS.
+```
+
+`boardwalk-api/` is a **separate package** — not in the npm workspace, its own lockfile, its own
+tooling. The root's `lint`/`test`/`build` do not reach it and are not supposed to; it has its own,
+gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
+
+```bash
+cd boardwalk-api && npm ci
+npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
+npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
+npm test            # vitest — 143
+npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 
 `npm run dev` works on a fresh clone with no credentials — the page renders a panel naming the

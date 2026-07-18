@@ -89,19 +89,27 @@ describe('opening move counts', () => {
 
 describe('piece movement', () => {
   it('a knight in the corner has two moves; in the centre, eight', () => {
-    expect(movesFrom('8/8/8/8/8/8/8/N6k w - - 0 1').filter((m) => m.startsWith('a1'))).toHaveLength(2);
-    expect(movesFrom('8/8/8/3N4/8/8/8/7k w - - 0 1').filter((m) => m.startsWith('d5'))).toHaveLength(8);
+    expect(movesFrom('8/8/8/8/8/8/8/N6k w - - 0 1').filter((m) => m.startsWith('a1'))).toHaveLength(
+      2
+    );
+    expect(
+      movesFrom('8/8/8/3N4/8/8/8/7k w - - 0 1').filter((m) => m.startsWith('d5'))
+    ).toHaveLength(8);
   });
 
   it('a rook is blocked by its own pieces and captures the enemy', () => {
     // White rook a1, own pawn a3, black pawn e1: rook reaches a2, and b1..e1 capturing on e1.
-    const t = targetsFrom(stateFrom('7k/8/8/8/8/P7/8/R3p2K w - - 0 1'), squareIndex('a1')).map(squareName).sort();
+    const t = targetsFrom(stateFrom('7k/8/8/8/8/P7/8/R3p2K w - - 0 1'), squareIndex('a1'))
+      .map(squareName)
+      .sort();
     expect(t).toEqual(['a2', 'b1', 'c1', 'd1', 'e1'].sort());
   });
 
   it('a bishop slides both diagonals until blocked', () => {
     // Kings kept off both of d4's diagonals so nothing blocks the rays.
-    const t = targetsFrom(stateFrom('4k3/8/8/8/3B4/8/8/4K3 w - - 0 1'), squareIndex('d4')).map(squareName);
+    const t = targetsFrom(stateFrom('4k3/8/8/8/3B4/8/8/4K3 w - - 0 1'), squareIndex('d4')).map(
+      squareName
+    );
     expect(t).toContain('a7');
     expect(t).toContain('h8');
     expect(t).toContain('a1');
@@ -194,7 +202,11 @@ describe('castling', () => {
 
   it('capturing a rook on its home square clears the enemy right', () => {
     // White rook a1 captures a black rook on a8; black loses queen-side castling.
-    const next = playMove(stateFrom('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'), squareIndex('a1'), squareIndex('a8'));
+    const next = playMove(
+      stateFrom('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'),
+      squareIndex('a1'),
+      squareIndex('a8')
+    );
     expect(positionOf(next).castling.bq).toBe(false);
     expect(positionOf(next).castling.bk).toBe(true);
   });

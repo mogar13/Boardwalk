@@ -26,7 +26,8 @@ interface RoomRecord {
   createdAt: number;
   seq: number;
   seats: Seat[];
-  state: unknown | null;
+  /** `null` until the host starts the game. `unknown` already admits it — see protocol.ts. */
+  state: unknown;
   /** Hidden information, per seat index. Sent only to the seat's owner — the gateway enforces that. */
   privates: Map<number, unknown>;
   /** uids currently connected. A live socket adds itself; a drop removes it. Empty ⇒ GC. */
@@ -179,7 +180,8 @@ export class RoomStore {
     room.privates.set(index, data);
   }
 
-  getPrivate(gameId: string, roomId: string, index: number): unknown | null {
+  /** `null` when the seat holds no hand — one of the values `unknown` already covers. */
+  getPrivate(gameId: string, roomId: string, index: number): unknown {
     return this.get(gameId, roomId)?.privates.get(index) ?? null;
   }
 
