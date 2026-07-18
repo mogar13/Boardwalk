@@ -65,8 +65,7 @@ export function StatsPanel() {
 
       {favoriteName !== null && (
         <p className="text-bw-muted text-sm">
-          Favorite table:{' '}
-          <span className="text-base-content font-medium">{favoriteName}</span> —{' '}
+          Favorite table: <span className="text-base-content font-medium">{favoriteName}</span> —{' '}
           {favorite![1].played.toLocaleString('en-US')} games.
         </p>
       )}

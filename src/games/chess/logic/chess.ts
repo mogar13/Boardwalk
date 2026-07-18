@@ -40,7 +40,12 @@ export interface Position {
   /** 64 squares, index 0 = a8. `null` is an empty square (internal only; the wire uses FEN). */
   readonly board: readonly (Piece | null)[];
   readonly active: Color;
-  readonly castling: { readonly wk: boolean; readonly wq: boolean; readonly bk: boolean; readonly bq: boolean };
+  readonly castling: {
+    readonly wk: boolean;
+    readonly wq: boolean;
+    readonly bk: boolean;
+    readonly bq: boolean;
+  };
   /** The en-passant target square (the square a capturing pawn lands on), or -1 for none. */
   readonly ep: number;
   /** Halfmove clock — plies since the last pawn move or capture, for the fifty-move rule. */
@@ -234,7 +239,10 @@ export function squareAttackedBy(pos: Position, target: number, by: Color): bool
   }
 
   // Sliding: bishops/queens on diagonals, rooks/queens on ranks/files.
-  const slide = (dirs: readonly (readonly [number, number])[], types: readonly PieceType[]): boolean => {
+  const slide = (
+    dirs: readonly (readonly [number, number])[],
+    types: readonly PieceType[]
+  ): boolean => {
     for (const [df, dr] of dirs) {
       let f = tf + df;
       let r = tr + dr;
@@ -299,7 +307,8 @@ function pseudoMoves(pos: Position): Move[] {
         // Two forward from the start row, if both empty.
         if (r === startRow) {
           const two = sq(f, r + 2 * forward);
-          if (two !== -1 && pos.board[two] === null) moves.push({ from: i, to: two, doublePush: true });
+          if (two !== -1 && pos.board[two] === null)
+            moves.push({ from: i, to: two, doublePush: true });
         }
       }
       // Captures (including en passant).
@@ -379,8 +388,10 @@ function addCastles(moves: Move[], pos: Position, kingIdx: number, me: Color): v
   const safe = (idxs: number[]): boolean => idxs.every((s) => !squareAttackedBy(pos, s, enemy));
 
   if (me === 'w') {
-    if (rights.wk && empty([61, 62]) && safe([61, 62])) moves.push({ from: 60, to: 62, castle: 'K' });
-    if (rights.wq && empty([59, 58, 57]) && safe([59, 58])) moves.push({ from: 60, to: 58, castle: 'Q' });
+    if (rights.wk && empty([61, 62]) && safe([61, 62]))
+      moves.push({ from: 60, to: 62, castle: 'K' });
+    if (rights.wq && empty([59, 58, 57]) && safe([59, 58]))
+      moves.push({ from: 60, to: 58, castle: 'Q' });
   } else {
     if (rights.bk && empty([5, 6]) && safe([5, 6])) moves.push({ from: 4, to: 6, castle: 'K' });
     if (rights.bq && empty([3, 2, 1]) && safe([3, 2])) moves.push({ from: 4, to: 2, castle: 'Q' });
@@ -447,7 +458,10 @@ export function applyMove(pos: Position, move: Move): Position {
     if (s === 0) castling.bq = false;
   }
 
-  const ep = move.doublePush === true ? sq(fileOf(move.from), rowOf(move.from) + (piece.color === 'w' ? -1 : 1)) : -1;
+  const ep =
+    move.doublePush === true
+      ? sq(fileOf(move.from), rowOf(move.from) + (piece.color === 'w' ? -1 : 1))
+      : -1;
   const resetClock = piece.type === 'p' || isCapture;
 
   return {
@@ -591,9 +605,16 @@ export function playMove(
   if (state.outcome.kind !== 'playing') return state;
   const pos = positionOf(state);
   const move = legalMoves(pos).find(
-    (m) => m.from === from && m.to === to && (m.promotion === undefined || m.promotion === promotion)
+    (m) =>
+      m.from === from && m.to === to && (m.promotion === undefined || m.promotion === promotion)
   );
   if (move === undefined) return state;
   const next = applyMove(pos, move);
-  return { fen: toFen(next), outcome: outcomeOf(next), lastFrom: from, lastTo: to, round: state.round };
+  return {
+    fen: toFen(next),
+    outcome: outcomeOf(next),
+    lastFrom: from,
+    lastTo: to,
+    round: state.round,
+  };
 }

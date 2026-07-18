@@ -125,7 +125,12 @@ describe('RoomSocket — subscriptions', () => {
     const ws = await handshake();
     expect(ws.types()).toContain('subscribe');
 
-    const snap = { meta: { host: 'ada', status: 'waiting', createdAt: 1, seq: 0 }, seats: [], state: null, presence: {} };
+    const snap = {
+      meta: { host: 'ada', status: 'waiting', createdAt: 1, seq: 0 },
+      seats: [],
+      state: null,
+      presence: {},
+    };
     ws._msg({ t: 'room', gameId: 'chess', roomId: 'ABCD', snapshot: snap });
     expect(seenA).toEqual([snap]);
 
@@ -154,7 +159,12 @@ describe('RoomSocket — subscriptions', () => {
       t: 'room',
       gameId: 'chess',
       roomId: 'ABCD',
-      snapshot: { meta: { host: 'ada', status: 'playing', createdAt: 1, seq: 3 }, seats: [], state: { fen: 'e4' }, presence: {} },
+      snapshot: {
+        meta: { host: 'ada', status: 'playing', createdAt: 1, seq: 3 },
+        seats: [],
+        state: { fen: 'e4' },
+        presence: {},
+      },
     });
     expect(socket.latestState('chess', 'ABCD')).toEqual({ fen: 'e4' });
     expect(socket.latestState('chess', 'ZZZZ')).toBeNull();
@@ -169,7 +179,9 @@ describe('RoomSocket — reconnect', () => {
     socket.subscribeChat('chess', 'ABCD', () => undefined, 20);
     socket.trackPresence('chess', 'ABCD');
     const first = await handshake();
-    expect(first.types()).toEqual(expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence']));
+    expect(first.types()).toEqual(
+      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence'])
+    );
 
     // The link drops. A backoff timer is armed; advancing it opens a brand-new socket.
     first.close();
@@ -183,7 +195,9 @@ describe('RoomSocket — reconnect', () => {
     await tick();
     second._msg({ t: 'ready' });
     // Every subscription the client was holding is re-established on the new connection.
-    expect(second.types()).toEqual(expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence']));
+    expect(second.types()).toEqual(
+      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence'])
+    );
   });
 
   it('does not reconnect once nothing is subscribed', async () => {

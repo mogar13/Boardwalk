@@ -62,12 +62,19 @@ export function cardSrc(card: Card): string {
  */
 export const CARD_BACKS: Readonly<Record<string, string>> = {
   cb_blue1: 'cardBack_blue1.png',
-  cb_red1: 'cardBack_red1.png',
-  cb_green1: 'cardBack_green1.png',
+  cb_blue2: 'cardBack_blue2.png',
   cb_blue3: 'cardBack_blue3.png',
-  cb_red3: 'cardBack_red3.png',
-  cb_green4: 'cardBack_green4.png',
+  cb_blue4: 'cardBack_blue4.png',
   cb_blue5: 'cardBack_blue5.png',
+  cb_green1: 'cardBack_green1.png',
+  cb_green2: 'cardBack_green2.png',
+  cb_green3: 'cardBack_green3.png',
+  cb_green4: 'cardBack_green4.png',
+  cb_green5: 'cardBack_green5.png',
+  cb_red1: 'cardBack_red1.png',
+  cb_red2: 'cardBack_red2.png',
+  cb_red3: 'cardBack_red3.png',
+  cb_red4: 'cardBack_red4.png',
   cb_red5: 'cardBack_red5.png',
 };
 
