@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useAuthStore } from '@/system/auth/authStore';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { formatDollars } from '@/system/profile/money';
 import { applyEquip, applyPurchase, canBuy, isOwned, type Cosmetic } from '@/system/store/catalog';
 import { useConfirm, useToast } from '@/ui';
@@ -21,6 +21,7 @@ export interface StoreApi {
 
 export function useStore(): StoreApi {
   const mutateProfile = useAuthStore((s) => s.mutateProfile);
+  const applyEconomy = useAuthStore((s) => s.applyEconomy);
   const { confirm } = useConfirm();
   const toast = useToast();
 
@@ -63,14 +64,21 @@ export function useStore(): StoreApi {
         }
 
         try {
-          await mutateProfile(applyPurchase(fresh, item));
-          toast.success(`${item.name} — yours`);
+          // The intent names the ITEM, not the price. `applyPurchase(fresh, item)` still runs —
+          // it is what the player sees instantly — but the charge that lands is the server's own
+          // lookup, so a client that rewrote the catalogue in memory buys nothing cheaper.
+          const result = await applyEconomy(
+            { kind: 'purchase', nonce: mintNonce(), itemId: item.id },
+            applyPurchase(fresh, item)
+          );
+          if (result.ok) toast.success(`${item.name} — yours`);
+          else toast.warning(result.error);
         } catch {
           toast.error('Purchase failed — try again.');
         }
       })();
     },
-    [confirm, mutateProfile, toast]
+    [confirm, applyEconomy, toast]
   );
 
   const equip = useCallback(

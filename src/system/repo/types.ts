@@ -149,6 +149,72 @@ export interface ProfileRepo {
 }
 
 /**
+ * AN INTENT: what the player is trying to do, NOT what it should cost.
+ *
+ * This is the whole shape of BACKEND_PLAN.md's Phase B. Before it, money moved by the client
+ * computing a next profile and saving it — so the wire carried a balance, and whoever controls the
+ * wire controls the balance. After it, the wire carries a verb and its arguments, and the server
+ * decides the number. Notice what these types make UNSPELLABLE: there is no field on any of them
+ * for a bankroll, a price, a payout ceiling, an XP amount, a stat count, or a clock. A client
+ * cannot ask for money because the request has no place to put the ask.
+ *
+ * `nonce` is on every one of them and is not optional. A browser retries — on a flaky connection,
+ * on a double tap, and (per the locked Phase-B decision) when an offline result syncs on
+ * reconnect. The nonce is what makes the second arrival a no-op that returns the first arrival's
+ * answer instead of moving money again. It is minted client-side per intent and is meaningless
+ * beyond being unique for this uid.
+ */
+interface IntentBase {
+  readonly nonce: string;
+}
+
+export type EconomyIntent =
+  /** Stake a wager. The server checks it against the LEDGER balance, not the one we hold. */
+  | (IntentBase & { readonly kind: 'bet'; readonly gameId: string; readonly amountCents: number })
+  /**
+   * Settle a hand. `payoutCents` is a CLAIM, bounded server-side by the open wager it consumes —
+   * the server cannot yet know whether the hand was really won (that is Phase D, where the game's
+   * rules run there too), but it can refuse a payout with no stake behind it.
+   *
+   * `unlockedAchievementIds`/`grantedItemIds` are the honest residual: the achievement catalogue
+   * still lives in the frontend, so these are computed here and recorded additively there. They
+   * are a cosmetic surface and move no money.
+   */
+  | (IntentBase & {
+      readonly kind: 'settle';
+      readonly gameId: string;
+      readonly outcome: 'win' | 'loss' | 'push';
+      readonly payoutCents: number;
+      readonly unlockedAchievementIds: readonly string[];
+      readonly grantedItemIds: readonly string[];
+    })
+  /** Buy a cosmetic. Names the ITEM; the price is the server's to look up. */
+  | (IntentBase & { readonly kind: 'purchase'; readonly itemId: string })
+  /** Claim the daily reward. Carries no timestamp — the server's clock is the only one. */
+  | (IntentBase & { readonly kind: 'daily' });
+
+/**
+ * The money writer, behind the seam. Phase B's addition, and the reason `ProfileRepo.save` no
+ * longer moves a chip.
+ *
+ * `apply` returns the AUTHORITATIVE profile — the store replaces its optimistic copy with it, so a
+ * disagreement resolves in the server's favour within one round trip rather than lingering until
+ * some later read. A refusal ("insufficient funds", "already claimed today") is a `RepoResult`
+ * failure and not a throw, because it is ordinary game state the UI renders; a broken connection
+ * still throws.
+ *
+ * `clientNext` is the profile the pure client logic already computed. THE SERVER-BACKED
+ * IMPLEMENTATION IGNORES IT — that is the point — and it exists only for the Firebase fallback,
+ * which has no referee and must persist the client's arithmetic the way v2 always did. That
+ * asymmetry is deliberate and is the honest shape of "one seam, two trust models": with
+ * `VITE_API_BASE_URL` unset (a fresh clone, the emulator, a Pi outage) the app is exactly the
+ * client-authoritative economy it was through Phase 6, and with it set the client cannot cheat.
+ */
+export interface EconomyRepo {
+  apply(uid: string, intent: EconomyIntent, clientNext: Profile): Promise<RepoResult<Profile>>;
+}
+
+/**
  * One row of the public standings, read from `leaderboard/<uid>`. This is the public
  * projection — the five fields the rules pin, plus the uid the node is keyed by — and nothing
  * private: the leaderboard cannot show what `users/` holds, because it never reads it.
@@ -352,6 +418,8 @@ export interface ChatRepo {
 export interface Repos {
   readonly auth: AuthRepo;
   readonly profile: ProfileRepo;
+  /** Phase B: the only path a chip moves. See `EconomyRepo`. */
+  readonly economy: EconomyRepo;
   readonly leaderboard: LeaderboardRepo;
   readonly room: RoomRepo;
   readonly chat: ChatRepo;

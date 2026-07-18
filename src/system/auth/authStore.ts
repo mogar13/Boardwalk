@@ -3,7 +3,7 @@ import { cleanUsername } from '@/system/auth/credentials';
 import { defaultProfile } from '@/system/profile/defaults';
 import type { Profile, Session } from '@/system/profile/types';
 import { firebaseReady, repos } from '@/system/repo';
-import type { RepoResult, SignInInput, SignUpInput } from '@/system/repo';
+import type { EconomyIntent, RepoResult, SignInInput, SignUpInput } from '@/system/repo';
 
 /**
  * Session + profile, in one store, subscribed once.
@@ -65,7 +65,41 @@ interface AuthState {
    * balance the database does not hold. It rethrows so the caller can toast.
    */
   readonly mutateProfile: (next: Profile) => Promise<void>;
+
+  /**
+   * MOVE MONEY — Phase B's single path, and the reason `mutateProfile` no longer is one.
+   *
+   * The caller passes an INTENT (what the player did) and the optimistic profile the pure client
+   * logic computed for it. The store shows the optimistic one immediately so the top bar ticks
+   * without a round-trip, then replaces it with whatever the server says is true. Those are
+   * usually identical — the same pure rules run on both sides — and when they are not, the
+   * server wins, within one round trip, silently. A refusal ("insufficient funds") reverts and
+   * returns the reason for the caller to toast.
+   *
+   * With no API configured, `repos.economy` is the Firebase fallback: it persists the optimistic
+   * profile and hands it straight back, so this is exactly the pre-Phase-B behaviour and the
+   * hooks above cannot tell which world they are in.
+   */
+  readonly applyEconomy: (
+    intent: EconomyIntent,
+    optimistic: Profile
+  ) => Promise<RepoResult<Profile>>;
 }
+
+/**
+ * A per-intent id, so a retried request is recognised as the same intent rather than a second one.
+ * `crypto.randomUUID` is in every browser this app supports; the fallback keeps a non-secure
+ * context (an old dev host over plain HTTP) from throwing, and uniqueness is all that is needed —
+ * the nonce is not a secret and grants nothing on its own.
+ */
+function mintNonce(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `n-${String(Date.now())}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export { mintNonce };
 
 /**
  * Load the profile, or create it if the record is missing.
@@ -91,7 +125,14 @@ async function loadOrCreateProfile(session: Session): Promise<Profile> {
   // placeholder beats a crash; the name is editable and the bankroll is what matters.
   const fresh = defaultProfile(session.username === '' ? 'Player' : session.username);
   await repos.profile.create(session.uid, fresh);
-  return fresh;
+
+  // PHASE B: re-read rather than trusting `fresh`. The opening bankroll is now the SERVER's grant,
+  // not the number we just sent — they agree today (the parity test pins both to the same
+  // constant), and the day they stop agreeing this reads the truth instead of rendering our guess
+  // until the next reload. Falls back to `fresh` if the read fails, because a brand-new account
+  // with a working record is not worth failing sign-in over.
+  const stored = await repos.profile.load(session.uid).catch(() => null);
+  return stored ?? fresh;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -156,6 +197,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // or XP the player earned. Leaving the newer optimistic value in place is the safe choice:
       // the client stays ahead of the server until the next successful save reconciles it.
       if (get().profile === next) set({ profile: prev });
+      throw error;
+    }
+  },
+
+  async applyEconomy(intent, optimistic) {
+    const { session, profile: prev } = get();
+    if (session === null || prev === null) {
+      return { ok: false, error: 'not signed in' };
+    }
+
+    set({ profile: optimistic });
+    try {
+      const result = await repos.economy.apply(session.uid, intent, optimistic);
+      // Only reconcile if our optimistic value is still the one on screen. If a second mutation
+      // (a daily claim landing while a hand settles) has already written over it, overwriting
+      // with THIS call's answer would drop the newer one — the lost-update hazard `mutateProfile`
+      // documents. The next successful mutation returns a profile that includes both, so leaving
+      // the newer optimistic value alone is the safe direction.
+      if (get().profile !== optimistic) return result;
+
+      if (!result.ok) {
+        // The server refused. Our optimistic profile was never true, so put the old one back —
+        // this is the branch that stops a rejected bet from leaving a phantom deduction on screen.
+        set({ profile: prev });
+        return result;
+      }
+      set({ profile: result.value });
+      return result;
+    } catch (error) {
+      // A broken connection, not a refusal. Same revert, and rethrow so the caller can say
+      // "couldn't save" rather than "you can't afford that" — the two are very different to read.
+      if (get().profile === optimistic) set({ profile: prev });
       throw error;
     }
   },

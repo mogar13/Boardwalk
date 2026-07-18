@@ -187,8 +187,33 @@ lint rule that matches nothing reports success.
 
 - **`useBankroll()` returns a readonly balance. There is no setter.** ✅ Live. Wagers go through
   `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase and
-  the daily claim, are the *only* callers of the one internal writer (`authStore.mutateProfile`). A
+  the daily claim, are the *only* callers of the one internal writer. A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
+- **Money moves as an INTENT, and the server prices it.** ✅ Live (BACKEND_PLAN.md Phase B, code
+  complete — **not yet deployed**). The four money paths call `authStore.applyEconomy(intent,
+  optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily`.
+  **None of those types has a field for a balance, a price, an XP amount, a stat count or a clock**
+  — the wrong thing is unspellable rather than validated. The server computes each delta from the
+  ledger and answers with the whole authoritative profile, which replaces the optimistic one. With
+  no `VITE_API_BASE_URL` (fresh clone, emulator) `firebaseEconomyRepo` persists the client's own
+  arithmetic instead — the pre-Phase-B economy, unchanged, and the kill switch is
+  `VITE_API_ECONOMY=0`.
+- **The bankroll is a SUM, not a column.** ✅ Live — `SUM(ledger.delta_cents)` in
+  `boardwalk-api`; `profiles` has no bankroll column, on purpose, because a stored number is one
+  something will eventually write. `PUT /profile` accepts exactly three fields (name, avatar,
+  equipped): the write that could once set a balance has nowhere to put one.
+- **Every money mutation carries a `nonce` and is idempotent.** ✅ Live — `mutations(uid, nonce)`
+  claimed with `INSERT OR IGNORE` inside the same transaction as the work, so a retry, a double-tap
+  or an offline result re-sent on reconnect all collapse to one effect and replay the first answer.
+  A browser retries; an economy that is not replay-safe is one flaky connection from a duplicate
+  payout.
+- **The server's copy of the money rules is guarded, not trusted.** ✅ `tests/economy-parity.test.ts`
+  imports both `boardwalk-api/src/domain/economy.ts` and the frontend's pure modules and asserts
+  every price, every rung of the daily ladder, the XP table and the opening stake agree. The copy
+  exists because sharing the modules is Phase D's `packages/game-logic` move (the API is CommonJS
+  with `rootDir: src` and outside the npm workspace, so a shared package changes the Pi's
+  entrypoint). **Do not add a rule to one side without the other** — this test caught a real drift
+  the first time it ran.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
   back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
@@ -426,6 +451,10 @@ builds the thing it guards.
 | Achievements 2.0 — chains, grant, feats, hidden, completion % | `tests/achievements.test.ts` (24) — every chain tier at its boundary and one below (wins 10/50/100/500, bankroll $10k–$1M, level 5/10/25/50, per-game chess & blackjack 1/10/50/100), the mastery chains read the right game's wins, the earn-only grant lands in `inventory` on the completing tier only, not early, and exactly once; `recordedFeats` filtered to `FEAT_IDS` + de-duped; a game **cannot** forge a chain badge (or its grant) through the feats channel; feats fire once and carry no `test`; `completionPct` derivation; and catalogue integrity (unique ids, four ordered tiers per chain, only the two mastery Platinums grant, `feat`⇔no-`test`) |
 | Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
+| The client cannot move its own money (Phase B) | `boardwalk-api/tests/economy.test.ts` (39) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, and every mutation replay-safe (a repeated nonce moves nothing and does not double a stat) |
+| `PUT /profile` cannot set a balance, XP, stats, achievements or inventory | `boardwalk-api/tests/api.test.ts` (19) — a hostile body carrying all five is accepted and changes none of them; the opening stake is the server's `signup` grant and fires exactly once per uid; 409 (not 400) for a refusal, 400 for a missing nonce |
+| The server's money rules match the client's | `tests/economy-parity.test.ts` (8) — catalogue ids both directions + every price, earn-only stays `null` (a `0` would make it free), the daily ladder and `DAY_MS`, the XP table, bet-validation agreement, and a ten-day streak run reward-for-reward |
+| A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
@@ -437,6 +466,8 @@ builds the thing it guards.
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
+| `boardwalk-api/` is never linted | **root `eslint.config.mjs` ignores `boardwalk-api/**`**, so `npm run lint` there errors with "all files are ignored" and always has. The API's ~2,000 lines have never been linted by anything. Fixing it means an eslint config inside the package |
+| Phase B is deployed to the Pi | unguarded and **NOT DONE** — the code is green locally; the cutover is live only after the deploy, the restore drill and the prod verify in BACKEND_PLAN.md's owed list |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
 

@@ -5,6 +5,7 @@ import { authMiddleware } from './auth/middleware';
 import type { TokenVerifier } from './auth/verify';
 import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import type { Db } from './db/db';
+import { economyRouter } from './routes/economy';
 import { healthRouter } from './routes/health';
 import { leaderboardRouter } from './routes/leaderboard';
 import { profileRouter } from './routes/profile';
@@ -56,6 +57,7 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   app.use(authMiddleware(cfg, tokenVerifier));
 
   app.use(profileRouter(db));
+  app.use(economyRouter(db));
   app.use(leaderboardRouter(db));
 
   return app;

@@ -13,6 +13,8 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "backup": "node scripts/backup.mjs",
+    "restore:drill": "node scripts/restore-drill.mjs",
     "lint": "eslint src tests"
   },
   "dependencies": {

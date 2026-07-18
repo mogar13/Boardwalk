@@ -1,0 +1,30 @@
+import type { Profile } from '@/system/profile/types';
+import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
+import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types';
+
+/**
+ * THE CLIENT-AUTHORITATIVE FALLBACK — what the economy was through Phase 6, expressed as an
+ * `EconomyRepo` so the hooks above it have exactly one shape to call.
+ *
+ * It ignores the intent entirely and persists `clientNext`: the profile the pure logic
+ * (`applyResult`, `applyPurchase`, `claimDaily`) already computed. There is no referee here, and
+ * this file does not pretend otherwise — with no `VITE_API_BASE_URL` the player's own device is
+ * the source of truth, which is fine for a fresh clone, for the emulator dev loop, and as the
+ * kill switch for a Pi outage, and is NOT fine as the deployed default. That is why Phase B
+ * exists and why the composition root prefers the HTTP one whenever it can.
+ *
+ * Keeping this alive is the same call Phase C made about the Firebase room/chat repos: a cutover
+ * you cannot reverse in one rebuild is a cutover you have to be brave about at 2am.
+ */
+export const firebaseEconomyRepo: EconomyRepo = {
+  async apply(
+    uid: string,
+    _intent: EconomyIntent,
+    clientNext: Profile
+  ): Promise<RepoResult<Profile>> {
+    await firebaseProfileRepo.save(uid, clientNext);
+    // The client's own arithmetic IS the authoritative answer in this mode — returning it keeps
+    // the caller's "replace local state with what came back" path identical across both repos.
+    return { ok: true, value: clientNext };
+  },
+};

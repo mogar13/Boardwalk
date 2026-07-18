@@ -1,10 +1,17 @@
+import { httpEconomyRepo } from '@/system/repo/api/economyRepo';
 import { httpLeaderboardRepo } from '@/system/repo/api/leaderboardRepo';
 import { httpProfileRepo } from '@/system/repo/api/profileRepo';
 import { apiChatRepo } from '@/system/repo/api/chatRepo';
 import { apiRoomRepo } from '@/system/repo/api/roomRepo';
 import { createRoomSocket } from '@/system/repo/api/socket';
 import type { ApiClientConfig } from '@/system/repo/api/client';
-import type { ChatRepo, LeaderboardRepo, ProfileRepo, RoomRepo } from '@/system/repo/types';
+import type {
+  ChatRepo,
+  EconomyRepo,
+  LeaderboardRepo,
+  ProfileRepo,
+  RoomRepo,
+} from '@/system/repo/types';
 
 /**
  * The API repo family — the server half of the seam.
@@ -17,12 +24,14 @@ import type { ChatRepo, LeaderboardRepo, ProfileRepo, RoomRepo } from '@/system/
  */
 export interface ApiRepos {
   readonly profile: ProfileRepo;
+  readonly economy: EconomyRepo;
   readonly leaderboard: LeaderboardRepo;
 }
 
 export function apiRepos(cfg: ApiClientConfig): ApiRepos {
   return {
     profile: httpProfileRepo(cfg),
+    economy: httpEconomyRepo(cfg),
     leaderboard: httpLeaderboardRepo(cfg),
   };
 }
