@@ -2,6 +2,7 @@ import { lazy, type ComponentType } from 'react';
 import { ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
 import { blackjackManifest } from '@/games/blackjack/manifest';
 import { chessManifest } from '@/games/chess/manifest';
+import { unoManifest } from '@/games/uno/manifest';
 
 /**
  * The registry — what `games.json` was in v1, made typed, and the place `gameId` is
@@ -198,6 +199,10 @@ export const registry: readonly RegisteredGame[] = [
   {
     manifest: chessManifest,
     Component: lazy(() => import('@/games/chess/ChessGame')),
+  },
+  {
+    manifest: unoManifest,
+    Component: lazy(() => import('@/games/uno/UnoGame')),
   },
 ];
 

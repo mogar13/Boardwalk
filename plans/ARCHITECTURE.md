@@ -3,7 +3,8 @@
 **Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
 five games) is in progress: **Tic-Tac-Toe** (the SDK's smoke test), **Blackjack** (the economy
-proof) and **Chess** (the hot-seat proof) shipped 2026-07-17; UNO and Solitaire remain.
+proof), **Chess** (the hot-seat proof) and **UNO** (the hidden-hands proof) shipped 2026-07-17;
+Solitaire remains.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -355,7 +356,7 @@ keep the coverage or the OS ships untested.
 | **Tic-Tac-Toe** ✅ | 530 | The SDK is cheap. If this isn't ~150 lines, the SDK is wrong. |
 | **Blackjack** ✅ | 966 | Betting, casino economy, `reportResult` payouts, dealer hole card. Shipped room-less — its coverage is the economy, not seats. |
 | **Chess** ✅ | 1,339 | Pure unit-tested `logic/`, hot-seat, 2-seat online, zero betting. |
-| **UNO** | 1,079 | Private hands, seq ordering, AI-as-occupant, 7 seats. *It already solved the hard problems — port the reasoning.* |
+| **UNO** ✅ | 1,079 | Private hands (host-as-dealer), seq ordering, AI-as-occupant, 7 seats, zero betting. |
 | **Solitaire** | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
 
 Build **Tic-Tac-Toe first**, immediately after Phase 5 — it's the SDK's smoke test, and it's better to
@@ -1119,3 +1120,109 @@ nothing new needs deploying for it. The hot-seat seat extensions (`claim` label,
 `allowAi`) are verified by the browser pass and typecheck, not by a unit test — they are UI-level
 seams over the already-tested pure `seats.ts`, so the correctness that *could* be a unit test already
 is one, and what is new is wiring a browser proves.
+
+## Phase 6 — UNO (the hidden-hands proof, and the first consumer of the private channel)
+
+2026-07-17. `src/games/uno` — a manifest, a pure `logic/uno.ts` (the 108-card deck, legal-play
+matching, every action card, the direction/skip/draw resolution, the UNO-call penalty,
+reshuffle-on-empty, win detection, an AI move chooser, and the public projection), an `art.ts` that
+maps a card to its staged image, a `useUnoHost` engine (the dealer), and a `Board` — with 24 logic
+tests + 4 art tests (367 total). Two SDK pieces landed with it: the private-hand hooks
+(`useRoom().writeHand`, `useHand`), and one OS gap closed in the lobby. Both modes were driven
+end-to-end against the emulator: a 7-seat AI table dealt, played and a bot won with zero console
+errors, and two accounts on one online table each saw only their own faces (zero opponent-face leaks
+on both pages) and moved in both directions.
+
+### UNO's coverage was the multiplayer-hard half nothing else had spent
+
+Tic-Tac-Toe proved the SDK is cheap; Blackjack proved money moves; Chess proved the seat design
+(hot-seat, online, zero betting). UNO's assigned job was the part with actual hidden information:
+**private hands** (a bystander never even *receives* an opponent's cards — a data-layout-and-rule
+guarantee Phase 5 built the `hands/` node and rules for but no game had used), **seq ordering** (the
+OS's `patchState`, so UNO's own v1 clock-skew fix is inherited, not re-derived), **AI-as-occupant**
+(a leaving player's hand driven on by the host), and a **7-seat** table. Zero betting, like Chess —
+`reportResult({ outcome })` moves XP and a stat, never the bankroll.
+
+### The rules forced host-as-dealer, and host-as-dealer made the pure reducer clean
+
+The `hands/` rules say two things that together decide the whole architecture: only a seat's owner
+(or the host) may *write* a hand, and only its owner may *read* it — **the host cannot read another
+seat's hand either.** So no client can hold the complete game the way Chess's every client holds the
+whole board; a distributed model (each client mutates shared state) hits a wall the moment a draw-2
+must add cards to a victim's hidden hand, which the actor is not allowed to write. The answer is a
+single authority: the **host holds the complete `UnoGame`** (every hand + the draw pile) in memory —
+it dealt them, so it knows them without ever reading them back — runs the pure reducer, and each
+transition (a) **projects** a public view (`toPublic` → top card, per-seat counts, whose turn, the
+active colour — never a hidden card) to `state/data`, and (b) **deals** each changed hand to its
+owner's private node. Non-hosts render the projection plus their own hand and submit a move as an
+intent; the host applies it and republishes. The happy consequence is that the pure `applyMove` is a
+total reducer over the *complete* state, exactly as clean and testable as Chess's `playMove` — the
+subtle rules (the +2 UNO penalty on going to one card undeclared, heads-up reverse acting as a skip,
+reshuffling the discard when the deck runs dry) are all unit-tested before a card was drawn. And the
+deck **never touches the wire at all**, which is strictly more private than v1, whose deck was public
+(a determined client could read the next cards). The privacy principle, taken to its conclusion.
+
+### One code path for "a human moved", and AI-as-occupant that needs no hand transfer
+
+Every human move — the host's included — is submitted as a nonce'd `pending` intent that the host's
+processor applies in order; there is no host special-case for its own turn. The intent slot is a
+single field on the public projection, minted monotonically (`submitMove` bumps the nonce off the
+latest wire state), and the host acks by publishing `ackNonce`; a projection write preserves whatever
+`pending` a player wrote, so the host's derived fields and the players' intents never clobber each
+other. Because the host already holds *every* hand, **AI-as-occupant is free**: when a leaver's seat
+is handed to a bot (`releaseSeat(…, 'ai')`, the Phase-5 fallback), the host simply starts choosing
+that seat's moves with `chooseAiMove` — no hand to transfer, nothing to reconstruct. The 7-seat AI
+browser pass is the same mechanism at full stretch: one human hosting and driving six bots, one of
+which went out and won.
+
+The stated fragility: the hidden state lives only in the host's ref, so a host that reloads cannot
+recover it (it may not read the other hands back). In practice a host unmount tears the room down
+(`<RoomProvider>`'s teardown — the host is the last-present participant), so a host leaving *ends* the
+game rather than stranding it, the same contract v1 had.
+
+### UNO shipped the private-hand hooks, and closed the AI-as-occupant gap in `canStart`
+
+Two SDK changes, both the "a new game surfaces an OS gap, fix it in the OS" pattern Chess established:
+
+- **`useRoom().writeHand(index, data)` and `useHand<T>(index)`** are the write and read halves of the
+  hidden channel — thin wrappers over the `RoomRepo.writePrivate`/`subscribePrivate` methods Phase 5
+  shipped *with no caller* (designed by the hooks that would need them, then left until one did). A
+  host deals with `writeHand`; a player subscribes to `useHand(mySeatIndex)`, which the rules pin to
+  its own node. UNO is the first and only consumer, so the hooks arrived with it, not before.
+
+- **The lobby's `canStart` gated on `humanCount(seats) >= manifest.seats.min`, which conflated "min
+  players" with "min humans".** `SeatList` only offers "Add CPU" when the manifest declares an `ai`
+  mode, so a game with no bots (Chess) fills its table with humans only — `tableIsFull` there already
+  means `max` humans ≥ `min`, making the old clause redundant. For a game *with* bots (UNO), a full
+  table may be one human plus six CPUs, which the old gate wrongly refused (`1 >= 2` is false). The
+  gate now requires a full table with **at least one human** to host/deal — the AI-as-occupant sibling
+  of Chess's `allowAi`, and behaviour-neutral for every prior game (Chess/TTT/Blackjack argued through
+  in the commit).
+
+### The four UNO colours are game content, so they are theme tokens, not chrome
+
+UNO's board needs its four suit colours for the active-colour swatch and the wild picker, but the
+palette rules ban a raw colour everywhere, including `src/ui`. The card *faces* carry their colour in
+the art; the only bare colours drawn are the swatch and the picker, and they read from four flat
+tokens (`--color-uno-*`) added to `packages/theme/theme.css` — the one file allowed to name a colour.
+They are **flat, not glowing**: the glow budget stays blue/cyan/gold, and a deck's colours are the
+same category as a card's face, not a UI signal. `bg-uno-red` is a token like `bg-bw-line`, not a
+Tailwind ramp, so `no-raw-palette` passes it (it requires a trailing digit to flag a scale).
+
+**Not built, on purpose:** hot-seat (hidden hands and one shared screen are contradictory — a screen
+everyone sees cannot hide a hand, which is why UNO is `['ai', 'online']` and omits the mode Chess
+exists to prove); stacking a draw-2 on a draw-2 (a house-rule, not base UNO — the victim draws and is
+skipped, tested); playing the drawn card immediately (v1's draw-and-pass is kept — simpler, and the
+turn still resolves in one reducer step); a variable table size (the lobby always creates `seats.max`
+and requires it full, so every UNO game is seven — which is the 7-seat coverage literally
+demonstrated, not a limitation worked around); scoring/points across rounds (a friendly single-round
+game; "Deal again" starts a fresh round, keyed like Chess's rematch). No generic engine — four games
+is still not enough evidence of what they share, and UNO hoisted only the private-hand hooks, which
+had a caller the moment they were written.
+
+**The gap UNO leaves.** The same manual-browser-pass gap every game inherits — the CI
+browser/integration guard Phases 1/3/5/6 all named is still unbuilt, and UNO widened what it would
+protect (a wire/privacy regression here is a hidden-information leak, not a cosmetic — the two-account
+pass that asserts zero opponent-face leaks is exactly the check a person now has to remember to run).
+UNO adds no new node to `database.rules.json`: it lives under the existing `rooms/`/`state/` and
+`hands/` rules Phase 5 shipped, so nothing new needs deploying for it.
