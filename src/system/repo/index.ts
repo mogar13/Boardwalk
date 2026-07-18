@@ -66,16 +66,19 @@ const profile: ProfileRepo = shadowApi
   : firebaseProfileRepo;
 
 /**
- * PHASE C CUTOVER — room + chat over the WebSocket referee instead of RTDB. Off by default: rooms are
- * the realtime path players actually depend on, so the swap is opt-in until the WS gateway has been
- * proven against a real table (the browser-verification recipe). Flip `VITE_WS_ROOMS=1` (with an API
- * base URL, and not under the emulator — a `demo-boardwalk` token the Pi's verifier rejects would
- * just spin the handshake) to move rooms off Firebase; when this has soaked, it becomes the default
- * and the Firebase room/chat repos are retired. This is the "rewrite `./api/*`, change one wiring
- * line" the seam was built for — no game, hook, or component is touched.
+ * PHASE C CUTOVER — room + chat run over the WebSocket referee instead of RTDB. Now **on by default**
+ * wherever the API is configured (prod carries `VITE_API_BASE_URL` already): the deployed gateway was
+ * soaked end-to-end against the live Pi with real Firebase tokens — handshake, seat arbitration and
+ * forgery refusal, host-only gating, monotonic seq, owner-only hidden hands, author-pinned chat, and
+ * the disconnect→seat-release safety net, all green (`boardwalk-api/tests/gateway.test.ts` covers the
+ * same protocol in CI). The `firebase/room`/`chat` repos stay in the tree as the fallback: setting
+ * **`VITE_WS_ROOMS=0`** forces rooms back onto RTDB with a rebuild, no code change — the kill switch
+ * for a Pi outage. Inert under the emulator (a `demo-boardwalk` token the Pi's verifier rejects). When
+ * this has run clean in prod for a stretch, the Firebase room/chat repos get deleted and RTDB is no
+ * longer read or written. No game, hook, or component is touched — the whole point of the seam.
  */
 const wsRooms =
-  import.meta.env.VITE_WS_ROOMS === '1' &&
+  import.meta.env.VITE_WS_ROOMS !== '0' &&
   apiBaseUrl !== undefined &&
   apiBaseUrl !== '' &&
   !useEmulator

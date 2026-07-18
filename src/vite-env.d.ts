@@ -29,10 +29,10 @@ interface ImportMetaEnv {
    */
   readonly VITE_API_BASE_URL?: string;
   /**
-   * PHASE C CUTOVER (BACKEND_PLAN.md): `'1'` moves rooms + chat off Firebase RTDB onto the
-   * `boardwalk-api` WebSocket referee (needs `VITE_API_BASE_URL`, and inert under the emulator).
-   * OPTIONAL and off by default — the realtime path is opt-in until the WS gateway has soaked. See
-   * `@/system/repo` and `@/system/repo/api/socket`.
+   * PHASE C CUTOVER (BACKEND_PLAN.md): rooms + chat run over the `boardwalk-api` WebSocket referee by
+   * default wherever `VITE_API_BASE_URL` is set (inert under the emulator). This var is now the KILL
+   * SWITCH, not the enable: `'0'` forces rooms back onto Firebase RTDB (a rebuild, no code change) if
+   * the Pi is down. See `@/system/repo` and `@/system/repo/api/socket`.
    */
   readonly VITE_WS_ROOMS?: string;
   /**
