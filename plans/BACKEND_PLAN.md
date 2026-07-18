@@ -1,8 +1,13 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** 🔒 Not started, and deliberately not scheduled. Do not begin until Casino OS v2 and the
-five launch games are shipped and played.
-**Last updated:** 2026-07-16
+**Status:** 🚧 Phase A scaffold in progress. The launch five have shipped, so the gate is passed.
+`boardwalk-api/` now exists — Express + `better-sqlite3` + Firebase-Admin token verification, the
+schema below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests, and
+driven end-to-end locally. The frontend's server-backed repos exist at `src/system/repo/api/`
+against the real `ProfileRepo`/`LeaderboardRepo` interfaces but are **NOT wired into the composition
+root** — shadow mode (below) is the next step, and cut-over needs a deployed server + an empty diff
+first. Deploy host is a Raspberry Pi on the LAN; the DB stick is mounted at `/mnt/boardwalk-db`.
+**Last updated:** 2026-07-17
 
 Adapted from The Game Shack's `BACKEND_PLAN.md`, which was written for a migration that no longer
 exists. The security analysis carried over unchanged, because **Boardwalk inherits the same gap**:

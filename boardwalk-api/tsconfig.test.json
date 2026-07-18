@@ -1,0 +1,11 @@
+{
+  // Typecheck-only config: the build's options, widened to cover tests. vitest runs the tests
+  // (esbuild strips types without checking them), so this is what actually type-checks them —
+  // and what VSCode uses when a tests/ file is open, since only this config includes them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

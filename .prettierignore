@@ -4,6 +4,9 @@ coverage/
 package-lock.json
 scripts/file-size-baseline.json
 
+# boardwalk-api/ is a standalone Node service with its own tooling — see plans/BACKEND_PLAN.md.
+boardwalk-api/
+
 # Firebase's rules parser takes // comments, and this file is nothing but reasoning
 # attached to security decisions — Prettier's json parser reflows it into something
 # that still works and no longer reads as an argument. It is the enforcement

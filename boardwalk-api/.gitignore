@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+
+# Local databases live on the mounted stick on the Pi and in ./data locally.
+# Never commit one — the ledger is real user data.
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Service-account key for firebase-admin. A secret, unlike the web config.
+.env
+.env.*
+!.env.example
+serviceAccount*.json
