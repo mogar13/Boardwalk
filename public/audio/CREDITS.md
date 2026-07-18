@@ -14,6 +14,7 @@ wholesale — an asset arrives with the game that draws it).
 | Standard 52-card deck + backs, UNO deck (`public/cards/`) | Kenney — *Boardgame Pack* (kenney.nl) | CC0 |
 | Poker chips (`public/chips/`) | Rad Potato — *Pixel Perfect* board-game asset pack (itch.io) | CC0 |
 | Game-card icons — Blackjack, Tic-Tac-Toe (`public/games/`) | Game Shack icon set (flat game icons) | CC0 / CC-BY — cleared for reuse |
+| Favicon — arcade joystick (inlined in `index.html` as a data URI, not a file) | Game Shack icon set | CC0 / CC-BY — cleared for reuse |
 
 The unextracted originals of these packs live outside the repo (on the maintainer's machine); only
 the curated, in-use subset is committed here. Only the icons a registered game actually names are
