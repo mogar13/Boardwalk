@@ -1,6 +1,10 @@
 import type { IdentityMode } from '@/system/auth/credentials';
 import type { ChatMessage } from '@/system/chat/types';
 import type { Profile, Session } from '@/system/profile/types';
+// Type-only, and type-only is why the cycle is fine: boards.ts imports the `LeaderboardEntry`
+// type from here, this imports the `BoardId` type from there, and both erase at compile — there
+// is no runtime import cycle, only a compile-time one the type checker resolves.
+import type { BoardId } from '@/system/progress/boards';
 import type { RoomSnapshot, Seat, SeatOccupant } from '@/system/room/types';
 
 /**
@@ -155,8 +159,15 @@ export interface LeaderboardEntry {
   readonly avatar: string;
   readonly bankrollCents: number;
   readonly xp: number;
-  /** Total wins across every game — the rank key. Derived by the writer, never a stored counter. */
+  /** Total wins across every game — the wins-board rank key. Derived by the writer, never stored. */
   readonly wins: number;
+  /**
+   * Total games played across everything — the denominator the Win Rate board ranks on. Projected
+   * alongside `wins` (both derived sums of the private `stats`), because a rate needs both halves
+   * public. `winRate` itself is NOT projected: it is derived from these two, the same "one source
+   * of truth" call as `level` from `xp` — storing the ratio would be a third number to drift.
+   */
+  readonly played: number;
 }
 
 /**
@@ -164,13 +175,15 @@ export interface LeaderboardEntry {
  * reads it finally exists — the same discipline that kept `RoomRepo` out of Phase 2. A reader
  * with no reader is `validateAndCommit()`.
  *
- * `top(limit)` returns rows already ranked, because "ranked by wins" is the projection's whole
- * purpose and every caller wants the same order — pushing the sort into each page is how two
- * screens end up ranking differently. Reads are public (the node is world-readable), so this
- * needs no auth.
+ * `top(limit, board)` returns rows already ranked FOR THAT BOARD — the sort still lives behind the
+ * repo, not in the page, so two screens cannot rank the same board differently. What changed since
+ * Phase 4 is only that there are four boards to ask for (`BoardId`); `board` defaults to `'wins'`,
+ * so the original single-board callers are unchanged. The one source of truth for every board's
+ * order is `@/system/progress/boards`, which both this repo and the page import. Reads are public
+ * (the node is world-readable), so this needs no auth.
  */
 export interface LeaderboardRepo {
-  top(limit: number): Promise<readonly LeaderboardEntry[]>;
+  top(limit: number, board?: BoardId): Promise<readonly LeaderboardEntry[]>;
 }
 
 /**

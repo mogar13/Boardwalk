@@ -1,27 +1,57 @@
+import { useState } from 'react';
 import { Card, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { formatMoney } from '@/system/profile/money';
 import { xpProgress } from '@/system/profile/xp';
+import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@/system/progress/boards';
 import { useLeaderboard } from '@/system/progress/useLeaderboard';
 import type { LeaderboardEntry } from '@/system/repo';
 
 /**
- * The public standings — the reader the `leaderboard/` node was built for. Phase 2 wrote the
- * projection and pinned it; Phase 3 left this a placeholder because it "ranks by wins, a stat
- * Phase 4 adds with its writer"; Phase 4 added the writer, so the page arrives with the field
- * worth reading, exactly as promised.
+ * The public standings — the reader the `leaderboard/` node was built for. Phase 4 shipped one
+ * board (wins); this is the "everyone can be #1 at something" expansion: four axes — wins, bankroll,
+ * level, win rate — each a tab. One stiff number let exactly one player top the board; four let a
+ * grinder, a whale, a leveller and a sharp each own one.
  *
- * Ranked by wins, tie-broken by bankroll then XP — the order `LeaderboardRepo.top` returns, so the
- * page never re-sorts. Your own row is cyan (= here): the board's whole point is finding yourself
- * on it. Gold is the bankroll and only the bankroll.
+ * The ranking is NOT decided here — `@/system/progress/boards` owns every board's order, and the
+ * repo sorts by the same `compare`, so the page and the repo cannot disagree. This file only picks
+ * a board, reads its ranked rows, and draws them. Your own row is cyan (= here): the board's whole
+ * point is finding yourself on it.
  */
 
-function Row({ entry, rank, isMe }: { entry: LeaderboardEntry; rank: number; isMe: boolean }) {
+/** The board's headline value for one row, formatted for display. Exhaustive over `BoardId`. */
+function boardValue(board: Board, entry: LeaderboardEntry): string {
+  switch (board.id) {
+    case 'wins':
+      return entry.wins.toLocaleString('en-US');
+    case 'richest':
+      return formatMoney(entry.bankrollCents);
+    case 'level':
+      return `Lvl ${String(xpProgress(entry.xp).level)}`;
+    case 'winRate':
+      return `${String(Math.round(winRateOf(entry) * 100))}%`;
+  }
+}
+
+function Row({
+  entry,
+  rank,
+  isMe,
+  board,
+}: {
+  entry: LeaderboardEntry;
+  rank: number;
+  isMe: boolean;
+  board: Board;
+}) {
   const { level } = xpProgress(entry.xp);
+  // Gold is money and only money — so the value column glows gold on the Richest board and nowhere
+  // else, the same rule the whole theme follows.
+  const moneyBoard = board.id === 'richest';
   return (
     <div
       className={cx(
-        'grid grid-cols-[2rem_1fr_auto] items-center gap-4 rounded-field px-3 py-2.5 sm:grid-cols-[2.5rem_1fr_5rem_7rem]',
+        'rounded-field grid grid-cols-[2rem_1fr_auto] items-center gap-4 px-3 py-2.5 sm:grid-cols-[2.5rem_1fr_7rem]',
         isMe && 'bg-secondary/10 ring-secondary/40 ring-1'
       )}
     >
@@ -42,19 +72,14 @@ function Row({ entry, rank, isMe }: { entry: LeaderboardEntry; rank: number; isM
           <span className="text-bw-muted text-xs">Level {level}</span>
         </div>
       </div>
-      <div className="flex flex-col items-end sm:items-start">
-        <span className="font-display text-base-content text-sm font-semibold tabular-nums">
-          {entry.wins.toLocaleString('en-US')}
-        </span>
-        <span className="text-bw-muted font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase sm:hidden">
-          wins
-        </span>
-      </div>
       <span
-        data-money
-        className="text-accent hidden text-right text-sm font-semibold tracking-tight sm:block"
+        {...(moneyBoard ? { 'data-money': true } : {})}
+        className={cx(
+          'text-right text-sm font-semibold tabular-nums tracking-tight',
+          moneyBoard ? 'text-accent' : 'text-base-content font-display'
+        )}
       >
-        {formatMoney(entry.bankrollCents)}
+        {boardValue(board, entry)}
       </span>
     </div>
   );
@@ -62,7 +87,9 @@ function Row({ entry, rank, isMe }: { entry: LeaderboardEntry; rank: number; isM
 
 export function Leaderboard() {
   const { session } = useAuth();
-  const { loading, entries, error } = useLeaderboard(25);
+  const [board, setBoard] = useState<BoardId>('wins');
+  const { loading, entries, error } = useLeaderboard(board, 25);
+  const active = boardById(board);
 
   return (
     // A ranked list reads better held to a column than stretched edge-to-edge, so this one
@@ -72,27 +99,48 @@ export function Leaderboard() {
         <h1 className="font-display text-base-content text-3xl font-bold tracking-[0.08em] uppercase">
           Leaderboard
         </h1>
-        <p className="text-bw-muted max-w-2xl text-sm">
-          The public standings, ranked by wins. Everyone can see this — it is the one projection of
-          a profile that is world-readable, and it holds no more than a name, an avatar, a level,
-          wins and a bankroll.
-        </p>
+        <p className="text-bw-muted max-w-2xl text-sm">{active.blurb}</p>
       </header>
+
+      {/* Board tabs. Cyan = here, the same "you are on this one" meaning the ring has everywhere.
+          Buttons, not links — the board is view state, not a route, so it does not belong in the
+          URL (yet). `aria-pressed` makes each a toggle a screen reader can read the state of. */}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Leaderboard boards">
+        {BOARDS.map((b) => {
+          const selected = b.id === board;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => {
+                setBoard(b.id);
+              }}
+              aria-pressed={selected}
+              className={cx(
+                'rounded-field font-display px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase',
+                'transition-colors duration-200 ease-strike',
+                selected
+                  ? 'bg-secondary/15 text-secondary ring-secondary/40 ring-1'
+                  : 'text-bw-muted hover:text-base-content'
+              )}
+            >
+              {b.label}
+            </button>
+          );
+        })}
+      </div>
 
       <Card className="flex flex-col gap-1 p-3">
         {/* Column headers, on wide screens only — the row layout carries the labels on mobile. */}
-        <div className="text-bw-muted hidden grid-cols-[2.5rem_1fr_5rem_7rem] gap-4 px-3 pb-2 sm:grid">
+        <div className="text-bw-muted hidden grid-cols-[2.5rem_1fr_7rem] gap-4 px-3 pb-2 sm:grid">
           <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
             #
           </span>
           <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
             Player
           </span>
-          <span className="font-display text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
-            Wins
-          </span>
           <span className="font-display text-right text-[0.6rem] font-semibold tracking-[0.2em] uppercase">
-            Bankroll
+            {active.column}
           </span>
         </div>
 
@@ -104,11 +152,19 @@ export function Leaderboard() {
           </p>
         ) : entries.length === 0 ? (
           <p className="text-bw-muted px-3 py-8 text-center text-sm">
-            No standings yet. Win a game and you’ll be the first name here.
+            {board === 'winRate'
+              ? 'No one has played enough games to rank yet — this board needs a real sample.'
+              : 'No standings yet. Win a game and you’ll be the first name here.'}
           </p>
         ) : (
           entries.map((entry, i) => (
-            <Row key={entry.uid} entry={entry} rank={i + 1} isMe={entry.uid === session?.uid} />
+            <Row
+              key={entry.uid}
+              entry={entry}
+              rank={i + 1}
+              isMe={entry.uid === session?.uid}
+              board={active}
+            />
           ))
         )}
       </Card>
