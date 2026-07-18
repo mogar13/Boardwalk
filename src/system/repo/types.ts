@@ -274,7 +274,6 @@ export type BlackjackMove = 'hit' | 'stand' | 'double';
 import type { HandView } from '@boardwalk/game-logic/games/blackjack';
 export type { HandView };
 
-
 export interface BlackjackDealInput {
   readonly nonce: string;
   readonly wagerCents: number;

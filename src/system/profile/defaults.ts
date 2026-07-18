@@ -26,4 +26,3 @@ import { displayNameFrom } from '@/system/auth/credentials';
 export function defaultProfile(rawUsername: string): Profile {
   return defaultProfileFor(displayNameFrom(rawUsername));
 }
-
