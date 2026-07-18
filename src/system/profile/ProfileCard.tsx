@@ -4,6 +4,7 @@ import { useAuth, useIsAdmin } from '@/system/auth/useAuth';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { useProfileEditor } from '@/system/profile/useProfileEditor';
 import { xpProgress } from '@/system/profile/xp';
+import { equippedTitle } from '@/system/store/catalog';
 
 /**
  * The signed-in player, in full. The top bar (`src/shell/TopBar`) shows a compact version
@@ -30,6 +31,7 @@ export function ProfileCard() {
   if (session === null || profile === null) return null;
 
   const { level, into, needed, pct } = xpProgress(profile.xp);
+  const title = equippedTitle(profile);
 
   const openEditor = () => {
     setDraft(profile.name);
@@ -65,6 +67,15 @@ export function ProfileCard() {
               </div>
               <span className="text-bw-muted text-xs">
                 Level {level}
+                {/* The equipped title — the reader that keeps a `title` cosmetic from being
+                  loadout.color. Cyan (= here / you), never gold, so it reads as identity, not
+                  money. Absent when nothing is equipped, which is most accounts. */}
+                {title !== null && (
+                  <>
+                    {' · '}
+                    <span className="text-secondary font-semibold">{title}</span>
+                  </>
+                )}
                 {/* Hiding a badge is cosmetic. `admins/<uid>` and database.rules.json are
                   what actually stop a non-admin's writes — this only renders a fact the
                   server already decided. v1 shipped two backdoors by getting that

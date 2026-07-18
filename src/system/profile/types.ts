@@ -93,6 +93,19 @@ export interface Profile {
   readonly inventory: Inventory;
 
   /**
+   * The EQUIPPED cosmetics for the kinds that are not the avatar — the readers that keep a
+   * bought card back or title from being `loadout.color`. `avatar` stays top-level (above) and
+   * is NOT folded in here: the owner's decision was to keep it where it is and add this map for
+   * the new kinds, so existing accounts need no migration.
+   *
+   * Always an object, possibly empty. A fresh account has `{}`, which RTDB strips on the wire —
+   * so `readProfile` defaults a missing `equipped` back to `{}` the same way it does `stats`.
+   * Each field is a cosmetic id (see `@/system/store/catalog`); `cardback` is read by the card
+   * games through `useEquippedCardBack`, `title` by the profile card.
+   */
+  readonly equipped: Equipped;
+
+  /**
    * The daily-reward clock. `lastClaimDay` is a UTC day index (see `dayIndex` in
    * `@/system/rewards/daily`), 0 meaning never claimed; `streak` is the run of consecutive
    * days. Two numbers, not a timestamp, because the reward is a per-DAY event and a day
@@ -123,6 +136,18 @@ export type AchievementSet = Readonly<Record<string, number>>;
 
 /** Owned cosmetic ids, as a set. `{ id: true }` on the wire — see the `inventory` note. */
 export type Inventory = Readonly<Record<string, true>>;
+
+/**
+ * The equipped non-avatar cosmetics. Each field is a cosmetic id, absent when nothing of that
+ * kind is worn. `avatar` is NOT here — it stays top-level on `Profile` (the owner's no-migration
+ * decision). `database.rules.json` pins this to exactly these keys (`$other: false`).
+ */
+export interface Equipped {
+  /** The card back the card games draw — see `@/system/cards/useEquippedCardBack`. */
+  readonly cardback?: string;
+  /** The title shown on the profile card. The best titles are earn-only (achievement-granted). */
+  readonly title?: string;
+}
 
 /** The daily-reward clock. See the `daily` note and `@/system/rewards/daily`. */
 export interface DailyState {

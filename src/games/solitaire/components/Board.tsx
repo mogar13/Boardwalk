@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { cx } from '@/ui';
+import { useEquippedCardBack } from '@/system/cards/useCardBack';
 import type { SoundName } from '@/system/audio/sounds';
 import { CardView, EmptySlot } from '@/games/solitaire/components/CardView';
 import {
@@ -40,6 +41,9 @@ export function Board({
   readonly play: (name: SoundName) => void;
 }) {
   const [sel, setSel] = useState<{ from: Pile; index: number } | null>(null);
+  // The player's equipped card back — read once here (the board is where the profile is touched)
+  // and threaded to every CardView, so the face-down stock and tableau cards draw the chosen art.
+  const backId = useEquippedCardBack();
 
   const drawStock = () => {
     setSel(null);
@@ -92,13 +96,18 @@ export function Board({
       <div className="flex items-start justify-between gap-4">
         <div className="flex gap-2">
           {state.stock.length > 0 ? (
-            <CardView card={state.stock[state.stock.length - 1] as Card} onClick={drawStock} />
+            <CardView
+              card={state.stock[state.stock.length - 1] as Card}
+              backId={backId}
+              onClick={drawStock}
+            />
           ) : (
             <EmptySlot label="↻" onClick={drawStock} />
           )}
           {wasteTop !== undefined ? (
             <CardView
               card={wasteTop}
+              backId={backId}
               selected={isSelected({ kind: 'waste' }, state.waste.length - 1)}
               onClick={() => clickCard({ kind: 'waste' }, state.waste.length - 1, wasteTop)}
               onDoubleClick={() => autoCard({ kind: 'waste' })}
@@ -116,6 +125,7 @@ export function Board({
               <CardView
                 key={index}
                 card={top}
+                backId={backId}
                 selected={isSelected(to, pile.length - 1)}
                 onClick={() => clickCard(to, pile.length - 1, top)}
               />
@@ -143,6 +153,7 @@ export function Board({
                   >
                     <CardView
                       card={card}
+                      backId={backId}
                       selected={isSelected(to, cardIndex)}
                       onClick={() => clickCard(to, cardIndex, card)}
                       onDoubleClick={

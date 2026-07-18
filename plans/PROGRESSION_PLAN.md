@@ -332,8 +332,20 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   `wins` (one new rules `.validate` + refusal test). 431 tests green, browser-verified (password eye,
   all 4 tabs, stats tiles, zero console errors). **⚠️ Rules changed — must `npm run rules:deploy` before
   this reaches prod (see below).**
-- **P2 — Rarity + earn-vs-buy + card backs**: `CosmeticKind` union, `rarity`, wire card games to read an
-  equipped card back, achievement-gated titles. The store stops being flaccid.
+- ✅ **P2 — Rarity + earn-vs-buy + card backs** — **SHIPPED 2026-07-17.** `CosmeticKind` grew to
+  `avatar | cardback | title`; every `Cosmetic` gained a `rarity` (pure status — flat theme tokens,
+  no glow). The real work was the READER: `cardBackSrc(backId)` is equipped-aware (`cards.ts` owns
+  the `CARD_BACKS` id→file map, the game passes the id via `useEquippedCardBack`), and Blackjack +
+  Solitaire now draw the player's equipped back — **standard-deck games only; UNO stays on its own
+  back** (one UNO-specific design, no variants — waits like `dice`, owner decision). The `equipped`
+  map landed on the profile (owner decision #1: `avatar` stays top-level, no migration) with a new
+  `.validate` block + `$other: false` in `database.rules.json` and a refusal test (57 rules tests).
+  Earn-vs-buy is modelled: card backs are chip-buyable, the best titles are earn-only
+  (`priceCents: null` + an `unlock` line, shown locked) — the GRANT mechanism is P3. Titles read on
+  the profile card. 445 tests green, browser-verified (equip a card back → renders in Blackjack +
+  Solitaire, title on profile, zero console errors). **⚠️ Rules changed — `npm run rules:deploy`
+  must run before the frontend reaches prod, or every profile write carrying `equipped` is refused
+  (same class as P1's `played`).**
 - **P3 — Achievements 2.0**: chains, tier art, feats mechanism, hidden, completion %. Feeds P2's
   earn-only cosmetics.
 - **P4 — Packs**: the variable-reward loop, on top of P2's rarity system.

@@ -340,7 +340,8 @@ lint rule that matches nothing reports success.
 - **The audio registry resolves to real files, or it is a dead reference.** ✅ Lint-of-assets —
   `tests/audio.test.ts` checks every file `sounds.ts` names exists in `public/audio/`. A filename is
   a string and typechecks however wrong it is; only a disk check catches an un-staged sound. Same for
-  card art: `tests/cards.test.ts` resolves all 52 `cardSrc` paths against `public/cards/standard/`.
+  card art: `tests/cards.test.ts` resolves all 52 `cardSrc` paths — and every `CARD_BACKS` id and
+  every `cardback` store cosmetic — against `public/cards/standard/`.
 - **Mute is the OS's, and it is global.** ✅ Live — `audioStore.ts` (Zustand, persisted to
   `localStorage`, cross-tab `storage`-synced), a top-bar toggle shown signed-out too. The engine
   unlocks the browser's autoplay gate on the first gesture (v1's primer). A game never touches an
@@ -353,6 +354,14 @@ lint rule that matches nothing reports success.
   `cardSrc`/`cardBackSrc` and the `Suit`/`Rank`/`Card` types the mapping needs — nothing more. Deck
   construction, shuffling and a game's scoring stay in that game's `logic/` and get hoisted only when
   a second card game repeats them. The art is what repeats now; the rules do not yet.
+- **A `cardback` is an equipped cosmetic with a real reader (P2).** ✅ `cardBackSrc(backId)` is
+  equipped-aware — `cards.ts` owns the id→file map (`CARD_BACKS`, the free-starter default
+  `cb_blue1`) and knows NOTHING of the profile; the GAME reads `useEquippedCardBack()` and passes
+  the id in. Blackjack (hole card) and Solitaire (stock/tableau backs) draw the player's equipped
+  back — the standard-deck games only. **UNO is deliberately NOT wired**: it uses a separate deck
+  with one UNO-specific back and no variants, so it waits for UNO-back art the way `dice` waits for
+  a dice game (owner decision). A `cardback` cosmetic is now the thing an avatar was in Phase 4 — a
+  cosmetic that passes the reader test — not `loadout.color`.
 
 ### Files
 
@@ -407,20 +416,20 @@ builds the thing it guards.
 | UNO's rules + wire projection are correct | `tests/uno.test.ts` (24) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, and `toPublic` hiding every card behind sentinels |
 | Every UNO card maps to art on disk | `tests/uno-art.test.ts` (4) — all 108 `unoCardSrc` paths resolve in `public/cards/uno/`, the action-kind→filename map (`skip`→`block`, `reverse`→`inverse`, `draw2`→`2plus`), both colourless wilds, and the back |
 | Solitaire's Klondike rules are correct | `tests/solitaire.test.ts` (33) — a 52-card face-down deck, deterministic shuffle (permutation, input untouched), the deal (column sizes 1–7, only the top face up, 24 to stock), `canStackTableau`/`canStackFoundation` (King-on-empty, alternating descending, Ace-on-empty, up-by-suit), `isValidRun`, `liftable` (waste/foundation tops, a tableau run, never the stock, refuses a face-down start), the draw (1 and 3, waste→stock **recycle** re-serves the order, no-op when empty), moves (waste→foundation, a run move that flips the exposed card, King-only-on-empty, illegal no-ops, one-card-to-foundation), `auto`, win detection, `canAutoComplete`/`autoComplete`, a won game frozen but re-dealable, and input immutability |
-| The security rules do what they say | `tests/database-rules.test.ts` (54) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup |
+| The security rules do what they say | `tests/database-rules.test.ts` (57) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, the P2 `equipped` map (card back + title accepted, a stray `frame`/`avatar` key and a wrong-type/over-long id refused), and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup |
 | Every leaderboard board ranks the way its name says | `tests/boards.test.ts` (16) — the four boards (wins/richest/level/win-rate), each board's order + tiebreak chain on a hand-built set, the win-rate min-games floor (a 1/1 player filtered off the skill board), `boardById` fallback, and `rankFor` non-mutation |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
 | The level curve is exact at every boundary | `tests/xp.test.ts` (13) — every threshold and its neighbours, plus a brute-force oracle |
 | The economy is correct — limits, payouts, XP, unlocks | `tests/economy.test.ts` — `validateBet`/`clampBet`, and `applyResult` proving `big_win` fires on *net* not gross and never twice, money floored, input unmutated |
 | Stats count right; achievements fire at the boundary | `tests/progress.test.ts` — `bumpStats` immutability + per-game keys, every achievement predicate at its exact threshold |
-| Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (afford/own/buy/equip, unique catalogue ids and emoji) |
+| Daily streak and store math | `tests/rewards.test.ts` (streak/gap/clock-rewind/cap), `tests/store.test.ts` (21 — afford/own/buy/equip across all three kinds, unique ids + avatar-only unique emoji, every rarity present, earn-only unbuyable at any bankroll + has an unlock line, card back/title equip into the `equipped` map without dropping the other, `equippedTitle`) |
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
-| Every card maps to art that is on disk | `tests/cards.test.ts` (5) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, `cardBackSrc` clamp, `isRed` |
+| Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 

@@ -3,6 +3,7 @@ import { DEFAULT_AVATAR, STARTING_BANKROLL_CENTS } from '@/system/profile/defaul
 import type {
   AchievementSet,
   DailyState,
+  Equipped,
   GameStat,
   Inventory,
   Profile,
@@ -53,6 +54,7 @@ interface ProfileWire {
   stats?: unknown;
   achievements?: unknown;
   inventory?: unknown;
+  equipped?: unknown;
   daily?: unknown;
   // No `level`: it is derived from `xp` and never stored. A record written by Phase 2 may
   // still carry one on the wire; `readProfile` simply ignores it, and `$other: false` in
@@ -120,6 +122,20 @@ function readInventory(wire: unknown): Inventory {
   return out;
 }
 
+/**
+ * Equipped non-avatar cosmetics — each a non-empty string id, or absent. RTDB strips the empty
+ * `{}` a fresh account writes, so a missing node reads back as `{}` (nothing equipped), and the
+ * card games fall back to the default back. A field of the wrong type is dropped rather than
+ * trusted, the same discipline every other reader here follows.
+ */
+function readEquipped(wire: unknown): Equipped {
+  const e = asRecord(wire);
+  const out: { cardback?: string; title?: string } = {};
+  if (typeof e.cardback === 'string' && e.cardback !== '') out.cardback = e.cardback;
+  if (typeof e.title === 'string' && e.title !== '') out.title = e.title;
+  return out;
+}
+
 /** The daily clock — two whole non-negative numbers, defaulting to "never claimed". */
 function readDaily(wire: unknown): DailyState {
   const d = asRecord(wire);
@@ -139,6 +155,7 @@ function readProfile(wire: ProfileWire): Profile {
     stats: readStats(wire.stats),
     achievements: readAchievements(wire.achievements),
     inventory: readInventory(wire.inventory),
+    equipped: readEquipped(wire.equipped),
     daily: readDaily(wire.daily),
   };
 }

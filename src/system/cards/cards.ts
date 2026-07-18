@@ -47,14 +47,42 @@ export function cardSrc(card: Card): string {
   return `${CARD_ROOT}standard/card${suitToken(card.suit)}${card.rank}.png`;
 }
 
-/** The available card-back colours in the staged set (5 designs each). */
-export type CardBack = 'red' | 'green' | 'blue';
+/**
+ * THE CARD-BACK ART REGISTRY — a cosmetic id → the file that pictures it. This is the ART half
+ * of an equippable card back (kind `'cardback'` in `@/system/store/catalog`): cards.ts owns the
+ * id→file map and knows NOTHING of price, rarity, or the profile — that keeps the pure art module
+ * from importing the store, and lets the game pass a back id in without cards.ts reaching for a
+ * player. The catalogue references these same ids for the store metadata, and
+ * `tests/cards.test.ts` resolves every one to a file on disk (a filename typechecks however wrong
+ * it is — only a disk check catches a stray).
+ *
+ * The id encodes the staged filename it maps to (`cb_red3` → `cardBack_red3.png`), so the two
+ * cannot drift, but the mapping is kept explicit rather than regex'd so an unlisted id is a
+ * lookup miss (→ the default), never a guessed 404.
+ */
+export const CARD_BACKS: Readonly<Record<string, string>> = {
+  cb_blue1: 'cardBack_blue1.png',
+  cb_red1: 'cardBack_red1.png',
+  cb_green1: 'cardBack_green1.png',
+  cb_blue3: 'cardBack_blue3.png',
+  cb_red3: 'cardBack_red3.png',
+  cb_green4: 'cardBack_green4.png',
+  cb_blue5: 'cardBack_blue5.png',
+  cb_red5: 'cardBack_red5.png',
+};
+
+/** The back a fresh account wears — the free starter, owned by everyone (see the catalogue). */
+export const DEFAULT_CARD_BACK = 'cb_blue1';
+
+/** Every card-back id, for the disk test and any UI that needs to enumerate them. */
+export const CARD_BACK_IDS = Object.keys(CARD_BACKS);
 
 /**
- * A card back, e.g. `/Boardwalk/cards/standard/cardBack_red3.png`. `design` is 1–5; it is clamped
- * into range rather than trusted, so a caller passing a loop index cannot 404 the image.
+ * A card back, e.g. `/Boardwalk/cards/standard/cardBack_red3.png`. The game passes the player's
+ * EQUIPPED back id (via `useEquippedCardBack`); an unknown or absent id falls back to the default
+ * rather than 404ing, so a legacy or hand-edited `equipped.cardback` can never break a render.
  */
-export function cardBackSrc(color: CardBack = 'blue', design = 1): string {
-  const n = Math.min(5, Math.max(1, Math.trunc(design)));
-  return `${CARD_ROOT}standard/cardBack_${color}${String(n)}.png`;
+export function cardBackSrc(back?: string): string {
+  const file = (back !== undefined && CARD_BACKS[back]) || CARD_BACKS[DEFAULT_CARD_BACK];
+  return `${CARD_ROOT}standard/${file}`;
 }

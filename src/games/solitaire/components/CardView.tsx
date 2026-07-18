@@ -13,18 +13,22 @@ import type { Card } from '@/games/solitaire/logic/solitaire';
 export function CardView({
   card,
   selected = false,
+  backId,
   onClick,
   onDoubleClick,
 }: {
   readonly card: Card;
   readonly selected?: boolean;
+  /** The player's equipped card-back id, threaded from the board (which reads the profile) so the
+   *  face-down art is the one they chose. Undefined → the default back, via `cardBackSrc`. */
+  readonly backId?: string;
   readonly onClick?: (() => void) | undefined;
   readonly onDoubleClick?: (() => void) | undefined;
 }) {
   const interactive = onClick !== undefined || onDoubleClick !== undefined;
   return (
     <img
-      src={card.faceUp ? cardSrc(card) : cardBackSrc('blue')}
+      src={card.faceUp ? cardSrc(card) : cardBackSrc(backId)}
       alt={card.faceUp ? `${card.rank} of ${card.suit}` : 'Face-down card'}
       width={140}
       height={190}
