@@ -37,8 +37,8 @@
  * outright, because that is a fee rather than a gamble; the approach to it is now cushioned instead
  * of cliff-edged, and it needed no stored pity counter to do it.
  */
-import { formatDollars } from '@boardwalk/game-logic';
-import type { Profile } from '@boardwalk/game-logic';
+import { formatDollars } from '../profile/money';
+import type { Profile } from '../profile/types';
 import {
   CATALOG,
   isOwned,
@@ -46,7 +46,7 @@ import {
   type CosmeticKind,
   type PurchaseCheck,
   type Rarity,
-} from '@boardwalk/game-logic';
+} from './catalog';
 
 /**
  * A pack: a price, the kinds it can draw from, and the published rarity odds. `odds` is a weight

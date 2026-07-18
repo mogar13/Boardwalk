@@ -1,14 +1,20 @@
 import { useCallback } from 'react';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import {
+  CATALOG,
   applyEquip,
   applyPurchase,
   canBuy,
+  canOpen,
   formatDollars,
   isOwned,
+  isPackable,
+  openPack,
   type Cosmetic,
+  type Pack,
+  type PackPull,
 } from '@boardwalk/game-logic';
-import { canOpen, openPack, type Pack, type PackPull } from '@/system/store/packs';
+import type { PackPullWire } from '@/system/repo';
 import { useConfirm, useToast } from '@/ui';
 
 /**
@@ -33,6 +39,22 @@ export interface StoreApi {
    * cancelled, refused, or the write failed — so the reveal simply does not open.
    */
   readonly open: (pack: Pack) => Promise<PackPull | null>;
+}
+
+/**
+ * Turn the server's wire pull (an id) back into a `PackPull` (a cosmetic the reveal can draw).
+ *
+ * The narrowing through `isPackable` is not ceremony. `PackPull.item` is a `PackableCosmetic` —
+ * the type that makes "a pack can never grant an earn-only cosmetic" a compile error rather than
+ * a comment — and this is the one place an id from OUTSIDE this module becomes one. Returning
+ * null for an unknown or un-packable id means a wire that named `ttl_grandmaster` produces no
+ * reveal instead of quietly minting the prestige tier's badge into the UI.
+ */
+function resolvePull(wire: PackPullWire | null): PackPull | null {
+  if (wire === null) return null;
+  const item = CATALOG.find((c) => c.id === wire.itemId);
+  if (item === undefined || !isPackable(item)) return null;
+  return { item, duplicate: wire.duplicate, dustCents: wire.dustCents };
 }
 
 export function useStore(): StoreApi {
@@ -138,19 +160,40 @@ export function useStore(): StoreApi {
 
       // The seed is minted HERE, not inside `openPack` — the roll stays pure and testable, and the
       // impurity sits in the hook where every other impurity in this file already lives.
+      //
+      // THIS ROLL IS THE OPTIMISTIC ONE AND IT IS NOT AUTHORITATIVE. It exists to give
+      // `applyEconomy` a profile to show while the request is in flight — the same job
+      // `applyPurchase(fresh, item)` does on `buy` — and, in the Firebase fallback (no
+      // `VITE_API_BASE_URL`), to BE the answer, because there is no referee to roll one there.
+      // With the server wired, whatever it says overwrites this.
       const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
-      const { profile: after, pull } = openPack(fresh, pack, seed);
-      if (pull === null) return null;
+      const { profile: after, pull: optimistic } = openPack(fresh, pack, seed);
+      if (optimistic === null) return null;
 
       try {
-        await mutateProfile(after);
-        return pull;
+        // The intent names the PACK. There is no seed and no item on it, so this client cannot
+        // pick its own legendary — the server rolls and tells us what we got. (Until this call
+        // existed, `open` saved its own computed profile through `PUT /profile`, which accepts
+        // name/avatar/equipped only and dropped the charge AND the grant on the floor.)
+        const result = await applyEconomy(
+          { kind: 'pack', nonce: mintNonce(), packId: pack.id },
+          after
+        );
+        if (!result.ok) {
+          toast.warning(result.error);
+          return null;
+        }
+        // `pull === null` is the fallback repo saying "no referee here" — then our own roll is
+        // what happened. Otherwise the server's roll wins, resolved back through the catalogue so
+        // `PackPull.item` stays a `PackableCosmetic`: an earn-only cosmetic is unspellable as a
+        // pull on this side too, whatever the wire claims.
+        return resolvePull(result.value.pull) ?? optimistic;
       } catch {
         toast.error('Could not open that pack — try again.');
         return null;
       }
     },
-    [confirm, mutateProfile, toast]
+    [confirm, applyEconomy, toast]
   );
 
   return { buy, equip, open };

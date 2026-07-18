@@ -1,19 +1,23 @@
+import { randomInt } from 'node:crypto';
 import type { Db } from '../db/db';
 import { awardAchievements, viewFor } from './achievements';
 import { balanceOf, loadProfile } from './profile';
 import {
   checkBet,
   checkDaily,
+  checkPack,
   checkPurchase,
   checkSettle,
+  rollPack,
   XP_BY_OUTCOME,
   type Decision,
   type Outcome,
+  type PackPull,
 } from './economy';
 import type { Profile } from './types';
 
 /**
- * The four money mutations, as transactions. This is the server half of Phase B: the ONLY code in
+ * The five money mutations, as transactions. This is the server half of Phase B: the ONLY code in
  * the system that appends to the ledger during play, and therefore the only thing that can move a
  * balance.
  *
@@ -31,6 +35,10 @@ import type { Profile } from './types';
  * result re-sent on reconnect all collapse to one effect. The nonce is scoped per uid, so one
  * account cannot consume another's — and because the check and the write are in the SAME
  * transaction, two simultaneous requests with one nonce cannot both pass it.
+ *
+ * `applyPack` is the exception that proves the rule, and it is worth reading before you touch the
+ * replay path: its outcome is RANDOM, so "do nothing and return the current profile" is not a
+ * correct replay. It persists its roll and re-serves it. See `pack_opens` in `schema.ts`.
  */
 
 /** Every mutation answers with the authoritative profile — the client replaces its copy with it. */
@@ -38,6 +46,12 @@ export interface MutationOk {
   readonly profile: Profile;
   /** True when the nonce had already been applied and this call changed nothing. */
   readonly replayed: boolean;
+  /**
+   * PACKS ONLY: what the server rolled. Absent on every other intent, because every other
+   * intent's outcome is knowable from the request — only a pack has a result the client cannot
+   * compute. On a replay this is the ORIGINAL roll read back from `pack_opens`, never a fresh one.
+   */
+  readonly pull?: PackPull;
 }
 
 export type MutationResult = Decision<MutationOk>;
@@ -49,10 +63,18 @@ const refuse = (error: string): MutationResult => ({ ok: false, error });
  * has a profile — the auth middleware proved the identity and the frontend creates the record on
  * first sign-in — so a missing one is a bug, not a user-facing state.
  */
-function authoritative(db: Db, uid: string, replayed: boolean): MutationResult {
+function authoritative(
+  db: Db,
+  uid: string,
+  replayed: boolean,
+  pull?: PackPull
+): MutationResult {
   const profile = loadProfile(db, uid);
   if (profile === null) return refuse('no profile');
-  return { ok: true, value: { profile, replayed } };
+  return {
+    ok: true,
+    value: pull === undefined ? { profile, replayed } : { profile, replayed, pull },
+  };
 }
 
 /**
@@ -346,6 +368,130 @@ export function applyDaily(db: Db, uid: string, input: DailyInput, now: number):
     appendLedger(db, uid, null, checked.value.rewardCents, 'daily', now);
 
     return authoritative(db, uid, false);
+  });
+  return tx();
+}
+
+/* ----------------------------------------------------------------- pack */
+
+export interface PackInput {
+  readonly nonce: string;
+  readonly packId: string;
+}
+
+interface PackOpenRow {
+  pack_id: string;
+  item_id: string;
+  duplicate: number;
+  dust_cents: number;
+}
+
+/**
+ * The generator's range. `randomInt(min, max)` is max-EXCLUSIVE and Node refuses a span above
+ * 2^48 - 1, so this must stay comfortably under that — `2 ** 48` itself throws
+ * `ERR_OUT_OF_RANGE`, which is exactly the off-by-one that shipped here first and which every
+ * unit test missed because they all inject their own `rand`. 2^47 is in range with entropy to
+ * spare for a four-band rarity roll and a bucket of at most a few dozen items.
+ */
+const RAND_RANGE = 2 ** 47;
+
+/**
+ * A uniform float in [0, 1), from the OS CSPRNG rather than `Math.random`.
+ *
+ * Not because a play-money pack needs cryptographic randomness — it does not — but because the
+ * cost of not having to think about it again is two lines. `Math.random` is seeded per process
+ * and its sequence is, in principle, inferable from observed output; a player who could predict
+ * the next roll could time their opens. This closes that without a comment explaining why it is
+ * probably fine.
+ */
+function secureRandom(): number {
+  return randomInt(0, RAND_RANGE) / RAND_RANGE;
+}
+
+/**
+ * Open a pack: charge the SERVER'S price, roll the pull HERE, grant the item or credit the dust.
+ *
+ * THIS CLOSED THE LAST CLIENT-AUTHORITATIVE MONEY PATH. Before it, `openPack()` ran in the
+ * browser, computed the whole next profile — price spent, item granted, dust credited — and
+ * handed it to `PUT /profile`, which accepts exactly `name`, `avatar` and `equipped` and silently
+ * dropped every one of those effects. In production the animation played and nothing happened:
+ * the player paid nothing and received nothing, and the UI lied until the next load.
+ *
+ * The request names a PACK and nothing else. There is no field on it for a price, a balance, a
+ * seed or an item, so a client cannot pick its own legendary any more than it can name its own
+ * price at `/purchase`. The odds it is rolled against are the shared `PACKS` table the store card
+ * publishes — one table, not two.
+ *
+ * REPLAY, which is what makes this different from the other four. The roll is written to
+ * `pack_opens` in the same transaction as the charge, and a repeated nonce reads that row back
+ * and returns the IDENTICAL pull with no money moved. See the table's comment for why a random
+ * mutation cannot use the plain "do nothing, return the profile" replay path the others do.
+ *
+ * `rand` is injected so the odds are testable; the route passes `secureRandom`.
+ */
+export function applyPack(
+  db: Db,
+  uid: string,
+  input: PackInput,
+  now: number,
+  rand: () => number = secureRandom
+): MutationResult {
+  const tx = db.transaction((): MutationResult => {
+    if (!claimNonce(db, uid, input.nonce, 'pack', now)) {
+      // Already applied. Re-serve the ORIGINAL roll rather than re-rolling or answering empty.
+      const row = db
+        .prepare(
+          'SELECT pack_id, item_id, duplicate, dust_cents FROM pack_opens WHERE uid = ? AND nonce = ?'
+        )
+        .get(uid, input.nonce) as PackOpenRow | undefined;
+      if (row === undefined) {
+        // The nonce was burned by a DIFFERENT kind of mutation. Reusing one nonce across intents
+        // is a client bug, and the honest answer is a refusal — not a pack open charged against
+        // someone else's idempotency key.
+        return refuse('that nonce was already used for a different mutation');
+      }
+      return authoritative(db, uid, true, {
+        itemId: row.item_id,
+        duplicate: row.duplicate !== 0,
+        dustCents: row.dust_cents,
+      });
+    }
+
+    const ownedRows = db.prepare('SELECT item_id FROM inventory WHERE uid = ?').all(uid) as {
+      item_id: string;
+    }[];
+    const ownedIds = new Set(ownedRows.map((r) => r.item_id));
+
+    const checked = checkPack({
+      packId: input.packId,
+      balanceCents: balanceOf(db, uid),
+      ownedIds,
+    });
+    if (!checked.ok) return refuse(checked.error);
+
+    const { pack } = checked.value;
+    const pull = rollPack(pack, ownedIds, rand);
+    // `checkPack` already refused an empty pool, so this is unreachable — but it is a refusal
+    // rather than a `!` so a future pack with a broken pool cannot charge for nothing.
+    if (pull === null) return refuse('nothing in this pack yet');
+
+    // The charge is the pack's price; a duplicate's dust is credited back as its own ledger row
+    // rather than netted, so the statement reads "you paid 250,000, you got 25,000 back" — which
+    // is what happened — instead of a single mystery delta.
+    appendLedger(db, uid, null, -pack.priceCents, 'pack', now);
+    if (pull.duplicate) {
+      if (pull.dustCents > 0) appendLedger(db, uid, null, pull.dustCents, 'pack_dust', now);
+    } else {
+      db.prepare(
+        'INSERT OR IGNORE INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)'
+      ).run(uid, pull.itemId, now);
+    }
+
+    db.prepare(
+      'INSERT INTO pack_opens (uid, nonce, pack_id, item_id, duplicate, dust_cents, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(uid, input.nonce, pack.id, pull.itemId, pull.duplicate ? 1 : 0, pull.dustCents, now);
+
+    return authoritative(db, uid, false, pull);
   });
   return tx();
 }

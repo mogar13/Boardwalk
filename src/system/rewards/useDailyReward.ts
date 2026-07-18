@@ -56,7 +56,7 @@ export function useDailyReward(): DailyRewardApi {
         // Announce the SERVER'S streak, not the one we guessed — they agree unless the local
         // clock was off, and in that case the honest number is the one that was banked.
         toast.success(
-          `Day ${String(applied.value.daily.streak)} — ${formatMoney(result.rewardCents)} claimed`
+          `Day ${String(applied.value.profile.daily.streak)} — ${formatMoney(result.rewardCents)} claimed`
         );
       },
       () => {

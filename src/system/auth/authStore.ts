@@ -4,7 +4,13 @@ import { defaultProfile } from '@/system/profile/defaults';
 import type { Profile } from '@boardwalk/game-logic';
 import type { Session } from '@/system/auth/session';
 import { firebaseReady, repos } from '@/system/repo';
-import type { EconomyIntent, RepoResult, SignInInput, SignUpInput } from '@/system/repo';
+import type {
+  EconomyIntent,
+  EconomyOutcome,
+  RepoResult,
+  SignInInput,
+  SignUpInput,
+} from '@/system/repo';
 
 /**
  * Session + profile, in one store, subscribed once.
@@ -84,7 +90,7 @@ interface AuthState {
   readonly applyEconomy: (
     intent: EconomyIntent,
     optimistic: Profile
-  ) => Promise<RepoResult<Profile>>;
+  ) => Promise<RepoResult<EconomyOutcome>>;
 
   /**
    * INSTALL A PROFILE THE REFEREE ALREADY DECIDED — Phase D's addition, and the narrowest one that
@@ -253,7 +259,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ profile: prev });
         return result;
       }
-      set({ profile: result.value });
+      set({ profile: result.value.profile });
       return result;
     } catch (error) {
       // A broken connection, not a refusal. Same revert, and rethrow so the caller can say
