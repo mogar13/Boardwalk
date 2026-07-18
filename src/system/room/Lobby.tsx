@@ -185,8 +185,16 @@ function LobbyRoom({
     );
   }
 
+  // Startable once the table is full and at least one human is present to host/deal. NOT
+  // `humanCount >= seats.min`: that conflated "min PLAYERS" with "min HUMANS", and AI-as-occupant
+  // makes them differ. `SeatList` only offers "Add CPU" when the manifest declares an `ai` mode, so
+  // a game with no bots (Chess) fills its table with humans only — `tableIsFull` there already means
+  // `max` humans ≥ `min`, making the old clause redundant. For a game WITH bots (UNO), a full table
+  // may be one human plus six CPUs, which is a legitimate game the old gate wrongly refused. So the
+  // real requirement is a full table (players = `max` ≥ `min`) with a human driver in it — UNO is
+  // the design input that surfaced this, the AI-as-occupant sibling of Chess's `allowAi`.
   const canStart =
-    isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= manifest.seats.min;
+    isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= 1;
 
   return (
     <div className="flex flex-col gap-6">

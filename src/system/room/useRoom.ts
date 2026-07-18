@@ -44,6 +44,15 @@ export interface RoomApi<TPublic> {
   readonly release: (index: number, fallback: 'ai' | 'open') => Promise<void>;
   /** Host action: drop a bot into an open seat (`name`) or clear one back to open (`null`). */
   readonly setAi: (index: number, name: string | null) => Promise<void>;
+
+  /**
+   * HIDDEN INFORMATION — write a seat's private state (`hands/<game>/<room>/<index>`). Allowed for
+   * the seat's owner OR the host (the dealer deals every hand), rule-enforced. UNO is the first
+   * caller: the host holds the complete game and writes each player their hand here, and the owner
+   * reads only its own via `useHand`. This is the write half of the private channel `RoomRepo`
+   * shipped in Phase 5 with no consumer; `useHand` is the read half.
+   */
+  readonly writeHand: <TPrivate>(index: number, data: TPrivate) => Promise<void>;
 }
 
 export function useRoom<TPublic>(): RoomApi<TPublic> {
@@ -76,6 +85,11 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     (index: number, name: string | null) => repos.room.setAi(gameId, roomId, index, name),
     [gameId, roomId]
   );
+  const writeHand = useCallback(
+    <TPrivate,>(index: number, data: TPrivate) =>
+      repos.room.writePrivate<TPrivate>(gameId, roomId, index, data),
+    [gameId, roomId]
+  );
 
   return {
     state: (snapshot?.state ?? null) as TPublic | null,
@@ -90,5 +104,6 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     claim,
     release,
     setAi,
+    writeHand,
   };
 }

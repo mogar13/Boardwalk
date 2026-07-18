@@ -147,6 +147,16 @@
      indistinguishable. */
   --color-bw-muted: oklch(68% 0.02 284);
 
+  /* UNO's four suit colours. GAME CONTENT, not chrome — the deck's identity, the same
+     category as a card's face art, not a UI signal — so they are FLAT (no glow: the glow
+     budget is blue/cyan/gold and stays that way) and live here because the theme is the one
+     file allowed to name a colour. Only UNO's board reads them, for the active-colour swatch
+     and the wild-colour picker, where the card art alone cannot say which colour is in play. */
+  --color-uno-red: oklch(60% 0.2 25);
+  --color-uno-blue: oklch(58% 0.17 255);
+  --color-uno-green: oklch(62% 0.16 150);
+  --color-uno-yellow: oklch(82% 0.16 90);
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   /* Signage. Prefers a condensed grotesque where one is installed, because that
