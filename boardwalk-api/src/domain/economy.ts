@@ -137,7 +137,24 @@ export interface SettleRequest {
   readonly openWagerCents: number | null;
 }
 
+/**
+ * Games the SERVER deals, and which therefore may not be settled through this route at all.
+ *
+ * Without this, Phase D is opt-in rather than enforced, and the bypass is trivial: `POST /bet`
+ * then `POST /settle` with `gameId: 'blackjack'` and a payout at the 2.5× ceiling takes the
+ * maximum on every hand while never touching `/blackjack/deal`. Closing the old road is the half
+ * of a cutover that is easy to forget, because the new road works perfectly without it.
+ *
+ * A game earns a place on this list the moment the referee can deal it — not before, or a live
+ * client is refused mid-hand with nowhere to go.
+ */
+export const SERVER_DEALT_GAMES: ReadonlySet<string> = new Set(['blackjack']);
+
 export function checkSettle(req: SettleRequest): Decision<{ readonly payoutCents: number }> {
+  if (SERVER_DEALT_GAMES.has(req.gameId)) {
+    return refuse(`${req.gameId} is settled by the dealer, not by a claim`);
+  }
+
   const payout = Math.round(req.payoutCents);
   if (!Number.isSafeInteger(payout)) return refuse('payout must be a whole number of cents');
   if (payout < 0) return refuse('payout cannot be negative');

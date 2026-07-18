@@ -14,11 +14,14 @@ import type { GameManifest } from '@/games/registry';
  *
  * `modes: ['solo']` and `seats: { min: 1, max: 1 }` — Blackjack opts OUT of the room system. You
  * play the house, not other players; the dealer is the bank, not a seat. So there is no lobby, no
- * seat array and no room subscription — the board renders straight into `<GameShell>` and drives a
- * local `useReducer`. This is deliberate coverage: multiplayer and private hands are UNO's job,
- * opting out of rooms is the seam Solitaire also uses, and Blackjack is the first caller of it. The
- * dealer's hole card is hidden the simplest honest way — a face-down card in local state, revealed
- * on the player's stand — not a networked-privacy trick, which is a different game's concern.
+ * seat array and no room subscription — the board renders straight into `<GameShell>`. This is
+ * deliberate coverage: multiplayer and private hands are UNO's job, opting out of rooms is the seam
+ * Solitaire also uses, and Blackjack is the first caller of it.
+ *
+ * `'solo'` NO LONGER MEANS "the client owns the game", and Phase D is where those two came apart.
+ * There is still no seat and no room, but the hand is dealt behind `BlackjackRepo` — so the hole
+ * card is not a card held locally and declined; it is a card the client was never sent, the same
+ * privacy shape UNO's `hands/` node has, reached through a server instead of a room.
  */
 export const blackjackManifest = {
   id: 'blackjack',

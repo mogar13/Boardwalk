@@ -7,19 +7,23 @@ import type { Card } from '@boardwalk/game-logic/games/blackjack';
  * A row of cards — the one place a logic `Card` becomes an image. It hands the card straight to
  * `cardSrc` from `@/system/cards`: the logic model and the art model are separate types (the
  * purity rule keeps `logic/` from importing `system/`), but their suit/rank literals are identical,
- * so this assignment is what proves at compile time that they still line up. A `hideIndex` card is
- * drawn face-down (the dealer's hole card) with a real card-back, not a CSS rectangle, so the
- * reveal is a genuine flip of the same object.
+ * so this assignment is what proves at compile time that they still line up.
+ *
+ * `faceDown` is a COUNT of backs to draw after the cards, and that shape is the shape of the
+ * dealt-hand seam. It used to be `hideIndex` — an index into a full dealer hand whose hole card the
+ * client held and merely declined to render. Since Phase D the client does not hold it: an unsettled
+ * `HandView.dealer` carries exactly one card, and the gap where the second one will be is drawn as
+ * a back because there is genuinely nothing there. The prop changed so the component could not keep
+ * expressing "I have this card and am hiding it", which is the claim that stopped being true.
  */
 export function Hand({
   cards,
-  hideIndex = -1,
+  faceDown = 0,
   label,
 }: {
   readonly cards: readonly Card[];
-  /** Index to render face-down (the hole card); `-1` (the default) shows every card. A sentinel,
-   *  not an optional-undefined, to sit right with `exactOptionalPropertyTypes`. */
-  readonly hideIndex?: number;
+  /** How many face-down backs to draw after the cards — the dealer's undealt-to-us hole card. */
+  readonly faceDown?: number;
   readonly label: string;
 }) {
   // The player's equipped card back — the hole card is drawn with the one they chose in the store,
@@ -31,23 +35,35 @@ export function Hand({
         {label}
       </span>
       <div className="flex min-h-[7.5rem] items-end">
-        {cards.length === 0 && <div className="border-bw-line h-28 w-20 rounded-lg border border-dashed" />}
-        {cards.map((card, i) => {
-          const faceDown = i === hideIndex;
-          return (
-            <img
-              key={i}
-              src={faceDown ? cardBackSrc(back) : cardSrc(card)}
-              alt={faceDown ? 'Face-down card' : `${card.rank} of ${card.suit}`}
-              width={140}
-              height={190}
-              className={cx(
-                'border-bw-line h-28 w-20 rounded-lg border object-contain shadow-md',
-                i > 0 && '-ml-10'
-              )}
-            />
-          );
-        })}
+        {cards.length === 0 && faceDown === 0 && (
+          <div className="border-bw-line h-28 w-20 rounded-lg border border-dashed" />
+        )}
+        {cards.map((card, i) => (
+          <img
+            key={`up-${String(i)}`}
+            src={cardSrc(card)}
+            alt={`${card.rank} of ${card.suit}`}
+            width={140}
+            height={190}
+            className={cx(
+              'border-bw-line h-28 w-20 rounded-lg border object-contain shadow-md',
+              i > 0 && '-ml-10'
+            )}
+          />
+        ))}
+        {Array.from({ length: faceDown }, (_, i) => (
+          <img
+            key={`down-${String(i)}`}
+            src={cardBackSrc(back)}
+            alt="Face-down card"
+            width={140}
+            height={190}
+            className={cx(
+              'border-bw-line h-28 w-20 rounded-lg border object-contain shadow-md',
+              (cards.length > 0 || i > 0) && '-ml-10'
+            )}
+          />
+        ))}
       </div>
     </div>
   );

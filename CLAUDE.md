@@ -81,15 +81,21 @@ turn never comes and stalls the table. Both modes were driven end-to-end in a re
 the emulator (hot-seat played fool's mate from one screen; two accounts played one side each with
 the guest's board flipped), the manual pass the memory recipe calls for at every game.
 
-**Blackjack is the economy proof, and a room-LESS game.** It opts out of multiplayer (its coverage
-is betting/payouts, not seats — those are UNO's and Solitaire's): `modes: ['solo']`, no lobby, no
-subscription, a local `useReducer`. `src/games/blackjack/logic/blackjack.ts` is the pure heart —
+**Blackjack is the economy proof, a room-LESS game, and since Phase D the one game the client does
+not deal.** It opts out of multiplayer (its coverage is betting/payouts, not seats — those are UNO's
+and Solitaire's): `modes: ['solo']`, no lobby, no subscription. The rulebook —
 deck, ace-soft `handValue`, the settle matrix, and the **integer-safe 3:2 payout** (`floor(wager*3/2)`,
-the exact chip v1 dropped through `parseInt`), all in `tests/blackjack.test.ts` (26). The table
-draws cards with `cardSrc`, deducts the wager through `useBet().commit()` (twice, on a double-down),
-credits the gross back through `reportResult({payoutCents})`, and voices it with `useAudio`. Money
-still moves in exactly two events and there is still no setter a game can reach. `'solo'` is a new
-`GameManifest` mode (Blackjack now, Solitaire later); a solo-only game never mounts `<Lobby>`.
+the exact chip v1 dropped through `parseInt`) — is the shared
+`@boardwalk/game-logic/games/blackjack`, in `tests/blackjack.test.ts` (26), and BOTH sides import it.
+**The hand comes from behind the repo seam** (`BlackjackRepo` → `POST /blackjack/deal|move`): the
+referee shuffles, deals, and settles from its own cards, so the deck and the hole card are never
+sent and `payoutCents` stopped being a thing the client says. `src/games/blackjack/components/Table.tsx`
+is now a RENDERER of `HandView` — it draws with `cardSrc`, draws a card BACK for the hole card it
+genuinely does not have, dispatches hit/stand/double through `useBlackjackTable()`, and voices the
+settle with `useAudio`. `useBet()` still owns the chip rack but **no longer commits**: the stake
+leaves the bankroll inside the deal's own transaction, and committing here too would deduct it
+twice. `'solo'` is a `GameManifest` mode (Blackjack, Solitaire); a solo-only game never mounts
+`<Lobby>` — and it no longer implies the client owns the game.
 
 **Blackjack prep shipped: the Audio OS and the shared card art the SDK still owed.** `useAudio()`
 was a promise in the hook table through five phases; it is now real — `src/system/audio`
@@ -214,6 +220,15 @@ lint rule that matches nothing reports success.
   with `rootDir: src` and outside the npm workspace, so a shared package changes the Pi's
   entrypoint). **Do not add a rule to one side without the other** — this test caught a real drift
   the first time it ran.
+- **The one game that can win money does not deal its own cards.** ✅ Live (Phase D, code complete —
+  **not yet deployed**). `BlackjackRepo` (`deal`/`move`) is the seam; `src/system/repo/api/blackjackRepo.ts`
+  is the referee, `src/system/repo/local/blackjackRepo.ts` the offline twin, and `useBlackjackTable()`
+  the only thing a game calls. **Neither request has a field for a card, an outcome or a payout** —
+  absent, not validated — and `HandView` has no `deck` and carries ONE dealer card until the hand
+  settles. A ceiling could bound "blackjack, pay me 2.5×"; it could never stop it, because "did this
+  player actually win" is not a question you can ask about a number. The kill switch is
+  `VITE_API_BLACKJACK=0`, which puts the table back on the local reducer with ordinary `bet`/`settle`
+  intents — the Phase-B economy exactly, by rebuild.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
   back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
@@ -453,6 +468,7 @@ builds the thing it guards.
 | Money has no setter a game can reach | Type — `useBankroll(): number`; the one writer (`mutateProfile`) is on no game-facing surface, and `useBet`/`reportResult` are the only sanctioned paths |
 | The client cannot move its own money (Phase B) | `boardwalk-api/tests/economy.test.ts` (39) — bet refused past the LEDGER balance, a settle with no open wager refused, a payout over the per-game ceiling refused with the wager left OPEN, one wager pays out once, an earn-only cosmetic unbuyable at any balance, a purchase charged at the SERVER price, the daily clock refusing a wound-back claim, and every mutation replay-safe (a repeated nonce moves nothing and does not double a stat) |
 | `PUT /profile` cannot set a balance, XP, stats, achievements or inventory | `boardwalk-api/tests/api.test.ts` (19) — a hostile body carrying all five is accepted and changes none of them; the opening stake is the server's `signup` grant and fires exactly once per uid; 409 (not 400) for a refusal, 400 for a missing nonce |
+| The dealt-hand seam plays the shared rulebook and hides the hole card | `tests/blackjack-seam.test.ts` (10) — the LOCAL implementation driven against the shared reducer as an oracle (deal/hit/stand/double card-for-card, the stake taken once, a double staking twice and settling over the doubled wager, a dealt natural settling inside `deal` with the odd-wager 3:2 exact), the refusals (an unaffordable stake writes NO intent, a repeated nonce replays instead of dealing again, an unknown hand refused), and the projection: a live hand carries one dealer card with the hole card and the deck absent from the serialised payload, a settled one reveals — asserted **field-for-field against the referee's own `viewOf`**, imported from `boardwalk-api/`, because the projection exists twice and a leaked hole card renders perfectly |
 | The server's money rules match the client's | `tests/economy-parity.test.ts` (8) — catalogue ids both directions + every price, earn-only stays `null` (a `0` would make it free), the daily ladder and `DAY_MS`, the XP table, bet-validation agreement, and a ten-day streak run reward-for-reward |
 | The Firebase→SQLite backfill cannot lose an account or mint one | `boardwalk-api/tests/backfill.test.ts` (34) — the RTDB wire coerced (stripped-empty objects, hostile types, a missing bankroll defaulting to the opening stake rather than $0, a legacy `level` ignored); one `migration` ledger row sized to LAND on the Firebase balance; the `migration:v1` marker making a re-run a total no-op (ten runs, and a re-run that must NOT refund a loss the player has since taken); **a backfilled player signing in afterwards is refused a second signup stake**; per-uid transactions so one malformed record does not roll back the batch; a dry run that writes nothing and does not burn the marker; and `reconcile` catching two swapped balances that a matching grand total would hide |
 | A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |

@@ -7,3 +7,4 @@
  * the way it did when this file was `src/games/blackjack/logic/blackjack.ts`.
  */
 export * from './logic/blackjack';
+export * from './logic/view';

@@ -1,38 +1,32 @@
-import { useEffect, useReducer, useRef } from 'react';
-import { Button, Card, cx, useToast } from '@/ui';
+import { useEffect, useRef } from 'react';
+import { Button, Card, cx } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
-import { useBet } from '@/system/economy/useBet';
-import { useGame } from '@/system/economy/useGame';
+import { useBlackjackTable } from '@/system/economy/useBlackjackTable';
 import { useBankroll } from '@/system/profile/useProfile';
 import { formatMoney } from '@boardwalk/game-logic';
+import { BetRack } from '@/games/blackjack/components/BetRack';
 import { Hand } from '@/games/blackjack/components/Hand';
-import {
-  canDouble,
-  freshDeck,
-  handValue,
-  initialState,
-  payoutCents,
-  reducer,
-  resultOutcome,
-  shuffle,
-  type Result,
-} from '@boardwalk/game-logic/games/blackjack';
+import { handValue, payoutCents, type Result } from '@boardwalk/game-logic/games/blackjack';
 
 /**
- * The table — the only part of Blackjack that is not tested pure logic. It holds the hand in a
- * `useReducer` (local state, no room — this game opts out of multiplayer), draws the state, and
- * wires three OS surfaces the game itself does not implement: `useBet` (the chip rack and the one
- * way a wager leaves the bankroll), `useGame().reportResult` (the one way a payout comes back), and
- * `useAudio` (the felt sounds staged in the Blackjack-prep step). Every rule — value, settle,
- * payout — is imported from `logic/`; this component only decides which pure function to call and
- * when to make a sound.
+ * The table — and since Phase D it is a RENDERER, not a game.
  *
- * MONEY MOVES IN TWO EVENTS, EXACTLY AS THE OS DEMANDS. The wager leaves at `commit()` (deal, and
- * again on a double); the payout returns through `reportResult` when the hand settles. There is no
- * `money += x` here and no way to spell one — the bankroll is a readonly number.
+ * It used to hold the hand in a `useReducer`, shuffle its own deck, decide the result, and hand the
+ * economy a `payoutCents` it had computed itself. All four of those are now the dealer's
+ * (`useBlackjackTable` → `BlackjackRepo`), and what is left here is the part that was always the
+ * board's: draw a `HandView`, offer three buttons, make a noise at the right moment.
+ *
+ * WHAT THIS FILE CAN NO LONGER SPELL, which is the point of the phase. There is no `payoutCents`
+ * call against a result it chose, no `reportResult`, and no `feat_natural` — the dealer detects a
+ * two-card 21 from the two cards it dealt, so the last achievement the client could assert has been
+ * taken off the wire. `payoutCents` still appears below and it is doing something different and
+ * harmless: turning the settled hand's own numbers into the "+$37.50 this hand" line. It is
+ * arithmetic ON a settled result, not a claim about one.
+ *
+ * THE HOLE CARD IS ABSENT, NOT HIDDEN. `hand.dealer` carries one card until the hand settles, so
+ * the board draws ONE back for the card it does not have. Opening devtools on this page shows the
+ * same thing the screen does, which is the "Done when" the whole phase was for.
  */
-
-const CHIPS = [500, 2500, 10000] as const; // $5 / $25 / $100
 
 /** The line under the table, and the sound, for a settled hand — one place so they cannot disagree. */
 const RESULT_COPY: Record<Result, string> = {
@@ -43,83 +37,55 @@ const RESULT_COPY: Record<Result, string> = {
 };
 
 export function Table({ onExit }: { onExit: () => void }) {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState);
-  const bet = useBet();
-  const { reportResult } = useGame();
+  const { hand, busy, deal, play: move, nextHand } = useBlackjackTable();
   const { play } = useAudio();
   const balance = useBankroll();
-  const toast = useToast();
 
-  // Report the economy result exactly once per settled hand, and voice it. Keyed on `handId` so a
-  // rematch reports again and a re-render of the same finished hand does not double-credit — the
-  // same ref-on-round shape Tic-Tac-Toe uses.
-  const reportedHand = useRef(-1);
+  // Voice a settled hand exactly once. Keyed on `handId` — the dealer's row id — so a rematch
+  // sounds again and a re-render of the same finished hand does not, the same ref-on-round shape
+  // Tic-Tac-Toe uses. It reports nothing: the money moved server-side before this effect ran, and
+  // this is the flourish, not the ledger.
+  const voiced = useRef(-1);
   useEffect(() => {
-    if (state.phase !== 'settled' || state.result === null) return;
-    if (reportedHand.current === state.handId) return;
-    reportedHand.current = state.handId;
+    if (hand === null || hand.phase !== 'settled' || hand.result === null) return;
+    if (voiced.current === hand.handId) return;
+    voiced.current = hand.handId;
 
-    const result = state.result;
-    reportResult({
-      outcome: resultOutcome(result),
-      payoutCents: payoutCents(result, state.wagerCents),
-      wagerCents: state.wagerCents,
-      // A `blackjack` result is a two-card 21 — the Natural feat. The economy already knows the
-      // stat/XP; the feat is the one fact only the game sees, so the game reports it.
-      ...(result === 'blackjack' ? { feats: ['feat_natural'] } : {}),
-    });
     play('flip'); // the hole card turning over
     play(
-      result === 'blackjack'
+      hand.result === 'blackjack'
         ? 'jackpot'
-        : result === 'win'
+        : hand.result === 'win'
           ? 'win'
-          : result === 'push'
+          : hand.result === 'push'
             ? 'push'
             : 'lose'
     );
-  }, [state.phase, state.result, state.handId, state.wagerCents, reportResult, play]);
+  }, [hand, play]);
 
-  const deal = () => {
-    const wagerCents = bet.commit();
-    if (wagerCents === null) {
-      toast.error(bet.check.ok ? 'Could not place that bet.' : bet.check.error);
-      return;
-    }
-    play('shuffle');
-    play('deal');
-    dispatch({ type: 'deal', deck: shuffle(freshDeck()), wagerCents });
-  };
+  const settled = hand !== null && hand.phase === 'settled' && hand.result !== null;
+  // One back for the hole card while the hand is live. Not `2 - dealer.length`: the dealer draws
+  // more cards on the reveal, and the reveal is exactly when the count goes to zero.
+  const holeCards = hand !== null && !settled ? 1 : 0;
+  const dealerLabel =
+    hand === null
+      ? 'Dealer'
+      : settled
+        ? `Dealer has ${String(handValue(hand.dealer).total)}`
+        : `Dealer shows ${String(handValue(hand.dealer).total)}`;
+  const playerLabel =
+    hand === null || hand.player.length === 0
+      ? 'You'
+      : `You have ${String(handValue(hand.player).total)}`;
 
-  const hit = () => {
-    play('deal');
-    dispatch({ type: 'hit' });
-  };
-
-  const double = () => {
-    // The chip rack is still staged at the opening wager (nothing touches it during a hand), so a
-    // second `commit()` deducts exactly the original stake — which is what a double-down costs.
-    const extra = bet.commit();
-    if (extra === null) {
-      toast.error('Not enough in the bankroll to double.');
-      return;
-    }
-    play('chip');
-    play('deal');
-    dispatch({ type: 'double' });
-  };
-
-  const { phase, player, dealer, result } = state;
-  const holeHidden = phase === 'player'; // the dealer's second card is down until the player stands
-  const dealerLabel = holeHidden
-    ? `Dealer shows ${String(handValue(dealer.slice(0, 1)).total)}`
-    : dealer.length > 0
-      ? `Dealer has ${String(handValue(dealer).total)}`
-      : 'Dealer';
-  const playerLabel = player.length > 0 ? `You have ${String(handValue(player).total)}` : 'You';
-
-  const canDoubleNow = canDouble(state) && balance >= state.wagerCents;
-  const netCents = result === null ? 0 : payoutCents(result, state.wagerCents) - state.wagerCents;
+  // Affordability of a double is still checked here for the BUTTON, and still checked again by the
+  // dealer for the money. This one can be wrong (a stale balance) and costs a refusal toast; the
+  // other one cannot be, which is the division the whole seam exists to draw.
+  const canDoubleNow = hand !== null && hand.canDouble && balance >= hand.wagerCents;
+  const netCents =
+    hand !== null && hand.result !== null
+      ? payoutCents(hand.result, hand.wagerCents) - hand.wagerCents
+      : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -134,18 +100,18 @@ export function Table({ onExit }: { onExit: () => void }) {
       </div>
 
       <Card className="flex flex-col gap-8 p-6 sm:p-8">
-        <Hand cards={dealer} hideIndex={holeHidden ? 1 : -1} label={dealerLabel} />
-        <Hand cards={player} label={playerLabel} />
+        <Hand cards={hand?.dealer ?? []} faceDown={holeCards} label={dealerLabel} />
+        <Hand cards={hand?.player ?? []} label={playerLabel} />
 
-        {phase === 'settled' && result !== null && (
+        {settled && hand.result !== null && (
           <div className="flex flex-col gap-1">
             <p
               className={cx(
                 'font-display text-lg font-bold tracking-[0.04em]',
-                result === 'lose' ? 'text-bw-muted' : 'text-base-content'
+                hand.result === 'lose' ? 'text-bw-muted' : 'text-base-content'
               )}
             >
-              {RESULT_COPY[result]}
+              {RESULT_COPY[hand.result]}
             </p>
             <p className="text-bw-muted text-sm" data-money>
               {netCents >= 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)} this hand
@@ -154,66 +120,45 @@ export function Table({ onExit }: { onExit: () => void }) {
         )}
       </Card>
 
-      {/* The controls change by phase, but the bankroll and table always read from the OS. */}
-      {phase === 'betting' ? (
-        <Card className="flex flex-col gap-4 p-6">
-          <div className="flex items-baseline justify-between">
-            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.14em] uppercase">
-              Your bet
-            </span>
-            <span data-money className="font-display text-accent text-2xl font-bold tracking-tight">
-              {formatMoney(bet.amountCents)}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {CHIPS.map((chip) => (
-              <Button
-                key={chip}
-                variant="ghost"
-                size="sm"
-                disabled={bet.amountCents + chip > bet.maxCents && bet.amountCents >= bet.maxCents}
-                onClick={() => {
-                  play('chip');
-                  bet.add(chip);
-                }}
-              >
-                +{formatMoney(chip)}
-              </Button>
-            ))}
-            <Button variant="quiet" size="sm" onClick={() => bet.set(bet.maxCents)}>
-              Max
-            </Button>
-            <Button variant="quiet" size="sm" onClick={bet.clear}>
-              Clear
-            </Button>
-          </div>
-
-          {!bet.check.ok && <p className="text-bw-muted text-sm">{bet.check.error}</p>}
-
-          <Button variant="primary" onClick={deal} disabled={!bet.canCommit}>
-            Deal
-          </Button>
-        </Card>
+      {hand === null ? (
+        <BetRack onDeal={deal} disabled={busy} />
       ) : (
         <div className="flex flex-wrap gap-3">
-          {phase === 'player' && (
+          {hand.phase === 'player' && (
             <>
-              <Button variant="primary" onClick={hit}>
+              {/* Every action disables while a request is in flight. The dealer is idempotent on
+                  the nonce, so a double-tap could not deal twice anyway — but a button that stays
+                  live through a round trip reads as a table that ignored you. */}
+              <Button
+                variant="primary"
+                disabled={busy}
+                onClick={() => {
+                  play('deal');
+                  move('hit');
+                }}
+              >
                 Hit
               </Button>
-              <Button variant="secondary" onClick={() => dispatch({ type: 'stand' })}>
+              <Button variant="secondary" disabled={busy} onClick={() => move('stand')}>
                 Stand
               </Button>
               {canDoubleNow && (
-                <Button variant="ghost" onClick={double}>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    play('chip');
+                    play('deal');
+                    move('double');
+                  }}
+                >
                   Double
                 </Button>
               )}
             </>
           )}
-          {phase === 'settled' && (
-            <Button variant="primary" onClick={() => dispatch({ type: 'newHand' })}>
+          {settled && (
+            <Button variant="primary" disabled={busy} onClick={nextHand}>
               Play again
             </Button>
           )}

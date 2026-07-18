@@ -1,3 +1,4 @@
+import { httpBlackjackRepo } from '@/system/repo/api/blackjackRepo';
 import { httpEconomyRepo } from '@/system/repo/api/economyRepo';
 import { httpLeaderboardRepo } from '@/system/repo/api/leaderboardRepo';
 import { httpProfileRepo } from '@/system/repo/api/profileRepo';
@@ -6,6 +7,7 @@ import { apiRoomRepo } from '@/system/repo/api/roomRepo';
 import { createRoomSocket } from '@/system/repo/api/socket';
 import type { ApiClientConfig } from '@/system/repo/api/client';
 import type {
+  BlackjackRepo,
   ChatRepo,
   EconomyRepo,
   LeaderboardRepo,
@@ -26,6 +28,8 @@ export interface ApiRepos {
   readonly profile: ProfileRepo;
   readonly economy: EconomyRepo;
   readonly leaderboard: LeaderboardRepo;
+  /** Phase D: the referee deals blackjack. See `api/blackjackRepo`. */
+  readonly blackjack: BlackjackRepo;
 }
 
 export function apiRepos(cfg: ApiClientConfig): ApiRepos {
@@ -33,6 +37,7 @@ export function apiRepos(cfg: ApiClientConfig): ApiRepos {
     profile: httpProfileRepo(cfg),
     economy: httpEconomyRepo(cfg),
     leaderboard: httpLeaderboardRepo(cfg),
+    blackjack: httpBlackjackRepo(cfg),
   };
 }
 

@@ -20,6 +20,18 @@ import {
 } from '../src/domain/mutations';
 
 /**
+ * The generic /bet + /settle path is exercised with a gameId the referee does NOT deal.
+ *
+ * It used to be spelled 'blackjack', which stopped being valid in Phase D: the server deals that
+ * game now, so `checkSettle` refuses a claim for it outright (`SERVER_DEALT_GAMES`) — otherwise
+ * `POST /bet` + `POST /settle` at the 2.5x ceiling would be a standing bypass of the dealer, and
+ * the whole phase would be opt-in. 'roulette' stands in for what this route is actually for: a
+ * betting game the referee does not run the rules of, bounded by the default 3x ceiling.
+ */
+const BETTING_GAME = 'roulette';
+
+
+/**
  * PHASE B'S CENTRAL CLAIM, under test: the client cannot move its own money.
  *
  * Every `expect(...ok).toBe(false)` here is an attack the Phase-A server would have accepted
@@ -64,22 +76,40 @@ describe('checkBet', () => {
 });
 
 describe('checkSettle', () => {
-  it('caps a blackjack payout at the 3:2 natural (2.5x the stake)', () => {
-    expect(payoutCeiling('blackjack', 1_000)).toBe(2_500);
-    expect(checkSettle({ gameId: 'blackjack', payoutCents: 2_500, openWagerCents: 1_000 }).ok).toBe(
+  it('caps a payout at the default 3x ceiling for a game the referee does not deal', () => {
+    expect(payoutCeiling(BETTING_GAME, 1_000)).toBe(3_000);
+    expect(checkSettle({ gameId: BETTING_GAME, payoutCents: 3_000, openWagerCents: 1_000 }).ok).toBe(
       true
     );
-    expect(checkSettle({ gameId: 'blackjack', payoutCents: 2_501, openWagerCents: 1_000 }).ok).toBe(
+    expect(checkSettle({ gameId: BETTING_GAME, payoutCents: 3_001, openWagerCents: 1_000 }).ok).toBe(
       false
     );
   });
 
+  /**
+   * PHASE D CLOSED THE OLD ROAD, and this is the test that says so.
+   *
+   * The ceiling table still knows blackjack's 2.5x — that number is the 3:2 natural and it is
+   * correct — but no settle for blackjack may be honoured through this route at ANY amount, because
+   * the referee deals that game itself. Without this refusal `POST /bet` + `POST /settle` at the
+   * ceiling is a standing bypass of the dealer, and every guarantee `/blackjack/*` provides is
+   * opt-in. The cheapest way to defeat a cutover is to leave the old road open.
+   */
+  it('refuses a blackjack settle outright — the dealer settles that game, not a claim', () => {
+    expect(payoutCeiling('blackjack', 1_000)).toBe(2_500);
+    for (const payoutCents of [0, 1_000, 2_500]) {
+      expect(checkSettle({ gameId: 'blackjack', payoutCents, openWagerCents: 1_000 }).ok).toBe(
+        false
+      );
+    }
+  });
+
   it('refuses ANY payout with no open wager — the mint', () => {
-    expect(checkSettle({ gameId: 'blackjack', payoutCents: 1, openWagerCents: null }).ok).toBe(
+    expect(checkSettle({ gameId: BETTING_GAME, payoutCents: 1, openWagerCents: null }).ok).toBe(
       false
     );
     expect(
-      checkSettle({ gameId: 'blackjack', payoutCents: 1_000_000, openWagerCents: null }).ok
+      checkSettle({ gameId: BETTING_GAME, payoutCents: 1_000_000, openWagerCents: null }).ok
     ).toBe(false);
   });
 
@@ -160,7 +190,7 @@ describe('checkDaily', () => {
 describe('applyBet', () => {
   it('deducts the stake and opens a wager', () => {
     const db = seeded();
-    const r = applyBet(db, 'u1', { nonce: 'n1', gameId: 'blackjack', amountCents: 10_000 }, 5);
+    const r = applyBet(db, 'u1', { nonce: 'n1', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
     expect(r.ok).toBe(true);
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - 10_000);
     const open = db
@@ -174,7 +204,7 @@ describe('applyBet', () => {
     const r = applyBet(
       db,
       'u1',
-      { nonce: 'n1', gameId: 'blackjack', amountCents: STARTING_BANKROLL_CENTS + 1 },
+      { nonce: 'n1', gameId: BETTING_GAME, amountCents: STARTING_BANKROLL_CENTS + 1 },
       5
     );
     expect(r.ok).toBe(false);
@@ -183,8 +213,8 @@ describe('applyBet', () => {
 
   it('a replayed nonce deducts NOTHING and returns the same balance', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'same', gameId: 'blackjack', amountCents: 10_000 }, 5);
-    const again = applyBet(db, 'u1', { nonce: 'same', gameId: 'blackjack', amountCents: 10_000 }, 6);
+    applyBet(db, 'u1', { nonce: 'same', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
+    const again = applyBet(db, 'u1', { nonce: 'same', gameId: BETTING_GAME, amountCents: 10_000 }, 6);
 
     expect(again).toMatchObject({ ok: true, value: { replayed: true } });
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - 10_000);
@@ -197,8 +227,8 @@ describe('applyBet', () => {
   it('a nonce is scoped per uid — one player cannot burn another\'s', () => {
     const db = seeded();
     upsertProfile(db, 'u2', { name: 'Bob', avatar: '👤', equipped: {} }, { now: 1 });
-    applyBet(db, 'u1', { nonce: 'shared', gameId: 'blackjack', amountCents: 10_000 }, 5);
-    const other = applyBet(db, 'u2', { nonce: 'shared', gameId: 'blackjack', amountCents: 10_000 }, 5);
+    applyBet(db, 'u1', { nonce: 'shared', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
+    const other = applyBet(db, 'u2', { nonce: 'shared', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
     expect(other).toMatchObject({ ok: true, value: { replayed: false } });
     expect(balanceOf(db, 'u2')).toBe(STARTING_BANKROLL_CENTS - 10_000);
   });
@@ -207,18 +237,18 @@ describe('applyBet', () => {
 describe('applySettle', () => {
   it('credits a bounded payout, closes the wager, and bumps the stat and XP', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'b', gameId: 'blackjack', amountCents: 10_000 }, 5);
+    applyBet(db, 'u1', { nonce: 'b', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
     const r = applySettle(
       db,
       'u1',
-      { nonce: 's', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 },
+      { nonce: 's', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 },
       6
     );
 
     expect(r.ok).toBe(true);
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS + 10_000);
     const p = loadProfile(db, 'u1');
-    expect(p?.stats.blackjack).toEqual({ played: 1, won: 1, lost: 0, pushed: 0 });
+    expect(p?.stats[BETTING_GAME]).toEqual({ played: 1, won: 1, lost: 0, pushed: 0 });
     expect(p?.xp).toBe(100);
   });
 
@@ -228,7 +258,7 @@ describe('applySettle', () => {
     const r = applySettle(
       db,
       'u1',
-      { nonce: 's', gameId: 'blackjack', outcome: 'win', payoutCents: 1_000_000 },
+      { nonce: 's', gameId: BETTING_GAME, outcome: 'win', payoutCents: 1_000_000 },
       6
     );
     expect(r.ok).toBe(false);
@@ -237,11 +267,11 @@ describe('applySettle', () => {
 
   it('refuses a payout above the ceiling and leaves the wager OPEN', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'b', gameId: 'blackjack', amountCents: 10_000 }, 5);
+    applyBet(db, 'u1', { nonce: 'b', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
     const r = applySettle(
       db,
       'u1',
-      { nonce: 's', gameId: 'blackjack', outcome: 'win', payoutCents: 25_001 },
+      { nonce: 's', gameId: BETTING_GAME, outcome: 'win', payoutCents: 30_001 },
       6
     );
     expect(r.ok).toBe(false);
@@ -254,12 +284,12 @@ describe('applySettle', () => {
 
   it('one wager pays out ONCE — a second settle finds no open stake', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'b', gameId: 'blackjack', amountCents: 10_000 }, 5);
-    applySettle(db, 'u1', { nonce: 's1', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 }, 6);
+    applyBet(db, 'u1', { nonce: 'b', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
+    applySettle(db, 'u1', { nonce: 's1', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 }, 6);
     const second = applySettle(
       db,
       'u1',
-      { nonce: 's2', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 },
+      { nonce: 's2', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 },
       7
     );
     expect(second.ok).toBe(false);
@@ -268,18 +298,18 @@ describe('applySettle', () => {
 
   it('a replayed settle nonce credits nothing and does not double the stat', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'b', gameId: 'blackjack', amountCents: 10_000 }, 5);
-    applySettle(db, 'u1', { nonce: 'same', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 }, 6);
+    applyBet(db, 'u1', { nonce: 'b', gameId: BETTING_GAME, amountCents: 10_000 }, 5);
+    applySettle(db, 'u1', { nonce: 'same', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 }, 6);
     const again = applySettle(
       db,
       'u1',
-      { nonce: 'same', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 },
+      { nonce: 'same', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 },
       7
     );
 
     expect(again).toMatchObject({ ok: true, value: { replayed: true } });
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS + 10_000);
-    expect(loadProfile(db, 'u1')?.stats.blackjack).toEqual({
+    expect(loadProfile(db, 'u1')?.stats[BETTING_GAME]).toEqual({
       played: 1,
       won: 1,
       lost: 0,
@@ -392,7 +422,7 @@ describe('applySettle', () => {
       'u1',
       {
         nonce: 'a',
-        gameId: 'blackjack',
+        gameId: BETTING_GAME,
         outcome: 'win',
         payoutCents: 0,
         feats: ['feat_natural'],
@@ -400,13 +430,10 @@ describe('applySettle', () => {
       6
     );
     const p = loadProfile(db, 'u1');
-    // `first_win` + `blackjack_bronze` from the predicates, `feat_natural` from the report —
-    // two sources, one diff.
-    expect(Object.keys(p?.achievements ?? {}).sort()).toEqual([
-      'blackjack_bronze',
-      'feat_natural',
-      'first_win',
-    ]);
+    // `first_win` from the predicate, `feat_natural` from the report — two sources, one diff.
+    // No mastery bronze here: the chains are per-game and this is not one of the two that have
+    // one, which is worth pinning — a feat must not drag an unrelated chain in with it.
+    expect(Object.keys(p?.achievements ?? {}).sort()).toEqual(['feat_natural', 'first_win']);
   });
 
   /**
@@ -415,19 +442,21 @@ describe('applySettle', () => {
    */
   it('consumes open wagers oldest-first', () => {
     const db = seeded();
-    applyBet(db, 'u1', { nonce: 'b1', gameId: 'blackjack', amountCents: 1_000 }, 5);
-    applyBet(db, 'u1', { nonce: 'b2', gameId: 'blackjack', amountCents: 100_000 }, 6);
+    applyBet(db, 'u1', { nonce: 'b1', gameId: BETTING_GAME, amountCents: 1_000 }, 5);
+    applyBet(db, 'u1', { nonce: 'b2', gameId: BETTING_GAME, amountCents: 100_000 }, 6);
 
-    // Bounded by the 1,000 stake, not the 100,000 one.
+    // Bounded by the 1,000 stake (3x = 3,000), not by the 100,000 one that is also open. That is
+    // the whole point of oldest-first: a second, larger stake sitting open cannot raise the
+    // ceiling on the hand being settled now.
     const over = applySettle(
       db,
       'u1',
-      { nonce: 's1', gameId: 'blackjack', outcome: 'win', payoutCents: 3_000 },
+      { nonce: 's1', gameId: BETTING_GAME, outcome: 'win', payoutCents: 3_001 },
       7
     );
     expect(over.ok).toBe(false);
     expect(
-      applySettle(db, 'u1', { nonce: 's2', gameId: 'blackjack', outcome: 'win', payoutCents: 2_500 }, 8)
+      applySettle(db, 'u1', { nonce: 's2', gameId: BETTING_GAME, outcome: 'win', payoutCents: 3_000 }, 8)
         .ok
     ).toBe(true);
   });

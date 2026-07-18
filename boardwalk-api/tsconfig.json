@@ -13,7 +13,24 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    // The shared package's per-game SUBPATHS, spelled out for TypeScript.
+    //
+    // `@boardwalk/game-logic` (the root barrel) resolves on its own, but
+    // `@boardwalk/game-logic/games/blackjack` does not: that subpath exists only in the package's
+    // `exports` map, and `moduleResolution: node` — which this package is pinned to, because it is
+    // CommonJS with `rootDir: src` and changing that moves the Pi's entrypoint — predates
+    // `exports` and cannot read it. NODE ITSELF resolves the subpath fine at runtime; it is only
+    // the typechecker that needs telling, which is the worst version of this problem, because the
+    // code would have run correctly while failing to compile.
+    //
+    // `paths` affects type resolution only and emits nothing, so `rootDir` and `dist/server.js`
+    // are untouched. The target is `dist/` rather than `src/` deliberately: the API consumes this
+    // package BUILT (see the package's index.ts for why the seam is asymmetric), so typechecking
+    // against the source would be typechecking something the server does not run.
+    "paths": {
+      "@boardwalk/game-logic/games/*": ["./node_modules/@boardwalk/game-logic/dist/games/*/index.d.ts"]
+    }
   },
   // The BUILD config: only src, rootDir src → `dist/server.js`, no tests shipped.
   // Tests are typechecked by tsconfig.test.json and run by vitest.

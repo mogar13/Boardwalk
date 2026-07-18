@@ -7,6 +7,18 @@ import type { TokenVerifier } from '../src/auth/verify';
 import type { Profile } from '../src/domain/types';
 import { STARTING_BANKROLL_CENTS } from '../src/domain/economy';
 
+/**
+ * The generic /bet + /settle path is exercised with a gameId the referee does NOT deal.
+ *
+ * It used to be spelled 'blackjack', which stopped being valid in Phase D: the server deals that
+ * game now, so `checkSettle` refuses a claim for it outright (`SERVER_DEALT_GAMES`) — otherwise
+ * `POST /bet` + `POST /settle` at the 2.5x ceiling would be a standing bypass of the dealer, and
+ * the whole phase would be opt-in. 'roulette' stands in for what this route is actually for: a
+ * betting game the referee does not run the rules of, bounded by the default 3x ceiling.
+ */
+const BETTING_GAME = 'roulette';
+
+
 const cfg: ApiConfig = {
   port: 0,
   dbPath: ':memory:',
@@ -151,14 +163,14 @@ describe('economy routes', () => {
     const bet = await request(server)
       .post('/bet')
       .set('Authorization', 'Bearer u1')
-      .send({ nonce: 'n1', gameId: 'blackjack', amountCents: 10_000 })
+      .send({ nonce: 'n1', gameId: BETTING_GAME, amountCents: 10_000 })
       .expect(200);
     expect(bet.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS - 10_000);
 
     const settle = await request(server)
       .post('/settle')
       .set('Authorization', 'Bearer u1')
-      .send({ nonce: 'n2', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 })
+      .send({ nonce: 'n2', gameId: BETTING_GAME, outcome: 'win', payoutCents: 20_000 })
       .expect(200);
     expect(settle.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS + 10_000);
     expect(settle.body.profile.xp).toBe(100);
@@ -170,7 +182,7 @@ describe('economy routes', () => {
     const res = await request(server)
       .post('/bet')
       .set('Authorization', 'Bearer u1')
-      .send({ nonce: 'n1', gameId: 'blackjack', amountCents: 99_999_999 })
+      .send({ nonce: 'n1', gameId: BETTING_GAME, amountCents: 99_999_999 })
       .expect(409);
     expect(res.body.error).toMatch(/insufficient/i);
   });
@@ -181,7 +193,7 @@ describe('economy routes', () => {
     await request(server)
       .post('/settle')
       .set('Authorization', 'Bearer u1')
-      .send({ nonce: 'n1', gameId: 'blackjack', outcome: 'win', payoutCents: 1_000_000 })
+      .send({ nonce: 'n1', gameId: BETTING_GAME, outcome: 'win', payoutCents: 1_000_000 })
       .expect(409);
   });
 
@@ -191,7 +203,7 @@ describe('economy routes', () => {
     await request(server)
       .post('/bet')
       .set('Authorization', 'Bearer u1')
-      .send({ gameId: 'blackjack', amountCents: 100 })
+      .send({ gameId: BETTING_GAME, amountCents: 100 })
       .expect(400);
     await request(server).post('/daily').set('Authorization', 'Bearer u1').send({}).expect(400);
   });
@@ -209,7 +221,7 @@ describe('economy routes', () => {
   it('replays a repeated nonce over HTTP without moving money twice', async () => {
     const server = app();
     await create(server);
-    const body = { nonce: 'same', gameId: 'blackjack', amountCents: 10_000 };
+    const body = { nonce: 'same', gameId: BETTING_GAME, amountCents: 10_000 };
     await request(server).post('/bet').set('Authorization', 'Bearer u1').send(body).expect(200);
     const again = await request(server)
       .post('/bet')

@@ -61,7 +61,7 @@ function authoritative(db: Db, uid: string, replayed: boolean): MutationResult {
  * two-step version has a window between the read and the write, and this is precisely the code
  * whose job is to survive two identical requests arriving at once.
  */
-function claimNonce(db: Db, uid: string, nonce: string, kind: string, now: number): boolean {
+export function claimNonce(db: Db, uid: string, nonce: string, kind: string, now: number): boolean {
   const info = db
     .prepare(
       'INSERT OR IGNORE INTO mutations (uid, nonce, kind, created_at) VALUES (?, ?, ?, ?)'
@@ -71,14 +71,14 @@ function claimNonce(db: Db, uid: string, nonce: string, kind: string, now: numbe
 }
 
 /** The player's XP as this transaction has just left it — the `AchievementView`'s `xp`. */
-function xpOf(db: Db, uid: string): number {
+export function xpOf(db: Db, uid: string): number {
   const row = db.prepare('SELECT xp FROM profiles WHERE uid = ?').get(uid) as
     | { xp: number }
     | undefined;
   return row?.xp ?? 0;
 }
 
-function appendLedger(
+export function appendLedger(
   db: Db,
   uid: string,
   gameId: string | null,
@@ -89,6 +89,66 @@ function appendLedger(
   db.prepare(
     'INSERT INTO ledger (uid, game_id, delta_cents, reason, created_at) VALUES (?, ?, ?, ?, ?)'
   ).run(uid, gameId, deltaCents, reason, now);
+}
+
+/**
+ * Everything a finished hand earns that is NOT money: the stat bump, the XP award, the
+ * achievements. Call it with the ledger row for the payout already written — the achievement view
+ * is read back from the tables, so it must be asked after they are true.
+ *
+ * SHARED BY BOTH SETTLE PATHS (Phase D). `applySettle` below does it for the games the server does
+ * not deal; `domain/blackjack.ts` does it for the one it does. It is one function rather than two
+ * copies for the reason the whole `reportResult`-is-one-call rule exists: v1 split money from stats
+ * and the second half got forgotten. Two settle paths that each write their own stats SQL is that
+ * defect with a fresh place to happen — the day the XP table gains a rung, one of them gets it.
+ *
+ * `netCents` is payout minus the total staked, so `big_win` fires on what the player actually
+ * cleared. On a double-down `wagerCents` is the DOUBLED stake, which is what was really at risk.
+ */
+export function recordOutcome(
+  db: Db,
+  uid: string,
+  gameId: string,
+  outcome: Outcome,
+  wagerCents: number,
+  payoutCents: number,
+  feats: readonly string[] | undefined,
+  now: number
+): void {
+  // Stats: one row per (uid, game). The outcome decides which counter moves; `played` always
+  // does. Computed HERE from the outcome — the client sends an outcome, never a count, so it
+  // cannot inflate the win-rate board by reporting bigger numbers. (For blackjack it does not even
+  // send the outcome: the server reads it off its own cards.)
+  const won = outcome === 'win' ? 1 : 0;
+  const lost = outcome === 'loss' ? 1 : 0;
+  const pushed = outcome === 'push' ? 1 : 0;
+  db.prepare(
+    `INSERT INTO stats (uid, game_id, played, won, lost, pushed) VALUES (?, ?, 1, ?, ?, ?)
+     ON CONFLICT(uid, game_id) DO UPDATE SET
+       played = played + 1, won = won + ?, lost = lost + ?, pushed = pushed + ?`
+  ).run(uid, gameId, won, lost, pushed, won, lost, pushed);
+
+  // XP: the flat per-outcome table, added server-side. Also never accepted from the wire —
+  // `level` is derived from `xp` on both sides, so an xp the client could set is a level it
+  // could set, which is the leaderboard.
+  db.prepare('UPDATE profiles SET xp = xp + ?, updated_at = ? WHERE uid = ?').run(
+    XP_BY_OUTCOME[outcome],
+    now,
+    uid
+  );
+
+  // Achievements: RECOMPUTED, not accepted. The view is read back from the tables this
+  // transaction has just written — the stat bump, the XP award and the ledger row are all
+  // above — so the predicates are asked about the state the player is actually in, not the
+  // state a request claimed. See `domain/achievements.ts` for what this closes.
+  const view = viewFor(
+    db,
+    uid,
+    { bankrollCents: balanceOf(db, uid), xp: xpOf(db, uid) },
+    wagerCents,
+    payoutCents - wagerCents
+  );
+  awardAchievements(db, uid, view, feats, now);
 }
 
 /* ------------------------------------------------------------------ bet */
@@ -197,39 +257,16 @@ export function applySettle(db: Db, uid: string, input: SettleInput, now: number
       appendLedger(db, uid, input.gameId, checked.value.payoutCents, 'settle', now);
     }
 
-    // Stats: one row per (uid, game). The outcome decides which counter moves; `played` always
-    // does. Computed HERE from the outcome — the client sends an outcome, never a count, so it
-    // cannot inflate the win-rate board by reporting bigger numbers.
-    const won = input.outcome === 'win' ? 1 : 0;
-    const lost = input.outcome === 'loss' ? 1 : 0;
-    const pushed = input.outcome === 'push' ? 1 : 0;
-    db.prepare(
-      `INSERT INTO stats (uid, game_id, played, won, lost, pushed) VALUES (?, ?, 1, ?, ?, ?)
-       ON CONFLICT(uid, game_id) DO UPDATE SET
-         played = played + 1, won = won + ?, lost = lost + ?, pushed = pushed + ?`
-    ).run(uid, input.gameId, won, lost, pushed, won, lost, pushed);
-
-    // XP: the flat per-outcome table, added server-side. Also never accepted from the wire —
-    // `level` is derived from `xp` on both sides, so an xp the client could set is a level it
-    // could set, which is the leaderboard.
-    db.prepare('UPDATE profiles SET xp = xp + ?, updated_at = ? WHERE uid = ?').run(
-      XP_BY_OUTCOME[input.outcome],
-      now,
-      uid
-    );
-
-    // Achievements: RECOMPUTED, not accepted. The view is read back from the tables this
-    // transaction has just written — the stat bump, the XP award and the ledger row are all
-    // above — so the predicates are asked about the state the player is actually in, not the
-    // state a request claimed. See `domain/achievements.ts` for what this closes.
-    const view = viewFor(
+    recordOutcome(
       db,
       uid,
-      { bankrollCents: balanceOf(db, uid), xp: xpOf(db, uid) },
+      input.gameId,
+      input.outcome,
       wagerCents,
-      checked.value.payoutCents - wagerCents
+      checked.value.payoutCents,
+      input.feats,
+      now
     );
-    awardAchievements(db, uid, view, input.feats, now);
 
     return authoritative(db, uid, false);
   });

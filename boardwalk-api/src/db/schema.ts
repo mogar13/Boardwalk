@@ -94,7 +94,13 @@ CREATE TABLE IF NOT EXISTS wagers (
   wager_cents  INTEGER NOT NULL,
   created_at   INTEGER NOT NULL,
   -- NULL while the hand is live. Set by the settle that consumes it, so a wager pays out ONCE.
-  settled_at   INTEGER
+  settled_at   INTEGER,
+  -- PHASE D. The \`blackjack_hands\` row this stake belongs to, so a settle closes THIS hand's
+  -- wagers by name — both of them after a double-down — instead of "the oldest open one for this
+  -- game". Oldest-first is the right rule when the server cannot see the hand; it is the wrong one
+  -- when it can, because an abandoned hand's wager would be consumed by a later, unrelated
+  -- settlement. NULL for every non-blackjack wager, which still goes through the generic path.
+  hand_id      INTEGER
 );
 
 -- PHASE B. The idempotency log: one row per accepted mutation, keyed by the client's nonce.
@@ -110,12 +116,46 @@ CREATE TABLE IF NOT EXISTS mutations (
   nonce       TEXT NOT NULL,
   kind        TEXT NOT NULL,
   created_at  INTEGER NOT NULL,
+  -- PHASE D. The blackjack hand this mutation acted on, so a REPLAY can answer with the same hand
+  -- the first call did rather than "whatever hand is newest". Without it a stale retry of an
+  -- earlier deal's nonce would return the CURRENT hand's cards — no money would move (the nonce
+  -- still short-circuits), but the client would render someone else's turn, which is the kind of
+  -- wrong answer that looks like a dealing bug. NULL for the four money mutations, which have no
+  -- hand. Added here AND in COLUMN_MIGRATIONS — see the note below.
+  hand_id     INTEGER,
   PRIMARY KEY (uid, nonce)
+);
+
+-- PHASE D. The server's own blackjack hands — the table that makes \`payoutCents\` stop being a
+-- client claim.
+--
+-- Through Phase B the server knew a stake existed and what the payout could not exceed; it did not
+-- know what cards were on the table, so a client that reported "blackjack, pay me 2.5x" every hand
+-- was inside every rule. Now the deck is shuffled here, the reducer runs here, and the payout is
+-- computed from THESE cards. The client is told what it is allowed to see (\`HandView\`) and is
+-- never sent the deck or the hole card.
+--
+-- \`state_json\` is the whole \`BlackjackState\` — including the undealt remainder of the deck, which
+-- is precisely the thing that must live server-side and nowhere else. It is a blob rather than
+-- columns because it is opaque to SQL: nothing queries inside a hand, and the shape is owned by
+-- the shared reducer, so columns would be a second definition of it that could drift.
+CREATE TABLE IF NOT EXISTS blackjack_hands (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid         TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  state_json  TEXT NOT NULL,
+  -- 1 once the payout has been credited and the wagers closed. The flag is what stops a second
+  -- settle: a finished hand is refused rather than replayed through the reducer.
+  settled     INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;
+-- Every hand lookup is "this player's, live or not" — a hand id alone is never enough, because a
+-- hand id from another account must be a REFUSAL and not a read.
+CREATE INDEX IF NOT EXISTS idx_blackjack_hands_uid ON blackjack_hands(uid, settled);
 `;
 
 /**
@@ -139,4 +179,10 @@ export const COLUMN_MIGRATIONS: readonly {
 }[] = [
   { table: 'profiles', column: 'equipped_cardback', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_cardback TEXT' },
   { table: 'profiles', column: 'equipped_title', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_title TEXT' },
+  // PHASE D. Two columns on tables the Pi already has. `blackjack_hands` needs no entry — a whole
+  // new table DOES reach an existing database, because `CREATE TABLE IF NOT EXISTS` runs on every
+  // open and there is nothing there to be a no-op against. It is only a new COLUMN on an OLD table
+  // that silently never lands, which is the asymmetry this list exists for.
+  { table: 'mutations', column: 'hand_id', ddl: 'ALTER TABLE mutations ADD COLUMN hand_id INTEGER' },
+  { table: 'wagers', column: 'hand_id', ddl: 'ALTER TABLE wagers ADD COLUMN hand_id INTEGER' },
 ];

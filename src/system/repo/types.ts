@@ -1,6 +1,16 @@
 import type { IdentityMode } from '@/system/auth/credentials';
 import type { ChatMessage } from '@/system/chat/types';
 import type { Profile } from '@boardwalk/game-logic';
+// The dealt hand's vocabulary comes from the SAME rulebook the board renders and the referee
+// deals from — `@boardwalk/game-logic/games/blackjack`. Importing the types rather than restating
+// them is what stops the seam from becoming a second, drifting description of a card: if the
+// rulebook's `Result` gains a case, every implementation of `BlackjackRepo` stops compiling until
+// it handles one, which is the whole reason the logic packages were extracted in the first place.
+import type {
+  Card as BlackjackCard,
+  Phase as BlackjackPhase,
+  Result as BlackjackResult,
+} from '@boardwalk/game-logic/games/blackjack';
 import type { Session } from '@/system/auth/session';
 // Type-only, and type-only is why the cycle is fine: boards.ts imports the `LeaderboardEntry`
 // type from here, this imports the `BoardId` type from there, and both erase at compile — there
@@ -178,8 +188,8 @@ export type EconomyIntent =
    * enforces exactly that, so the only thing this can move is XP and a stat.
    *
    * Blackjack does NOT come through here any more. The server deals that hand and settles it
-   * from its own cards (`kind: 'blackjack'` on `GameSessionRepo`), which is what makes the
-   * payout stop being a claim for the one game where a claim was worth money.
+   * from its own cards (`BlackjackRepo`, below), which is what makes the payout stop being a
+   * claim for the one game where a claim was worth money.
    *
    * `feats` is the only achievement input left on the wire, because no state predicate can see a
    * two-card 21 or a Solitaire cleared without a recycle. The server filters it to ids marked
@@ -218,6 +228,79 @@ export type EconomyIntent =
  */
 export interface EconomyRepo {
   apply(uid: string, intent: EconomyIntent, clientNext: Profile): Promise<RepoResult<Profile>>;
+}
+
+/**
+ * THE DEALT HAND — Phase D's seam, and the one place a game's rules live behind the repo.
+ *
+ * Every other game in this repo runs its rulebook in the browser and tells the economy what
+ * happened. That is fine for the four that cannot win money, and it was never fine for Blackjack:
+ * through Phase B the referee knew a stake had been placed and that the payout claimed against it
+ * was under 2.5×, and nothing more, because there were no cards on the server. A client that
+ * answered "blackjack" to every hand was inside every rule the referee had. A ceiling bounds that
+ * theft; it cannot stop it, because "did this player actually win" is not a question you can ask
+ * about a number.
+ *
+ * So the deal moves behind this interface. `deal` and `move` are the ONLY two verbs, and read what
+ * they carry: a stake, a hand id, and one of three decisions. There is no field on either for a
+ * card, an outcome or a payout — not validated away, ABSENT, which is the meta-rule (make the wrong
+ * thing unspellable) applied to the last money surface the client still owned.
+ *
+ * The interface names one game, which is a thing this codebase otherwise refuses to do. It is
+ * earned rather than assumed: the referee exposes `/blackjack/deal` and `/blackjack/move`, so the
+ * game's name is already on the wire, and a `GameSessionRepo<TState>` invented for a second caller
+ * that does not exist would be `validateAndCommit()` — the shared abstraction designed before
+ * anyone needed it, with zero adopters. When a second game is dealt server-side, THAT is when the
+ * shape of the general one is knowable.
+ */
+
+/** The three decisions a player may make on a live hand. Not results — a player may choose badly. */
+export type BlackjackMove = 'hit' | 'stand' | 'double';
+
+/**
+ * WHAT A BLACKJACK PLAYER MAY SEE — the shared projection, re-exported so the repo interface
+ * names it without redeclaring it.
+ *
+ * This interface was written out here and again in `boardwalk-api/src/domain/blackjack.ts`, with a
+ * test comparing the two. Both are gone: the rule lives in
+ * `@boardwalk/game-logic/games/blackjack` and both sides import it. Three copies of "what may a
+ * client see" is three chances to reveal a card, and the two that are not the referee's are the
+ * ones nobody would think to audit.
+ *
+ * The guarantee it carries is structural, not procedural: `HandView` has no `deck` field and no
+ * hole card, so there is nothing to forget to strip. Same discipline as UNO's `toPublic`, pointed
+ * at a server boundary instead of a room node.
+ */
+import type { HandView } from '@boardwalk/game-logic/games/blackjack';
+export type { HandView };
+
+
+export interface BlackjackDealInput {
+  readonly nonce: string;
+  readonly wagerCents: number;
+}
+
+export interface BlackjackMoveInput {
+  readonly nonce: string;
+  readonly handId: number;
+  readonly move: BlackjackMove;
+}
+
+/**
+ * Both halves of an answer, always. A response carrying the hand without the balance would let a
+ * client learn a card without learning what the card cost it, which is exactly the reconciliation
+ * gap `EconomyRepo.apply` closes by returning the whole authoritative profile.
+ */
+export interface BlackjackTurn {
+  readonly profile: Profile;
+  readonly hand: HandView;
+}
+
+export interface BlackjackRepo {
+  /** Stake, shuffle, deal. A dealt NATURAL comes back already `settled` and already paid. */
+  deal(uid: string, input: BlackjackDealInput): Promise<RepoResult<BlackjackTurn>>;
+  /** Hit, stand or double against a live hand. A double commits its second stake behind the seam. */
+  move(uid: string, input: BlackjackMoveInput): Promise<RepoResult<BlackjackTurn>>;
 }
 
 /**
@@ -426,10 +509,23 @@ export interface Repos {
   readonly profile: ProfileRepo;
   /** Phase B: the only path a chip moves. See `EconomyRepo`. */
   readonly economy: EconomyRepo;
+  /** Phase D: the one game whose cards are not the client's. See `BlackjackRepo`. */
+  readonly blackjack: BlackjackRepo;
   readonly leaderboard: LeaderboardRepo;
   readonly room: RoomRepo;
   readonly chat: ChatRepo;
 }
 
 /** Re-exported so a consumer never needs a second import to type an error branch. */
-export type { ChatMessage, IdentityMode, Profile, RoomSnapshot, Seat, SeatOccupant, Session };
+export type {
+  BlackjackCard,
+  BlackjackPhase,
+  BlackjackResult,
+  ChatMessage,
+  IdentityMode,
+  Profile,
+  RoomSnapshot,
+  Seat,
+  SeatOccupant,
+  Session,
+};

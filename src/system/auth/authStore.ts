@@ -85,6 +85,27 @@ interface AuthState {
     intent: EconomyIntent,
     optimistic: Profile
   ) => Promise<RepoResult<Profile>>;
+
+  /**
+   * INSTALL A PROFILE THE REFEREE ALREADY DECIDED — Phase D's addition, and the narrowest one that
+   * works.
+   *
+   * `applyEconomy` is the path for money the CLIENT initiates: it computes an optimistic profile,
+   * sends an intent, and reconciles. A server-dealt blackjack hand inverts that. The referee takes
+   * the stake, deals, and settles from its own cards inside the same request, so by the time the
+   * response lands there is nothing left to predict — the authoritative profile is simply in hand,
+   * and the only thing left to do is show it. Routing that through `applyEconomy` would mean
+   * inventing an optimistic profile for a hand whose outcome we do not know, which is a guess with
+   * a 3:2 tail on it.
+   *
+   * IT IS NOT A MONEY SETTER, and the distinction is the whole reason it is safe to add. It
+   * computes nothing and it accepts nothing a caller made up: the only values that reach it come
+   * back from a repo, exactly as `applyEconomy`'s own `set({ profile: result.value })` does. And it
+   * is not on any game-facing surface — a game gets `useBet`/`reportResult`/`useBlackjackTable`,
+   * never the store — so "there is no bankroll setter a game can reach" is still true at the module
+   * level as well as the type level.
+   */
+  readonly adoptProfile: (authoritative: Profile) => void;
 }
 
 /**
@@ -200,6 +221,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (get().profile === next) set({ profile: prev });
       throw error;
     }
+  },
+
+  adoptProfile(authoritative) {
+    // Signed out, or mid-transition: there is nothing to adopt onto, and writing a profile with no
+    // session is the cross-user leak `subscribeToSession` hard-replaces to prevent. A late response
+    // arriving after a sign-out is dropped, which is the correct thing to do with it.
+    if (get().session === null) return;
+    set({ profile: authoritative });
   },
 
   async applyEconomy(intent, optimistic) {

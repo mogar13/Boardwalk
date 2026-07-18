@@ -36,6 +36,14 @@ interface ImportMetaEnv {
    */
   readonly VITE_WS_ROOMS?: string;
   /**
+   * PHASE D CUTOVER (BACKEND_PLAN.md): the referee deals and settles blackjack wherever the
+   * server-authoritative economy is on. This var is the KILL SWITCH, not the enable: `'0'` puts the
+   * table back on the local reducer with the stake and payout as ordinary `bet`/`settle` intents —
+   * the Phase-B economy, restored by a rebuild rather than a revert. See `@/system/repo` and
+   * `@/system/repo/local/blackjackRepo`.
+   */
+  readonly VITE_API_BLACKJACK?: string;
+  /**
    * DEV-ONLY opt-in: `'1'` points the app at the local Firebase emulators (see
    * `@/system/repo/firebase/app`). Gated by `import.meta.env.DEV` there, so it is inert in a
    * production build. This is how the Phase 5 lobby harness drives a real room flow locally.
