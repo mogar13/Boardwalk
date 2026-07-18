@@ -24,7 +24,7 @@ for private play; it is **not** cleared for redistribution or sale.
 | Casino SFX — card slides/places, chip lays, shuffle, win/lose/push, click, notify (`public/audio/`) | Kenney — *Casino Audio* & *Music Jingles* packs (kenney.nl) | CC0 |
 | Standard 52-card deck + backs, UNO deck (`public/cards/`) | Kenney — *Boardgame Pack* (kenney.nl) | CC0 |
 | Poker chips (`public/chips/`) | Rad Potato — *Pixel Perfect* board-game asset pack (itch.io) | CC0 |
-| Game-card icons — Blackjack, Tic-Tac-Toe (`public/games/`) | Game Shack icon set (flat game icons) | CC0 / CC-BY — cleared for reuse |
+| Game-card icons — Blackjack, Tic-Tac-Toe (Game Shack icons), Chess (a knight from the piece set), UNO (a red number card), Solitaire (Kenney Ace of Spades) — all in `public/games/` | Game Shack icon set + Kenney deck | CC0 / CC-BY — cleared for reuse |
 | Favicon — arcade joystick (inlined in `index.html` as a data URI, not a file) | Game Shack icon set | CC0 / CC-BY — cleared for reuse |
 | Full Game Shack image library — pieces (incl. chess), boards, backgrounds, dice, sudoku + the Game Shack card/chip/icon sets (`public/assets/`) | Game Shack asset trove | Mixed (mostly CC0/CC-BY; 7 branded logos excluded) — **private use only** |
 

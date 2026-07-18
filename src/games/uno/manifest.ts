@@ -26,6 +26,7 @@ export const unoManifest = {
   id: 'uno',
   name: 'UNO',
   blurb: 'Match colour or number, stack the action cards, and yell UNO. Two to seven, or fill with bots.',
+  icon: 'uno.png',
   pier: 'tables',
   seats: { min: 2, max: 7 },
   modes: ['ai', 'online'],

@@ -23,6 +23,7 @@ export const chessManifest = {
   id: 'chess',
   name: 'Chess',
   blurb: 'The whole rulebook. Sit across a friend on one screen, or play a table online.',
+  icon: 'chess.png',
   pier: 'tables',
   seats: { min: 2, max: 2 },
   modes: ['hotseat', 'online'],
