@@ -1,6 +1,6 @@
 # Progression Overhaul — Store, Achievements, Leaderboards, Assets
 
-**Status: P1–P4 SHIPPED (2026-07-17/18). P5 in progress.** Sections 1–8 are the original design
+**Status: ✅ COMPLETE — P1–P5 all SHIPPED (2026-07-17/18), rules and Pi deployed.** Sections 1–8 are the original design
 contract, kept as written; §9 carries the build log and is the honest record of what landed. This is the contract
 for the phase(s) that build it, in the same spirit as [BACKEND_PLAN.md](BACKEND_PLAN.md).
 

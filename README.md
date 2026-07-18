@@ -55,7 +55,8 @@ unspellable rather than documenting "don't."
 | [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
 | [CLAUDE.md](CLAUDE.md) | The rules, and what enforces each one. Short on purpose — every rule is paid for by a specific v1 bug. |
 | [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | The referee. Node + SQLite, server-authoritative economy — **Phases A–D shipped and deployed**. |
-| [plans/PROGRESSION_PLAN.md](plans/PROGRESSION_PLAN.md) | Store, achievements, leaderboards, assets. P1–P4 shipped; P5 (felts/frames/SFX) in progress. |
+| [plans/ROADMAP.md](plans/ROADMAP.md) | **What's left, in order.** Every plan closed at once; this is the honest list of what outlived them. |
+| [plans/PROGRESSION_PLAN.md](plans/PROGRESSION_PLAN.md) | Store, achievements, leaderboards, assets. **P1–P5 all shipped.** |
 | [boardwalk-api/README.md](boardwalk-api/README.md) | The server's own docs — routes, schema, deploy target. |
 
 Two tiers, deliberately: rules live in `CLAUDE.md` in present tense and must have a guard behind them;
@@ -98,7 +99,8 @@ npm run rules:test     # runs the REAL rules file against the RTDB emulator
 npm run rules:deploy   # push them to Firebase. NOTHING IN CI DOES THIS — do it in the same breath.
 ```
 
-**Next: PROGRESSION_PLAN P5 — felts / frames / polish + celebration SFX.** Phases 0–6 and backend
-A–D are done; there is deliberately **no game checklist** beyond the launch five (see
+**Next: see [plans/ROADMAP.md](plans/ROADMAP.md).** Every plan in the repo is now closed — Phases 0–6,
+backend A–D, and Progression P1–P5 — so the remaining work (offline replay-hardening, room
+crash-recovery, whether to close Phase C) lives there; there is deliberately **no game checklist** beyond the launch five (see
 [CLAUDE.md](CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated)). Phases are one per
 conversation, each ending green and deployed; see [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases).

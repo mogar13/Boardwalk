@@ -671,3 +671,9 @@ Phases are listed in [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases) — on
 green and deployed. **Phase 6 is complete: Tic-Tac-Toe, Blackjack, Chess, UNO and Solitaire all
 shipped. The launch set of five is done — the next game is built only because one sounds fun, never
 to reach a number (see Scope discipline).**
+
+**Every plan in this repo is now closed** — Phases 0–6, backend Phases A–D, and the Progression
+Overhaul P1–P5. What outlived them is in [plans/ROADMAP.md](plans/ROADMAP.md), ordered by what goes
+wrong if it is never done: offline replay-hardening (the last item that can move money), room
+crash-recovery, and the *decision* of whether to close Phase C by deleting the RTDB fallback. That
+file is explicitly **not** a checklist.
