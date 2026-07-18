@@ -88,15 +88,25 @@ export const PRICES_CENTS: Readonly<Record<string, number | null>> = {
   av_fire: 4_000_000,
   av_rocket: 7_500_000,
   av_dragon: 10_000_000,
-  // card backs
+  // card backs — all fifteen staged backs. P4 filled the ladder out (a pack needs depth or every
+  // pull is a duplicate by the third open); the seven it added landed on the client only, and
+  // `tests/economy-parity.test.ts` caught the drift the moment the two branches met. Without them
+  // the server would refuse a purchase the store happily offers.
   cb_blue1: 0,
   cb_red1: 40_000,
   cb_green1: 40_000,
+  cb_blue2: 40_000,
+  cb_red2: 40_000,
+  cb_green2: 40_000,
   cb_blue3: 250_000,
   cb_red3: 250_000,
+  cb_blue4: 250_000,
+  cb_green3: 250_000,
   cb_green4: 900_000,
   cb_blue5: 900_000,
+  cb_red4: 900_000,
   cb_red5: 6_000_000,
+  cb_green5: 6_000_000,
   // titles — two buyable, two earn-only
   ttl_regular: 150_000,
   ttl_highroller: 1_000_000,

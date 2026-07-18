@@ -25,3 +25,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Claude Code session state, including git worktrees (a full second checkout of this repo).
+# Committing those would nest the repo inside itself; linting them breaks the build.
+.claude/
