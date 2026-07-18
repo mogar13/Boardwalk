@@ -5,9 +5,10 @@ document answers the five design questions before any code exists, because the s
 (**FULL: server-signed nonces, unbounded offline duration**) has more surface to get wrong than to
 write.
 
-**BUILT AND VERIFIED — see [What shipped](#what-shipped) at the bottom for the evidence, including
-the replay attack failing against a live server and the one real bug the browser pass caught that
-584 green tests did not.** Not deployed: the Pi goes first, by hand, and that is still owed.
+**BUILT, DEPLOYED AND ENFORCING IN PRODUCTION (2026-07-18).** See [What shipped](#what-shipped) for
+the evidence — the replay attack failing against the live Pi, the one real bug the browser pass
+caught that 584 green tests did not, and the deploy-order mistake this document made and then had
+to correct on a running system.
 
 ---
 
@@ -510,12 +511,45 @@ defect, and it is the argument for the manual pass being non-optional, not a for
 fetched tickets on demand — which is precisely why it is worth naming: a latent 30-second hole,
 papered over by a safety net, is the kind of thing that is never found later.)*
 
-### Still owed
+### Deployed, and what the deploy taught
 
-**Deployment. The Pi goes first, by hand** — see [Deploy order](#deploy-order). The server accepts
-both tickets and plain nonces until `TICKET_SECRET` is set, so a server-first deploy is safe and a
-client-first one would lose offline results. No rules deploy is needed: this feature adds no stored
-profile field, by design.
+Shipped in three phases on 2026-07-18 (server → client → secret). **Verified in production from the
+artifact, never from an exit code:**
+
+```
+/health (Funnel)          {"ok":true,"db":"up","tickets":"on"}
+live tic-tac-toe win      settle 200, nonce v1.5afc0756.d-7590ff3b5835b753.1.…  signed ticket
+ticket book               64 -> 63
+same ticket re-sent 3x    replayed=true, xp 10 -> 10, bankroll unchanged
+client-minted nonce       409 {"error":"not a ticket","ticket":"invalid"}
+ticket_devices            issued 64 / spent 1 / outstanding 63  — matches the client exactly
+```
+
+The real player's row was untouched throughout (xp 700, $5,215.00, 2 ledger rows, integrity ok,
+identical before and after); the throwaway verification account was deleted from SQLite **and**
+Firebase Auth afterwards.
+
+**The mistake this document made.** The original deploy order said "the Pi goes first", listed *set
+`TICKET_SECRET`* as step 3 and *merge the frontend* as step 5 — and I ran it in that order. Setting
+the secret IS the cutover: from that moment the gate refuses anything that is not a ticket, and the
+deployed frontend was still minting its own nonces, so every chess/UNO/solitaire settle would 409.
+Live for about two minutes, no impact (the DB was byte-identical afterwards and no requests landed
+in the window), rolled back by renaming the env key and restarting. The section is now three phases
+with the secret last — see [Deploy order](#deploy-order--three-phases-and-the-secret-goes-last).
+
+Two things made that cheap, and both were design decisions rather than luck: **`enabled` is a third
+state**, so the new client works correctly on both sides of the cutover, and **the switch is an env
+var**, so the undo is fifteen seconds and no rebuild.
+
+**A verification gotcha worth recording.** Driving the live site from a machine on the tailnet fails
+in a way that looks like a product bug: the Funnel hostname resolves to a private `100.x` address,
+so Chrome's Local Network Access check blocks the request from the `github.io` origin
+(`CORS policy: Permission was denied for this request to access the local network`). `curl` is
+unaffected, and so is any user not on the tailnet. Launch Chromium with
+`--disable-features=BlockInsecurePrivateNetworkRequests,LocalNetworkAccessChecks,PrivateNetworkAccessChecks`
+to verify from here.
+
+**No rules deploy was needed**, as designed — the feature adds no stored profile field.
 
 ---
 

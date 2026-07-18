@@ -3,12 +3,15 @@
 **Written 2026-07-18, when every plan in this repo finished at once.** Phases 0–6 shipped, backend
 Phases A–D shipped and deployed, and the Progression Overhaul closed with P5. There is no plan
 document with an open item in it. This file exists so that fact does not read as "nothing left to
-do", because four real things are outstanding and three of them have a money or data consequence.
+do", because four real things were outstanding and three of them had a money or data consequence.
+
+**Item 1 closed 2026-07-18** — offline banking is built, deployed and enforcing. Three remain, and
+none of them can move a chip.
 
 **This is not a checklist and finishing it is not a goal.** Same rule as
 [Scope discipline](../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated): work happens
-because it is worth doing, not to empty a list. Items 1 and 2 are worth doing. Item 3 is a decision,
-not a chore. Item 4 is optional forever.
+because it is worth doing, not to empty a list. Item 2 is worth doing. Item 3 is a decision, not a
+chore. Item 4 is optional forever.
 
 ---
 
@@ -18,7 +21,7 @@ Ordered by **what goes wrong if you never do it**, not by effort:
 
 | # | Item | If never done |
 |---|---|---|
-| 1 | ~~Offline replay-hardening~~ — **BUILT, not yet deployed** | ~~A reconnect can pay a win twice.~~ See [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md). What is left is a hand deploy to the Pi. |
+| 1 | ~~Offline replay-hardening~~ — **DONE, deployed + enforcing 2026-07-18** | ~~A reconnect can pay a win twice.~~ Closed. See [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md). |
 | 2 | Crash-recovery for rooms | A crashed host strands a table permanently. **Data.** |
 | 3 | Close Phase C (delete RTDB rooms) | Nothing breaks. Two systems stay alive instead of one. |
 | 4 | A sixth game | Nothing. This is the point. |
@@ -28,7 +31,7 @@ Two smaller items ride along with whatever you touch next; they are at the botto
 
 ---
 
-## 1. Offline replay-hardening — BUILT; only the deploy is outstanding
+## 1. Offline replay-hardening — DONE, deployed and enforcing
 
 > **Closed 2026-07-18** by [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md), which is the design, the
 > answers to the five questions, and the evidence. Read that instead of what follows; the rest of
@@ -46,7 +49,9 @@ Two smaller items ride along with whatever you touch next; they are at the botto
 > — was answered FULL** (server-signed nonces, unbounded offline duration) by the owner. The design
 > reconciles that with the batch it necessarily implies: **duration unbounded, volume bounded at 64.**
 >
-> Still owed: the Pi deploy, by hand, first.
+> **Deployed and enforcing in production 2026-07-18**, in three phases (server → client → secret),
+> verified from the artifact: a live settle carried a signed ticket, a replay of it moved nothing, and
+> a client-minted nonce was refused 409.
 
 ### The original framing, kept
 
