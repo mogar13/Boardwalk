@@ -4,12 +4,16 @@ The referee owns the ledger, and the ledger is the money. There is no bankroll c
 this schema — a balance is `SUM(ledger.delta_cents)` — so losing ledger rows does not corrupt the
 balance, it *silently changes* it. That is the failure this document exists to prevent.
 
-> **Status, honestly: the drill has NOT been run on the real Pi.** Everything below is implemented
-> and tested against temp databases on a dev machine (`npx vitest run tests/backup.test.ts`, 16
-> tests, green), and both CLI scripts were driven end-to-end against a seeded database. Nobody has
-> yet SSH'd to the Pi, installed the timer, taken a backup of the live stick, or run the drill
-> against it. **Until that happens this is a plan, not a backup.** It is an owed step — see
-> [Owed](#owed).
+> **Status: the drill HAS now been run on the real Pi (2026-07-18).** `npm run backup` produced a
+> verified snapshot of the live stick, the drill passed against it on the Pi **and** against the
+> off-box copy, and the systemd timer is installed and firing. One item remains: the full
+> stop/swap/start restore rehearsal — see [Owed](#owed).
+>
+> Two corrections found while doing it, both of which had made this document wrong in practice:
+> `scripts/` and `dist/backup/` **did not exist on the Pi at all**, so the verified backup had never
+> run there; and the systemd unit below **would have failed as written** — its `desktop:` rsync
+> target does not resolve from the Pi. The installed unit is backup-only and the off-box copy is a
+> PULL (a post-step that always fails would mark every good backup failed).
 
 ## What the backup actually does
 
@@ -75,10 +79,13 @@ WorkingDirectory=/home/mogar13/boardwalk-api
 Environment=DB_PATH=/mnt/boardwalk-db/data/boardwalk.db
 Environment=BACKUP_DIR=/mnt/boardwalk-db/backups
 Environment=BACKUP_KEEP_DAYS=14
-ExecStart=/usr/bin/npm run backup
-# Off-box copy is part of the same unit on purpose: a backup that only exists on the machine that
-# holds the original is not a backup, it is a second copy of the same disk failure.
-ExecStartPost=/usr/bin/rsync -az --delete /mnt/boardwalk-db/backups/ desktop:/srv/boardwalk-backups/
+# node directly, not `npm run backup`: systemd's PATH is minimal and npm adds a shell layer that
+# only obscures the exit code. This is what is actually installed on the Pi.
+ExecStart=/usr/bin/node scripts/backup.mjs
+# NOTE: an `ExecStartPost=rsync ... desktop:` line used to live here and it CANNOT WORK from this
+# Pi -- `desktop` does not resolve, and the intended target runs no sshd. A post-step that always
+# fails marks every SUCCESSFUL backup as a failed unit, which is how you learn to ignore the unit.
+# Off-box is therefore a PULL, run from the machine that holds the credentials -- see below.
 
 [Install]
 WantedBy=multi-user.target
@@ -224,9 +231,9 @@ wrong data.
 
 ## Owed
 
-- [ ] Run `npm run backup` on the real Pi, against the live stick.
-- [ ] Install and enable the systemd timer; confirm with `systemctl list-timers`.
-- [ ] Set up the off-box `rsync` target over Tailscale and confirm a file lands there.
-- [ ] Run `npm run restore:drill` on the Pi **and** on the off-box copy; paste the output here.
+- [x] Run `npm run backup` on the real Pi, against the live stick. *(2026-07-18 — `$5215.00`, exit 0)*
+- [x] Install and enable the systemd timer; confirm with `systemctl list-timers`. *(next fire 03:16; `Result=success`)*
+- [x] Set up the off-box `rsync` target over Tailscale and confirm a file lands there. *(PULL to `~/boardwalk-backups/`; push is impossible — no sshd on the target)*
+- [x] Run `npm run restore:drill` on the Pi **and** on the off-box copy. *(both PASSED, `$5215.00` from 2 ledger rows)*
 - [ ] Do one full stop/swap/start restore rehearsal (above) and note how long it took.
 - [ ] Then, and only then, delete this section and replace it with the date the drill was last run.
