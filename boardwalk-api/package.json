@@ -9,15 +9,17 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "npm --prefix ../packages/game-logic run build && tsc -p tsconfig.json",
-    "typecheck": "npm --prefix ../packages/game-logic run build && tsc -p tsconfig.test.json",
+    "build": "npm run build:shared && tsc -p tsconfig.json",
+    "typecheck": "npm run build:shared && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "backup": "node scripts/backup.mjs",
     "backfill": "node scripts/backfill.mjs",
     "restore:drill": "node scripts/restore-drill.mjs",
     "lint": "eslint .",
-    "pretest": "npm --prefix ../packages/game-logic run build"
+    "pretest": "npm run build:shared",
+    "build:shared": "tsc -p ../packages/game-logic/tsconfig.build.json",
+    "prelint": "npm run build:shared"
   },
   "dependencies": {
     "@boardwalk/game-logic": "file:../packages/game-logic",

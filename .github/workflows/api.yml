@@ -17,10 +17,12 @@ on:
     branches: [main]
     paths:
       - 'boardwalk-api/**'
+      - 'packages/game-logic/**'
       - '.github/workflows/api.yml'
   pull_request:
     paths:
       - 'boardwalk-api/**'
+      - 'packages/game-logic/**'
       - '.github/workflows/api.yml'
   workflow_dispatch:
 
@@ -53,6 +55,21 @@ jobs:
       # `ci` not `install`: it fails on a lockfile that disagrees with package.json rather than
       # quietly resolving something the local tree never saw.
       - run: npm ci
+
+      # THE SHARED RULES, COMPILED BEFORE ANYTHING READS THEM.
+      #
+      # `packages/game-logic/dist/` is gitignored and this service consumes the package BUILT, so
+      # on a fresh checkout every `@boardwalk/game-logic` type resolves to nothing. That does not
+      # fail loudly — type-aware lint reports it as 355 `no-unsafe-*` errors about "a type that
+      # cannot be resolved", which reads like the test files are sloppy rather than like the
+      # package is missing. It went green locally only because a previous build had left dist/
+      # lying around, which is the exact difference between a dev machine and CI.
+      #
+      # The npm scripts do this too (`prelint`/`pretest`/`build`), so a human running any one of
+      # them locally cannot hit the same thing. This step is here so the failure, if it ever comes
+      # back, names itself instead of arriving disguised as 355 lint errors.
+      - name: Build the shared rules package
+        run: npm run build:shared
 
       # Three separate steps on purpose. A lint failure, a type error and a failing test are three
       # different problems and should not share one red X in the log.
