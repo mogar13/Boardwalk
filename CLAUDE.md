@@ -468,8 +468,7 @@ builds the thing it guards.
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
-| Phase B is deployed to the Pi | unguarded and **NOT DONE** — the code is green locally; the cutover is live only after the deploy, the restore drill and the prod verify in BACKEND_PLAN.md's owed list |
-| The backfill has actually been RUN | unguarded and **NOT DONE**. SQLite holds one profile; RTDB holds every real player, so cutting the frontend over *before* the backfill gives every unmigrated player a fresh $5,000 and drops their XP, stats, achievements and inventory. The tool and its tests are green; the procedure is [plans/BACKFILL_RUNBOOK.md](plans/BACKFILL_RUNBOOK.md) and **no step of it has been executed**. Run it before the cutover, never after |
+| Phase B is deployed, and the backfill has been RUN | unguarded, but **DONE** (2026-07-18) — the API answers `{"ok":true,"db":"up"}` on the Funnel URL, `VITE_API_BASE_URL` is set in Actions secrets, and the [backfill runbook](plans/BACKFILL_RUNBOOK.md) has been executed, so SQLite holds the real players rather than one shadow profile. **Nothing in this repo can prove any of that** — it is an operational fact checked by hand, and the `migration:v1` marker (which makes a re-run a no-op) is the only thing standing between a second run and a double grant |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
 
