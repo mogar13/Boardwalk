@@ -16,6 +16,17 @@ finally needs one.
 
 Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts are "of 31 games."
 
+> **Every build here inherits the repo's guardrails — the 800-line ceiling most of all.** No file may
+> reach 800 lines (`scripts/check-file-size.mjs`, enforced on `prebuild`; it *fails* the build, it
+> doesn't warn). This matters more for these features than for anything shipped so far, because the
+> capability they most resemble in v1 is `system_ui.js` — a ~2,000-line HUD/store/modal/lobby
+> god-object with 430 dead lines. The whole point of lifting a feature into the OS is that it arrives
+> as small, single-purpose modules (a role→file registry, a pure reducer, a hook), never one growing
+> file. If a feature below can't be built under 800 lines per file, that's the signal to split it, not
+> to raise the ceiling — the baseline is `{}` and it should stay there. The rest of the guardrails
+> apply too: `logic/` stays pure, colours are semantic tokens (no inline hex, even for v1's chat
+> colours), and no game imports a sibling.
+
 ---
 
 ## Priority read
