@@ -207,7 +207,48 @@ export type EconomyIntent =
   /** Buy a cosmetic. Names the ITEM; the price is the server's to look up. */
   | (IntentBase & { readonly kind: 'purchase'; readonly itemId: string })
   /** Claim the daily reward. Carries no timestamp — the server's clock is the only one. */
-  | (IntentBase & { readonly kind: 'daily' });
+  | (IntentBase & { readonly kind: 'daily' })
+  /**
+   * Open a pack. Names the PACK and nothing else — and the omissions are the design, the same way
+   * they are on `purchase` and `daily`.
+   *
+   * THERE IS NO SEED AND NO ITEM HERE, and that is the whole reason this intent exists. A pack's
+   * outcome is the one thing in the economy the request cannot determine: `purchase` names what
+   * it is buying, but a pack names a gamble, and whoever rolls it decides what falls out. If the
+   * client rolled, the client would pick its own legendary and the odds table the store card
+   * publishes would be decoration.
+   *
+   * (Before this intent, `openPack()` ran client-side and saved the whole computed profile
+   * through `PUT /profile` — which accepts name, avatar and equipped, and silently dropped the
+   * deduction AND the grant. The animation played; nothing happened.)
+   */
+  | (IntentBase & { readonly kind: 'pack'; readonly packId: string });
+
+/**
+ * What the server rolled, as it comes off the wire: an ID, not a cosmetic. The caller resolves it
+ * through the shared `CATALOG`/`isPackable`, which is what keeps `PackPull.item` typed as a
+ * `PackableCosmetic` — an earn-only cosmetic cannot be spelled as a pull on this side either,
+ * whatever the wire claims.
+ */
+export interface PackPullWire {
+  readonly itemId: string;
+  readonly duplicate: boolean;
+  readonly dustCents: number;
+}
+
+/**
+ * What a money mutation answers with: always the authoritative profile, plus — for a pack open
+ * and nothing else — what the roll produced.
+ *
+ * `pull` is `null` on every other intent AND in the Firebase fallback, where there is no referee
+ * to roll and the client's own `openPack` result is the truth. The caller falls back to its
+ * optimistic pull in exactly that case, which is the same "two trust models, one seam" asymmetry
+ * `clientNext` already encodes.
+ */
+export interface EconomyOutcome {
+  readonly profile: Profile;
+  readonly pull: PackPullWire | null;
+}
 
 /**
  * The money writer, behind the seam. Phase B's addition, and the reason `ProfileRepo.save` no
@@ -227,7 +268,11 @@ export type EconomyIntent =
  * client-authoritative economy it was through Phase 6, and with it set the client cannot cheat.
  */
 export interface EconomyRepo {
-  apply(uid: string, intent: EconomyIntent, clientNext: Profile): Promise<RepoResult<Profile>>;
+  apply(
+    uid: string,
+    intent: EconomyIntent,
+    clientNext: Profile
+  ): Promise<RepoResult<EconomyOutcome>>;
 }
 
 /**

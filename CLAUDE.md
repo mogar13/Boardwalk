@@ -207,14 +207,15 @@ lint rule that matches nothing reports success.
 
 - **`useBankroll()` returns a readonly balance. There is no setter.** ✅ Live. Wagers go through
   `useBet()`, payouts through `reportResult({outcome, payout})`; those two, plus a store purchase, a
-  pack open (`openPack` — spends the price, credits dust on a duplicate) and the daily claim, are
-  the *only* callers of the one internal writer (`authStore.mutateProfile`). A
+  pack open and the daily claim, all go through `applyEconomy` — `mutateProfile` is left holding
+  only the non-money writes (name, avatar, equip). A
   game cannot spell `money += x`: `useBankroll` is a `number`, and no setter hook is exported.
 - **Money moves as an INTENT, and the server prices it.** ✅ Live (BACKEND_PLAN.md Phase B, code
-  complete, **deployed and LIVE in prod since 2026-07-18**). The four money paths call `authStore.applyEconomy(intent,
-  optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily`.
-  **None of those types has a field for a balance, a price, an XP amount, a stat count or a clock**
-  — the wrong thing is unspellable rather than validated. The server computes each delta from the
+  complete, **deployed and LIVE in prod since 2026-07-18**). The five money paths call `authStore.applyEconomy(intent,
+  optimistic)` → `repos.economy.apply`, where an intent is `bet` / `settle` / `purchase` / `daily` /
+  `pack`.
+  **None of those types has a field for a balance, a price, an XP amount, a stat count, a clock, a
+  seed or an item** — the wrong thing is unspellable rather than validated. The server computes each delta from the
   ledger and answers with the whole authoritative profile, which replaces the optimistic one. With
   no `VITE_API_BASE_URL` (fresh clone, emulator) `firebaseEconomyRepo` persists the client's own
   arithmetic instead — the pre-Phase-B economy, unchanged, and the kill switch is
@@ -243,6 +244,17 @@ lint rule that matches nothing reports success.
   reason that makes it right: **there is nothing left to compare.** A parity test over a single
   module is a test that a thing equals itself. Do not reintroduce the duplication in order to have
   something to guard.
+- **A pack's ROLL happens on the server, and a replay re-serves it verbatim.** ✅ Live. The `pack`
+  intent carries `{nonce, packId}` and nothing else, so a client cannot pick its own legendary;
+  `applyPack` rolls, charges and grants in one transaction, against the SHARED `PACKS` table the
+  store card publishes — one odds table, so the advertised rate cannot stop being the real rate.
+  Packs are the one RANDOM mutation, so the plain "replay = do nothing and re-read the profile"
+  path is WRONG for them: it would answer a retry with no pull, or re-roll and pay a second item,
+  making a flaky connection a way to turn a common into a legendary. The outcome is persisted to
+  `pack_opens` keyed by the same `(uid, nonce)` and replayed exactly. (Before this, `openPack`
+  computed the whole profile client-side and saved it through `PUT /profile`, which reads
+  name/avatar/equipped only — so in production the reveal animated and the server dropped both the
+  charge and the grant.)
 - **The one game that can win money does not deal its own cards.** ✅ Live (Phase D, code complete —
   **not yet deployed**). `BlackjackRepo` (`deal`/`move`) is the seam; `src/system/repo/api/blackjackRepo.ts`
   is the referee, `src/system/repo/local/blackjackRepo.ts` the offline twin, and `useBlackjackTable()`

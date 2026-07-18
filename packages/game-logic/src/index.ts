@@ -52,3 +52,4 @@ export * from './economy/bet';
 export * from './economy/result';
 export * from './rewards/daily';
 export * from './store/catalog';
+export * from './store/packs';

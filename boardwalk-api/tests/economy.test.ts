@@ -10,10 +10,18 @@ import {
   checkPurchase,
   checkSettle,
   payoutCeiling,
+  PACKS,
+  RARITIES,
+  dustFor,
+  packById,
+  packPool,
+  rollPack,
 } from '../src/domain/economy';
+import { cosmeticById } from '@boardwalk/game-logic';
 import {
   applyBet,
   applyDaily,
+  applyPack,
   applyPurchase,
   applySettle,
   type SettleInput,
@@ -535,5 +543,281 @@ describe('applyDaily', () => {
     applyDaily(db, 'u1', { nonce: 'd2' }, day(101));
     expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS + 50_000 + 75_000);
     expect(loadProfile(db, 'u1')?.daily).toEqual({ lastClaimDay: 101, streak: 2 });
+  });
+});
+
+/* ------------------------------------------------------------------ packs */
+
+/**
+ * PACKS — the last client-authoritative money path, closed.
+ *
+ * The bug: `openPack()` ran in the browser, computed the whole next profile (price spent, item
+ * granted, dust credited) and saved it through `PUT /profile`, which accepts exactly `name`,
+ * `avatar` and `equipped`. So the reveal animated and the server discarded every effect — the
+ * player paid nothing and got nothing. Now the roll happens HERE.
+ *
+ * Note what is NOT tested here any more: that the server's pack tables match the client's. After
+ * Phase D there is one table — `@boardwalk/game-logic`'s `PACKS` — imported by the store card and
+ * by `rollPack` alike, so the published odds ARE the rolled odds by construction rather than by
+ * assertion. What is left to test is the server's own half: the decision, the roll, and replay.
+ */
+
+/** A scripted generator: hands back the given values in order, then 0. Makes the roll exact. */
+const scripted = (...values: readonly number[]): (() => number) => {
+  let i = 0;
+  return () => values[i++] ?? 0;
+};
+
+/**
+ * `pk_backs` at [0, 0]: the first draw lands in `common` (0 < 0.6) and the second takes the first
+ * item of that bucket. The catalogue order makes that `cb_red1` — a 40,000-cent common.
+ */
+const FIRST_COMMON_BACK = 'cb_red1';
+const BACKS_PRICE = 250_000;
+
+const ownedIdsOf = (db: Db, uid: string): string[] =>
+  (db.prepare('SELECT item_id FROM inventory WHERE uid = ? ORDER BY item_id').all(uid) as {
+    item_id: string;
+  }[]).map((r) => r.item_id);
+
+const backsPack = () => {
+  const p = packById('pk_backs');
+  if (p === undefined) throw new Error('pk_backs missing');
+  return p;
+};
+
+describe('the pack pool the server rolls against', () => {
+  it('never contains an earn-only cosmetic or a free starter, for any pack', () => {
+    for (const pack of PACKS) {
+      for (const c of packPool(pack)) {
+        expect(c.priceCents).not.toBeNull();
+        expect(c.priceCents).toBeGreaterThan(0);
+      }
+    }
+    // The two earn-only titles are in the grand pack's KINDS and still must not be in its pool —
+    // the earn-vs-buy split, enforced where the inventory row is written rather than only in the
+    // UI that offers the button.
+    const grand = packById('pk_grand');
+    if (grand === undefined) throw new Error('pk_grand missing');
+    const ids = packPool(grand).map((c) => c.id);
+    expect(ids).not.toContain('ttl_thehouse');
+    expect(ids).not.toContain('ttl_grandmaster');
+    expect(packPool(backsPack()).map((c) => c.id)).not.toContain('cb_blue1');
+  });
+
+  it('every weighted rarity has a non-empty bucket, so no roll lands nowhere', () => {
+    for (const pack of PACKS) {
+      for (const rarity of RARITIES) {
+        if (pack.odds[rarity] > 0) {
+          expect(packPool(pack).filter((c) => c.rarity === rarity).length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+});
+
+describe('rollPack — the odds are the published odds', () => {
+  it('walks the cumulative weights: 0.0 is common, 0.99 is legendary', () => {
+    const pack = backsPack();
+    const empty = new Set<string>();
+    const rarityOf = (r: number): string | undefined =>
+      cosmeticById(rollPack(pack, empty, scripted(r, 0))?.itemId ?? '')?.rarity;
+    expect(rarityOf(0)).toBe('common');
+    expect(rarityOf(0.599)).toBe('common');
+    expect(rarityOf(0.601)).toBe('rare');
+    expect(rarityOf(0.99)).toBe('legendary');
+  });
+
+  it('matches the published distribution over 20k rolls', () => {
+    const pack = backsPack();
+    const empty = new Set<string>();
+    const counts: Record<string, number> = { common: 0, rare: 0, epic: 0, legendary: 0 };
+    const N = 20_000;
+    for (let i = 0; i < N; i++) {
+      // A deterministic sweep across [0,1) rather than a real RNG: this asserts the BANDS are
+      // where the published table says, which is the property that matters and does not flake.
+      const rarity = cosmeticById(rollPack(pack, empty, scripted(i / N, 0.5))?.itemId ?? '')?.rarity;
+      if (rarity !== undefined) counts[rarity] = (counts[rarity] ?? 0) + 1;
+    }
+    for (const rarity of RARITIES) {
+      expect((counts[rarity] ?? 0) / N).toBeCloseTo(pack.odds[rarity], 2);
+    }
+  });
+});
+
+describe('applyPack', () => {
+  it('charges the SERVER price and grants the pull — the request carries no price at all', () => {
+    const db = seeded();
+    const r = applyPack(db, 'u1', { nonce: 'k1', packId: 'pk_backs' }, 10, scripted(0, 0));
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('should open');
+    expect(r.value.pull).toEqual({ itemId: FIRST_COMMON_BACK, duplicate: false, dustCents: 0 });
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - BACKS_PRICE);
+    expect(ownedIdsOf(db, 'u1')).toContain(FIRST_COMMON_BACK);
+  });
+
+  it('refuses a pack the balance cannot cover, and moves nothing', () => {
+    const db = seeded(); // $5,000.00 — the grand pack is $20,000.00
+    const r = applyPack(db, 'u1', { nonce: 'k1', packId: 'pk_grand' }, 10, scripted(0, 0));
+    expect(r).toMatchObject({ ok: false });
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS);
+    expect(ownedIdsOf(db, 'u1')).toEqual([]);
+  });
+
+  it('refuses an unknown packId — state, not a malformed request', () => {
+    const db = seeded();
+    const r = applyPack(db, 'u1', { nonce: 'k1', packId: 'pk_nope' }, 10, scripted(0, 0));
+    expect(r).toMatchObject({ ok: false, error: 'no such pack' });
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS);
+  });
+
+  it('refuses a pool the player has completed — that is a fee, not a gamble', () => {
+    const db = seeded();
+    const ins = db.prepare(
+      'INSERT OR IGNORE INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)'
+    );
+    for (const c of packPool(backsPack())) ins.run('u1', c.id, 1);
+    const r = applyPack(db, 'u1', { nonce: 'k1', packId: 'pk_backs' }, 10, scripted(0, 0));
+    expect(r).toMatchObject({ ok: false });
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS);
+  });
+
+  it('credits completion-scaled dust on a duplicate and grants nothing twice', () => {
+    const db = seeded();
+    db.prepare('INSERT INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)').run(
+      'u1',
+      FIRST_COMMON_BACK,
+      1
+    );
+    const r = applyPack(db, 'u1', { nonce: 'k1', packId: 'pk_backs' }, 10, scripted(0, 0));
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('should open');
+
+    // 1 of the 14 backs owned → rate = 0.1 + 0.9 × (1/14) = 0.164285… → floor(250,000 × rate).
+    expect(r.value.pull).toEqual({
+      itemId: FIRST_COMMON_BACK,
+      duplicate: true,
+      dustCents: 41_071,
+    });
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - BACKS_PRICE + 41_071);
+    // Still owned exactly once — a duplicate grants nothing.
+    expect(ownedIdsOf(db, 'u1')).toEqual([FIRST_COMMON_BACK]);
+  });
+
+  it('a duplicate can never profit: dust never exceeds the price, at any completion', () => {
+    const pack = backsPack();
+    for (const rarity of RARITIES) {
+      for (const pct of [0, 0.25, 0.5, 0.9, 1, -5, 99]) {
+        const dust = dustFor(pack, rarity, pct);
+        expect(dust).toBeGreaterThanOrEqual(0);
+        expect(dust).toBeLessThanOrEqual(pack.priceCents);
+        expect(Number.isInteger(dust)).toBe(true);
+      }
+    }
+  });
+
+  /* ---------------------------------------------------------------- replay */
+
+  it('A REPLAYED NONCE RETURNS THE IDENTICAL PULL AND MOVES NO MONEY', () => {
+    const db = seeded();
+    const first = applyPack(db, 'u1', { nonce: 'same', packId: 'pk_backs' }, 10, scripted(0, 0));
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error('should open');
+    const balanceAfterFirst = balanceOf(db, 'u1');
+
+    // The retry is handed a generator that would roll a LEGENDARY. If the replay path re-rolled,
+    // this is where a flaky connection becomes a reroll — so the assertion is that the scripted
+    // values are ignored entirely and the original common comes back.
+    const again = applyPack(db, 'u1', { nonce: 'same', packId: 'pk_backs' }, 11, scripted(0.99, 0));
+    expect(again.ok).toBe(true);
+    if (!again.ok) throw new Error('should replay');
+
+    expect(again.value.replayed).toBe(true);
+    expect(again.value.pull).toEqual(first.value.pull);
+    expect(balanceOf(db, 'u1')).toBe(balanceAfterFirst);
+    expect(ownedIdsOf(db, 'u1')).toEqual([FIRST_COMMON_BACK]);
+  });
+
+  it('replays a DUPLICATE identically too — same dust, credited once', () => {
+    const db = seeded();
+    db.prepare('INSERT INTO inventory (uid, item_id, purchased_at) VALUES (?, ?, ?)').run(
+      'u1',
+      FIRST_COMMON_BACK,
+      1
+    );
+    const first = applyPack(db, 'u1', { nonce: 'dup', packId: 'pk_backs' }, 10, scripted(0, 0));
+    const balance = balanceOf(db, 'u1');
+    const again = applyPack(db, 'u1', { nonce: 'dup', packId: 'pk_backs' }, 11, scripted(0.99, 0));
+    if (!first.ok || !again.ok) throw new Error('both should succeed');
+    expect(again.value.pull).toEqual(first.value.pull);
+    expect(again.value.pull?.dustCents).toBe(41_071);
+    expect(balanceOf(db, 'u1')).toBe(balance);
+  });
+
+  it('ten replays of one nonce open exactly one pack', () => {
+    const db = seeded();
+    applyPack(db, 'u1', { nonce: 'once', packId: 'pk_backs' }, 10, scripted(0, 0));
+    for (let i = 0; i < 10; i++) {
+      applyPack(db, 'u1', { nonce: 'once', packId: 'pk_backs' }, 11 + i, scripted(0.99, 0));
+    }
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - BACKS_PRICE);
+    const rows = db.prepare('SELECT COUNT(*) AS c FROM pack_opens WHERE uid = ?').get('u1') as {
+      c: number;
+    };
+    expect(rows.c).toBe(1);
+  });
+
+  it('refuses a nonce already burned by a DIFFERENT mutation rather than charging for nothing', () => {
+    const db = seeded();
+    applyPurchase(db, 'u1', { nonce: 'shared', itemId: 'av_cowboy' }, 5);
+    const r = applyPack(db, 'u1', { nonce: 'shared', packId: 'pk_backs' }, 6, scripted(0, 0));
+    expect(r.ok).toBe(false);
+    // The purchase's charge stands; the pack's does not.
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - 100_000);
+  });
+
+  it("one player's nonce cannot burn another's", () => {
+    const db = seeded();
+    upsertProfile(db, 'u2', { name: 'Bo', avatar: '👤', equipped: {} }, { now: 1 });
+    const a = applyPack(db, 'u1', { nonce: 'n', packId: 'pk_backs' }, 10, scripted(0, 0));
+    const b = applyPack(db, 'u2', { nonce: 'n', packId: 'pk_backs' }, 10, scripted(0, 0));
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) throw new Error('both should open');
+    expect(a.value.replayed).toBe(false);
+    expect(b.value.replayed).toBe(false);
+    expect(balanceOf(db, 'u2')).toBe(STARTING_BANKROLL_CENTS - BACKS_PRICE);
+  });
+});
+
+/**
+ * THE DEFAULT GENERATOR, exercised.
+ *
+ * Every test above injects a scripted `rand`, which is what makes the odds assertable — and is
+ * also how the production RNG shipped broken and green the first time: `randomInt(0, 2 ** 48)`
+ * exceeds Node's max-min limit and threw `ERR_OUT_OF_RANGE` on every real request, so a browser
+ * saw a 500 while the whole suite passed. A guard that never runs the real path reports success
+ * by doing nothing.
+ *
+ * These call `applyPack` with NO generator, so the default is the thing under test.
+ */
+describe('applyPack with the real generator', () => {
+  it('opens a pack without a scripted rand — the production path actually runs', () => {
+    const db = seeded();
+    const r = applyPack(db, 'u1', { nonce: 'real', packId: 'pk_backs' }, 10);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('should open');
+    expect(r.value.pull).toBeDefined();
+    expect(balanceOf(db, 'u1')).toBe(STARTING_BANKROLL_CENTS - BACKS_PRICE);
+  });
+
+  it('rolls only real, packable items across many live opens', () => {
+    const pool = new Set(packPool(backsPack()).map((c) => c.id));
+    for (let i = 0; i < 200; i++) {
+      const db = seeded();
+      const r = applyPack(db, 'u1', { nonce: `n${String(i)}`, packId: 'pk_backs' }, 10);
+      expect(r.ok).toBe(true);
+      if (!r.ok) throw new Error('should open');
+      expect(pool.has(r.value.pull?.itemId ?? '')).toBe(true);
+    }
   });
 });

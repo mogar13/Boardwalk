@@ -1,6 +1,11 @@
 import type { Profile } from '@boardwalk/game-logic';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
-import type { EconomyIntent, EconomyRepo, RepoResult } from '@/system/repo/types';
+import type {
+  EconomyIntent,
+  EconomyOutcome,
+  EconomyRepo,
+  RepoResult,
+} from '@/system/repo/types';
 
 /**
  * THE CLIENT-AUTHORITATIVE FALLBACK — what the economy was through Phase 6, expressed as an
@@ -21,10 +26,13 @@ export const firebaseEconomyRepo: EconomyRepo = {
     uid: string,
     _intent: EconomyIntent,
     clientNext: Profile
-  ): Promise<RepoResult<Profile>> {
+  ): Promise<RepoResult<EconomyOutcome>> {
     await firebaseProfileRepo.save(uid, clientNext);
     // The client's own arithmetic IS the authoritative answer in this mode — returning it keeps
     // the caller's "replace local state with what came back" path identical across both repos.
-    return { ok: true, value: clientNext };
+    // `pull: null` is the honest answer for a pack open here: there is no referee to roll one, so
+    // the client's own `openPack` result (already baked into `clientNext`) is what happened. The
+    // caller reads null as "keep your optimistic pull" rather than "nothing was rolled".
+    return { ok: true, value: { profile: clientNext, pull: null } };
   },
 };

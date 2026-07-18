@@ -4,6 +4,7 @@ import { requireUid } from '../auth/middleware';
 import {
   applyBet,
   applyDaily,
+  applyPack,
   applyPurchase,
   applySettle,
   type MutationResult,
@@ -18,6 +19,7 @@ import type { Outcome } from '../domain/economy';
  *   POST /settle    {nonce, gameId, outcome, payoutCents, …}       → credit a BOUNDED payout, bump stats/XP
  *   POST /purchase  {nonce, itemId}                                 → buy at the SERVER'S price
  *   POST /daily     {nonce}                                         → claim against the SERVER'S clock
+ *   POST /pack      {nonce, packId}                                 → roll a pull HERE, at the published odds
  *
  * Every one answers with the whole authoritative profile, so the client's next render is the
  * truth rather than its own optimistic guess reconciled later by a separate read. One round trip,
@@ -29,8 +31,10 @@ import type { Outcome } from '../domain/economy';
  *   • no price. `/purchase` names an item; the price is looked up here.
  *   • no timestamp. `/daily` gets the server's clock; a wound-back device buys nothing.
  *   • no stat counts and no xp. `/settle` sends an OUTCOME and the counters move by one, here.
+ *   • no seed and no item. `/pack` names a PACK; the roll happens here, so a client cannot pick
+ *     its own legendary. It is told what it got — and on a retry, told the same thing again.
  *
- * `nonce` is required on all four and is what makes a retry safe — see `mutations.ts`.
+ * `nonce` is required on all five and is what makes a retry safe — see `mutations.ts`.
  */
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -66,7 +70,10 @@ function reply(res: Response, result: MutationResult): void {
     res.status(409).json({ error: result.error });
     return;
   }
-  res.json({ profile: result.value.profile, replayed: result.value.replayed });
+  const { profile, replayed, pull } = result.value;
+  // `pull` rides along only for `/pack` — the other four have no outcome the client cannot
+  // derive, and an always-present null would invite a reader to think they might.
+  res.json(pull === undefined ? { profile, replayed } : { profile, replayed, pull });
 }
 
 export function economyRouter(db: Db, clock: () => number = Date.now): Router {
@@ -140,6 +147,21 @@ export function economyRouter(db: Db, clock: () => number = Date.now): Router {
       return;
     }
     reply(res, applyDaily(db, uid, { nonce }, clock()));
+  });
+
+  router.post('/pack', (req, res) => {
+    const uid = requireUid(req);
+    const b = obj(req.body);
+    const nonce = nonceOf(b.nonce);
+    const packId = idOf(b.packId);
+    if (nonce === null || packId === null) {
+      res.status(400).json({ error: 'nonce and packId are required' });
+      return;
+    }
+    // An UNKNOWN packId is a 409, not a 400 — the body is well-formed and the server understood
+    // it perfectly; "no such pack" is state, the same way "insufficient funds" is. `checkPack`
+    // makes that call, not this parser, which only rejects a body it cannot read at all.
+    reply(res, applyPack(db, uid, { nonce, packId }, clock()));
   });
 
   return router;

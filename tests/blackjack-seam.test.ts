@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { defaultProfile } from '@/system/profile/defaults';
 import { localBlackjackRepo } from '@/system/repo/local/blackjackRepo';
-import type { EconomyRepo, HandView, Profile, ProfileRepo, RepoResult } from '@/system/repo/types';
+import type {
+  EconomyOutcome, EconomyRepo, HandView, Profile, ProfileRepo, RepoResult } from '@/system/repo/types';
 import {
   freshDeck,
   initialState,
@@ -68,14 +69,14 @@ function fakeRepos(profile: Profile) {
   };
 
   const economy: EconomyRepo = {
-    apply: (_uid, intent, clientNext): Promise<RepoResult<Profile>> => {
+    apply: (_uid, intent, clientNext): Promise<RepoResult<EconomyOutcome>> => {
       intents.push({
         kind: intent.kind,
         ...(intent.kind === 'bet' ? { amountCents: intent.amountCents } : {}),
         ...(intent.kind === 'settle' ? { payoutCents: intent.payoutCents } : {}),
       });
       stored = clientNext;
-      return Promise.resolve({ ok: true, value: clientNext });
+      return Promise.resolve({ ok: true, value: { profile: clientNext, pull: null } });
     },
   };
 

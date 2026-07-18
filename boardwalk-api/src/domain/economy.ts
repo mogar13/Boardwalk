@@ -45,12 +45,19 @@ import {
   CATALOG,
   DAILY_REWARDS_CENTS,
   DAY_MS,
+  PACKS,
   STARTING_BANKROLL_CENTS,
   XP_BY_OUTCOME,
   claimDaily,
   cosmeticById,
+  dustFor,
+  packById,
+  packPool,
   type DailyState,
   type Outcome,
+  type Pack,
+  type PackableCosmetic,
+  type Rarity,
 } from '@boardwalk/game-logic';
 
 export { DAILY_REWARDS_CENTS, DAY_MS, STARTING_BANKROLL_CENTS, XP_BY_OUTCOME };
@@ -217,3 +224,141 @@ export function checkDaily(
   if (claimed === null) return refuse('already claimed today');
   return accept(claimed);
 }
+
+/* ----------------------------------------------------------------- packs */
+
+/**
+ * PACKS — the server's half, and note how little of it there is.
+ *
+ * The pack list, the pool, the published odds and the dust curve are NOT here: they are
+ * `@boardwalk/game-logic`'s `PACKS`/`packPool`/`dustFor`, the same module the store card renders
+ * from. That is the Phase D shape, and packs are the case that most needed it — the card
+ * publishes an odds table and the referee rolls against one, and if those were two hand-copied
+ * tables the advertised rate could quietly stop being the real rate. They cannot diverge, because
+ * there is one of them.
+ *
+ * What lives here is what is genuinely the SERVER'S and has no client counterpart: the decision
+ * about a request (`checkPack`) and THE ROLL ITSELF (`rollPack`). The roll is the whole reason
+ * `POST /pack` exists — a client that rolls its own pull picks its own legendary, so the outcome
+ * has to be decided somewhere the player cannot reach.
+ *
+ * The ethics guardrail from the shared module holds where the money actually moves: packs are
+ * bought with PLAY MONEY ONLY, the odds are published, and there is no real-money path.
+ */
+
+/** The rarities, in ladder order. The odds tables are keyed by exactly this set. */
+export const RARITIES: readonly Rarity[] = ['common', 'rare', 'epic', 'legendary'];
+
+export interface PackRequest {
+  readonly packId: string;
+  readonly balanceCents: number;
+  readonly ownedIds: ReadonlySet<string>;
+}
+
+/**
+ * May this pack be opened, at the server's price, against the LEDGER'S balance? Mirrors the
+ * shared `canOpen` refusal-for-refusal — unknown pack, empty pool, a COMPLETED pool (that is a
+ * fee, not a gamble) and a short balance — but decides it against the balance the ledger says
+ * you have rather than the one the client is holding.
+ */
+export function checkPack(req: PackRequest): Decision<{ readonly pack: Pack }> {
+  const pack = packById(req.packId);
+  if (pack === undefined) return refuse('no such pack');
+  const pool = packPool(pack);
+  if (pool.length === 0) return refuse('nothing in this pack yet');
+  if (pool.every((c) => req.ownedIds.has(c.id))) {
+    return refuse('you already own everything in this pack');
+  }
+  if (pack.priceCents > req.balanceCents) return refuse('insufficient funds');
+  return accept({ pack });
+}
+
+/** What fell out. The id, not the cosmetic — names and emoji are the frontend's to render. */
+export interface PackPull {
+  readonly itemId: string;
+  readonly duplicate: boolean;
+  /** The refund on a duplicate, integer cents. 0 on a fresh pull. */
+  readonly dustCents: number;
+}
+
+function poolAtRarity(pack: Pack, rarity: Rarity): readonly PackableCosmetic[] {
+  return packPool(pack).filter((c) => c.rarity === rarity);
+}
+
+/**
+ * The published odds restricted to rarities the pool can actually serve, renormalised to sum to
+ * 1 — the shared `openPack`'s rule, for the same reason: a weight over an empty bucket would need
+ * a silent fallback, and a silent fallback is how a published rate stops being the real rate.
+ */
+function rarityWeights(pack: Pack): readonly (readonly [Rarity, number])[] {
+  const present = RARITIES.filter(
+    (r) => pack.odds[r] > 0 && poolAtRarity(pack, r).length > 0
+  ).map((r) => [r, pack.odds[r]] as const);
+  const total = present.reduce((sum, [, w]) => sum + w, 0);
+  if (total === 0) return [];
+  return present.map(([r, w]) => [r, w / total] as const);
+}
+
+/**
+ * How much of this pack's pool this player owns, 0..1 — derived from the inventory, exactly like
+ * the shared `completion`, but reading the SERVER'S inventory rather than a profile object.
+ */
+export function completionOf(pack: Pack, ownedIds: ReadonlySet<string>): number {
+  const pool = packPool(pack);
+  if (pool.length === 0) return 1;
+  return pool.filter((c) => ownedIds.has(c.id)).length / pool.length;
+}
+
+/**
+ * Roll a pull. PURE — the randomness arrives as an argument, so the odds are unit-testable to the
+ * thousandth rather than something you confirm by clicking Open a hundred times. The caller
+ * supplies the real generator; the tests supply a scripted one.
+ *
+ * Two draws, in the shared `openPack`'s order: the rarity against the published (renormalised)
+ * weights, then an item uniformly within that rarity. Uniform-within-rarity is the honest reading
+ * of "rarity drives the odds" — the tier is the scarce thing, not the individual item — and the
+ * roll does NOT steer toward what you are missing, which is what keeps duplicates (and therefore
+ * dust) a real outcome rather than dead code.
+ *
+ * Returns `null` only when the pool cannot serve anything, which `checkPack` refuses first.
+ */
+export function rollPack(
+  pack: Pack,
+  ownedIds: ReadonlySet<string>,
+  rand: () => number
+): PackPull | null {
+  const weights = rarityWeights(pack);
+  const last = weights[weights.length - 1];
+  if (last === undefined) return null;
+
+  // Walk the cumulative weights. The trailing `last` covers the float-rounding case where the sum
+  // lands a hair under 1 — it can only ever land on a rarity that HAS a bucket.
+  const r = rand();
+  let acc = 0;
+  let rarity: Rarity = last[0];
+  for (const [tier, w] of weights) {
+    acc += w;
+    if (r < acc) {
+      rarity = tier;
+      break;
+    }
+  }
+
+  const bucket = poolAtRarity(pack, rarity);
+  // `min` clamps the one-in-4-billion case where the generator returns exactly 1.
+  const item = bucket[Math.min(bucket.length - 1, Math.floor(rand() * bucket.length))];
+  if (item === undefined) return null;
+
+  if (ownedIds.has(item.id)) {
+    // Completion is read BEFORE the open — a duplicate does not change the collection, and
+    // reading it up front keeps "what the card quoted" and "what you got" the same number.
+    return {
+      itemId: item.id,
+      duplicate: true,
+      dustCents: dustFor(pack, item.rarity, completionOf(pack, ownedIds)),
+    };
+  }
+  return { itemId: item.id, duplicate: false, dustCents: 0 };
+}
+
+export { PACKS, packById, packPool, dustFor };
