@@ -2,9 +2,9 @@
 
 **Status:** Phases 0–1 shipped 2026-07-16; Phases 2 (data layer), 3 (shell), 4 (economy + progress)
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
-five games) is in progress: **Tic-Tac-Toe** (the SDK's smoke test), **Blackjack** (the economy
-proof), **Chess** (the hot-seat proof) and **UNO** (the hidden-hands proof) shipped 2026-07-17;
-Solitaire remains.
+five games) is **complete**: **Tic-Tac-Toe** (the SDK's smoke test), **Blackjack** (the economy
+proof), **Chess** (the hot-seat proof), **UNO** (the hidden-hands proof) and **Solitaire** (the
+room-less proof) all shipped 2026-07-17.
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -342,7 +342,7 @@ One phase per conversation. Each ends green and deployed.
 | 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
 | 4 | ~~**Economy + progress**~~ ✅ | `useBet`, `reportResult`, stats, achievements, store (avatars), daily rewards, live leaderboard. |
 | 5 | ~~**Multiplayer**~~ ✅ | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests, and the `rooms/`/`hands/`/`chat/` rules Phase 2 deferred. |
-| 6 | **The five games** | In progress — Tic-Tac-Toe ✅. See below. |
+| 6 | **The five games** | ✅ Complete — Tic-Tac-Toe, Blackjack, Chess, UNO, Solitaire. See below. |
 
 Phases 0→5 are sequential. Phase 6 is five independent units.
 
@@ -357,7 +357,7 @@ keep the coverage or the OS ships untested.
 | **Blackjack** ✅ | 966 | Betting, casino economy, `reportResult` payouts, dealer hole card. Shipped room-less — its coverage is the economy, not seats. |
 | **Chess** ✅ | 1,339 | Pure unit-tested `logic/`, hot-seat, 2-seat online, zero betting. |
 | **UNO** ✅ | 1,079 | Private hands (host-as-dealer), seq ordering, AI-as-occupant, 7 seats, zero betting. |
-| **Solitaire** | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
+| **Solitaire** ✅ | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
 
 Build **Tic-Tac-Toe first**, immediately after Phase 5 — it's the SDK's smoke test, and it's better to
 find the SDK is wrong on a 150-line game than on Blackjack.
@@ -1226,3 +1226,56 @@ protect (a wire/privacy regression here is a hidden-information leak, not a cosm
 pass that asserts zero opponent-face leaks is exactly the check a person now has to remember to run).
 UNO adds no new node to `database.rules.json`: it lives under the existing `rooms/`/`state/` and
 `hands/` rules Phase 5 shipped, so nothing new needs deploying for it.
+
+## Phase 6 — Solitaire (the room-less proof, and the fifth and last launch game)
+
+2026-07-17. `src/games/solitaire` — a manifest (`modes: ['solo']`, no `betting`), a pure
+`logic/solitaire.ts` (a full Klondike engine: the deal, the tableau and foundation build rules, the
+stock draw-and-recycle, multi-card run lifts, win detection and a guarded auto-finish, all as a pure
+reducer), a `CardView` that draws a card through `system/cards`, and a `Board` that turns clicks into
+the reducer's `Pile`-typed moves — with 33 logic tests (400 total). The game was driven end-to-end in
+a real browser against the emulator: a fresh account dealt a complete board, all 52 cards resolved to
+art on disk (zero broken images), the draw advanced the move counter, and there were zero console
+errors and no invisible-element dead-scroll.
+
+### The scope call: Solitaire is the second caller of the room-less seam, and it closes the coverage matrix
+
+Blackjack proved a game can skip the room system when its coverage is the *economy*; Solitaire is
+the pair that proves the seam is not economy-specific. It touches **neither** a seat nor the
+bankroll — one player against the shuffle — so it renders its board straight into `<GameShell>`,
+drives a local `useReducer` exactly as Blackjack does, and reports the win as a bare
+`reportResult({ outcome: 'win' })` (XP + the win stat, no payout), the same report shape Chess uses
+for a no-stakes finish. `betting` is **absent** from its manifest, not `false`: "this game has no
+economy" is the signal absence already carries. With this the five-game coverage matrix is closed —
+the SDK has now been exercised by a betting solo game, a hot-seat game, an online hidden-hands game, a
+no-stakes online game, and a room-less no-economy game — which was the whole point of choosing these
+five over any other five.
+
+### The rules are the biggest pure `logic/` after Chess, and the reason is the same
+
+Klondike is deceptively fiddly — the recycle that re-serves the draw order, the "only a King opens an
+empty column", the flip of the newly exposed card after a run leaves it, the "one card at a time to a
+foundation", the alternating-colour descending run that can be lifted as a unit — and every one of
+those is a place a hand-written board would quietly get it wrong. So all of it is pure and tested
+before the board existed (the project's build order), and the `Pile`-typed action vocabulary means
+the board expresses "move this run onto that column" without the rules ever knowing about a click or a
+pixel. Selection is local UI state the reducer never sees; the reducer is handed only completed,
+already-legal-shaped moves and rejects the illegal ones as no-ops, the same totality discipline every
+other game's reducer keeps.
+
+### What is deliberately not built
+
+No drag-and-drop (click-to-move is less code and works the same on touch); no timer or score-beyond-moves
+(a friendly single game, "New game" re-deals); no "winnable deals only" difficulty (v1 had a
+deal-rigging hack that reached into the stock to plant the aces — a fresh honest shuffle is simpler and
+truer to solitaire); no undo (the move counter is the only history, and a mis-click is cheap in a
+solo game); and no icon yet (the hub draws its placeholder — the honest "bring the asset with its
+reader" state Chess and UNO also register in). And no multiplayer, per the scope call — opting out of
+rooms *is* the coverage.
+
+**The gap Solitaire leaves.** The same manual-browser-pass gap every game inherits — the CI
+browser/integration guard Phases 1/3/5/6 all named is still unbuilt. Solitaire adds no new node to
+`database.rules.json` (it writes only the existing profile, through the existing `mutateProfile`, on a
+win), so nothing new needs deploying for it. With Phase 6 complete, that CI browser guard is the one
+outstanding piece of debt the whole game set shares, and it is the honest first thing a Phase 7 would
+build.
