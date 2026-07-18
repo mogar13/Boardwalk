@@ -105,6 +105,25 @@ export async function readFirebaseProfiles(opts: ReadOptions): Promise<SourceRec
   return out;
 }
 
+/**
+ * Release the Admin SDK's connections so the process can exit.
+ *
+ * WITHOUT THIS THE SCRIPT HANGS AFTER SUCCEEDING. firebase-admin's RTDB client holds an open
+ * socket and keeps the event loop alive indefinitely, so `main()` resolves, the summary prints,
+ * and node then sits there forever having already done the work. Observed on the Pi: the real
+ * backfill completed and reconciled OK, and the ssh session still had to be timed out.
+ *
+ * That is the same class of failure `withTimeout` exists to prevent, landing one step later — a
+ * process that looks like it is working when it is finished. Worse here, because the natural
+ * operator response to "it hasn't come back" is Ctrl-C and a re-run, and re-running a migration
+ * you believe failed but which actually SUCCEEDED is precisely the scenario the idempotency
+ * marker had to be designed for. Fixing the hang removes the reason to reach for that safety net.
+ */
+export async function closeFirebase(): Promise<void> {
+  const admin = await import('firebase-admin');
+  await Promise.all(admin.apps.map((app) => (app === null ? Promise.resolve() : app.delete())));
+}
+
 /* ------------------------------------------------------------- reconciliation */
 
 export interface UidMismatch {
