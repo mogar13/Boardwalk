@@ -435,15 +435,16 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   plays `unlock.ogg`, both stingers confirmed loadable-and-playable, **zero console errors, zero
   failed requests, no dead scroll**.
 
-  ⚠️ **Deploys: rules DONE, Pi OWED.** ✅ The rules were deployed 2026-07-18 and **read back from
-  the live database** (`GET /.settings/rules.json` shows `equipped` pinning cardback/title/felt/frame
-  with `$other: false`) — the read-back is the evidence, not the CLI's `Deploy complete!`. Worth
-  recording why: the first attempt ran in the PRIMARY checkout, which sits on `main` and does not
-  carry this branch, so Firebase released the old four-key-less file and reported success in
-  identical green. ❌ The Pi still needs `equipped_felt`/`equipped_frame` — columns land via
-  `COLUMN_MIGRATIONS` on restart, code must be rsync'd by hand — and it goes **before** the frontend
-  merge, because the frontend auto-deploys on push and Phase D already paid ten minutes of broken
-  prod blackjack for the other order.
+  ✅ **Deploys: BOTH DONE 2026-07-18, both verified from the artifact rather than the exit code.**
+  Rules: `GET /.settings/rules.json` shows `equipped` pinning cardback/title/felt/frame with
+  `$other: false`. Pi: two rsyncs, 194/194 tests green ON the device, then restart —
+  `PRAGMA table_info(profiles)` now lists `equipped_felt`/`equipped_frame`, `dist/db/schema.js`
+  carries them, and the ledger is byte-identical either side (1 profile, 2 rows, $5,215.00,
+  integrity ok). Two things the process taught: the rules were first deployed from the PRIMARY
+  checkout, which sits on `main` and does not carry the branch, so Firebase released the old file
+  and reported success in identical green; and the Pi's `package.json` turned out to be STALE
+  (still Phase D's `--prefix` scripts, replaced on main by `54f8a98`), so the Pi drifts behind
+  `main` between deploys and the deploy is what reconciles it.
 
 P1 first because it's the cleanest win and the owner asked for it most concretely. Packs (P4) are
 gated behind rarity (P2) existing.
