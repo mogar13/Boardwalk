@@ -462,12 +462,12 @@ builds the thing it guards.
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
+| `boardwalk-api/` is linted, typechecked, tested and built in CI | `boardwalk-api/eslint.config.mjs` (flat, type-aware over `tsconfig.test.json` so **src, tests and `vitest.config.ts`** are all in the program — the build config includes only `src`, and the usual cure for the resulting "not in project" noise is to stop linting tests) + `.github/workflows/api.yml` on push **and pull_request**, `paths`-filtered to the package *and the workflow file*, so a change disabling the guard is checked by it |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
 |---|---|
 | Rules deployed from CI (`npm run rules:deploy` is manual) | unguarded — **see below** |
-| `boardwalk-api/` is never linted | **root `eslint.config.mjs` ignores `boardwalk-api/**`**, so `npm run lint` there errors with "all files are ignored" and always has. The API's ~2,000 lines have never been linted by anything. Fixing it means an eslint config inside the package |
 | Phase B is deployed to the Pi | unguarded and **NOT DONE** — the code is green locally; the cutover is live only after the deploy, the restore drill and the prod verify in BACKEND_PLAN.md's owed list |
 | The backfill has actually been RUN | unguarded and **NOT DONE**. SQLite holds one profile; RTDB holds every real player, so cutting the frontend over *before* the backfill gives every unmigrated player a fresh $5,000 and drops their XP, stats, achievements and inventory. The tool and its tests are green; the procedure is [plans/BACKFILL_RUNBOOK.md](plans/BACKFILL_RUNBOOK.md) and **no step of it has been executed**. Run it before the cutover, never after |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
@@ -510,6 +510,18 @@ npm run build          # prebuild (lint + filesize) → tsc -b → vite build. F
 npm run guard:filesize -- --init   # re-lock the ratchet after a file SHRANK
 npm run rules:test     # just the security rules, against the emulator
 npm run rules:deploy   # push database.rules.json to Firebase. NOTHING IN CI DOES THIS.
+```
+
+`boardwalk-api/` is a **separate package** — not in the npm workspace, its own lockfile, its own
+tooling. The root's `lint`/`test`/`build` do not reach it and are not supposed to; it has its own,
+gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
+
+```bash
+cd boardwalk-api && npm ci
+npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
+npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
+npm test            # vitest — 143
+npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 
 `npm run dev` works on a fresh clone with no credentials — the page renders a panel naming the

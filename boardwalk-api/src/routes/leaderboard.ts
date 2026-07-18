@@ -15,7 +15,12 @@ export function leaderboardRouter(db: Db): Router {
   const router = Router();
 
   router.get('/leaderboard', (req, res) => {
-    const raw = Number.parseInt(String(req.query.limit ?? ''), 10);
+    // Express types `req.query.limit` as `string | string[] | ParsedQs | ParsedQs[]` — a client
+    // can send `?limit[x]=1` or `?limit=1&limit=2` and hand us an object or an array. `String()`
+    // on those yields `'[object Object]'` / `'1,2'`, which parse to NaN and fall through to the
+    // default; harmless, but it only WORKS by accident. Take the string arm and nothing else.
+    const asked = req.query.limit;
+    const raw = Number.parseInt(typeof asked === 'string' ? asked : '', 10);
     const limit = Number.isFinite(raw) ? Math.min(MAX_LIMIT, Math.max(1, raw)) : DEFAULT_LIMIT;
     res.json({ entries: leaderboard(db, limit) });
   });

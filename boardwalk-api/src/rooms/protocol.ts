@@ -60,5 +60,26 @@ export type ServerMsg =
   | { t: 'res'; id: number; ok: true; value?: unknown }
   | { t: 'res'; id: number; ok: false; error: string }
   | { t: 'room'; gameId: string; roomId: string; snapshot: RoomSnapshot | null }
-  | { t: 'private'; gameId: string; roomId: string; index: number; data: unknown | null }
+  // `data: unknown` — NOT `unknown | null`, which collapses to plain `unknown` and only reads
+  // like a promise. `null` is still the wire value for "this seat holds no hand"; it is simply
+  // one of the things `unknown` already admits, and the type cannot say more than that.
+  | { t: 'private'; gameId: string; roomId: string; index: number; data: unknown }
   | { t: 'chat'; gameId: string; roomId: string; messages: readonly ChatMessage[] };
+
+/**
+ * Decode one `ws` frame to text.
+ *
+ * NOT `raw.toString()`. `RawData` is `Buffer | ArrayBuffer | Buffer[]`, and only the Buffer arm
+ * of that union stringifies to its contents — an `ArrayBuffer` yields the literal
+ * `'[object ArrayBuffer]'` and an array of Buffers joins with commas. Either one reaches
+ * `JSON.parse`, throws, and is swallowed by the junk-frame `catch`, so the symptom is a client
+ * whose messages are silently ignored rather than an error anyone can see. ws hands us Buffers
+ * under its default `binaryType`, which is why this has never bitten; it is one option away from
+ * biting, and the fix is cheaper than the incident.
+ */
+export function decodeFrame(raw: string | Buffer | ArrayBuffer | readonly Buffer[]): string {
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf8');
+  if (Buffer.isBuffer(raw)) return raw.toString('utf8');
+  return Buffer.from(raw as ArrayBuffer).toString('utf8');
+}

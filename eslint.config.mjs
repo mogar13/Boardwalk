@@ -56,7 +56,16 @@ export default tseslint.config(
     // boardwalk-api/ is a standalone Node service (see plans/BACKEND_PLAN.md) with its OWN
     // tsconfig, eslint and vitest. This config is React/browser-shaped and points at the app's
     // tsconfig, which does not include the API's files — linting them here would only produce
-    // "file not in project" parser errors. It is quality-checked by its own tooling instead.
+    // "file not in project" parser errors.
+    //
+    // That reasoning was always right and the sentence that used to follow it — "it is
+    // quality-checked by its own tooling instead" — was always FALSE. There was no config in
+    // that package, so its `lint` script resolved THIS file, matched this very ignore, and died
+    // with "All files matched by 'src' are ignored": ~2,000 lines of the money referee linted by
+    // nothing at all, for the package's whole life. It now has boardwalk-api/eslint.config.mjs
+    // and .github/workflows/api.yml. If you ever move this ignore, check that one still fires —
+    // an ignore whose justification lives in another file is exactly how this rotted the first
+    // time.
     ignores: ['**/node_modules/**', 'dist/**', 'coverage/**', '**/*.min.js', 'boardwalk-api/**'],
   },
 

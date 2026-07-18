@@ -4,8 +4,17 @@ import { buildApp } from '../src/app';
 import type { ApiConfig } from '../src/config';
 import { openDb } from '../src/db/db';
 import type { TokenVerifier } from '../src/auth/verify';
-import type { Profile } from '../src/domain/types';
+import type { LeaderboardEntry, Profile } from '../src/domain/types';
 import { STARTING_BANKROLL_CENTS } from '../src/domain/economy';
+
+/**
+ * supertest types `res.body` as `any`, so every assertion below was untyped — the type checker
+ * saw nothing, and a misspelled `bankRollCents` would have compared
+ * `undefined` and failed for a reason that has nothing to do with the money. Narrow ONCE, here,
+ * and the response shapes come back: a typo in a field name is a compile error again.
+ */
+const bodyOf = <T>(res: { body: unknown }): T => res.body as T;
+const profileOf = (res: { body: unknown }): Profile => bodyOf<{ profile: Profile }>(res).profile;
 
 const cfg: ApiConfig = {
   port: 0,
@@ -84,10 +93,10 @@ describe('profile routes', () => {
       .send(profile)
       .expect(200);
     // PUT answers with the AUTHORITATIVE profile — including the server's own opening stake.
-    expect(put.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS);
+    expect(profileOf(put).bankrollCents).toBe(STARTING_BANKROLL_CENTS);
 
     const res = await request(server).get('/profile').set('Authorization', 'Bearer u1').expect(200);
-    expect(res.body.profile.name).toBe('Ada');
+    expect(profileOf(res).name).toBe('Ada');
   });
 
   it('scopes the profile to the token uid — one caller cannot read another', async () => {
@@ -120,7 +129,7 @@ describe('profile routes', () => {
       })
       .expect(200);
 
-    const p = res.body.profile;
+    const p = profileOf(res);
     expect(p.name).toBe('Cheater'); // a name IS the client's to set
     expect(p.bankrollCents).toBe(STARTING_BANKROLL_CENTS); // the money is not
     expect(p.xp).toBe(0);
@@ -136,7 +145,7 @@ describe('profile routes', () => {
       .set('Authorization', 'Bearer u1')
       .send({ ...profile, equipped: { cardback: 'cb_red3', title: 'ttl_regular' } })
       .expect(200);
-    expect(res.body.profile.equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
+    expect(profileOf(res).equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
   });
 });
 
@@ -153,15 +162,15 @@ describe('economy routes', () => {
       .set('Authorization', 'Bearer u1')
       .send({ nonce: 'n1', gameId: 'blackjack', amountCents: 10_000 })
       .expect(200);
-    expect(bet.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS - 10_000);
+    expect(profileOf(bet).bankrollCents).toBe(STARTING_BANKROLL_CENTS - 10_000);
 
     const settle = await request(server)
       .post('/settle')
       .set('Authorization', 'Bearer u1')
       .send({ nonce: 'n2', gameId: 'blackjack', outcome: 'win', payoutCents: 20_000 })
       .expect(200);
-    expect(settle.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS + 10_000);
-    expect(settle.body.profile.xp).toBe(100);
+    expect(profileOf(settle).bankrollCents).toBe(STARTING_BANKROLL_CENTS + 10_000);
+    expect(profileOf(settle).xp).toBe(100);
   });
 
   it('409s a bet the balance cannot cover — a refusal is state, not a malformed request', async () => {
@@ -172,7 +181,7 @@ describe('economy routes', () => {
       .set('Authorization', 'Bearer u1')
       .send({ nonce: 'n1', gameId: 'blackjack', amountCents: 99_999_999 })
       .expect(409);
-    expect(res.body.error).toMatch(/insufficient/i);
+    expect(bodyOf<{ error: string }>(res).error).toMatch(/insufficient/i);
   });
 
   it('409s a settle with no open wager', async () => {
@@ -216,8 +225,8 @@ describe('economy routes', () => {
       .set('Authorization', 'Bearer u1')
       .send(body)
       .expect(200);
-    expect(again.body.replayed).toBe(true);
-    expect(again.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS - 10_000);
+    expect(bodyOf<{ replayed: boolean }>(again).replayed).toBe(true);
+    expect(profileOf(again).bankrollCents).toBe(STARTING_BANKROLL_CENTS - 10_000);
   });
 
   it('a purchase charges the server price; there is no field to name your own', async () => {
@@ -228,8 +237,8 @@ describe('economy routes', () => {
       .set('Authorization', 'Bearer u1')
       .send({ nonce: 'p1', itemId: 'av_cowboy', priceCents: 1 })
       .expect(200);
-    expect(res.body.profile.bankrollCents).toBe(STARTING_BANKROLL_CENTS - 100_000);
-    expect(res.body.profile.inventory).toEqual({ av_cowboy: true });
+    expect(profileOf(res).bankrollCents).toBe(STARTING_BANKROLL_CENTS - 100_000);
+    expect(profileOf(res).inventory).toEqual({ av_cowboy: true });
   });
 
   it('a daily claim ignores any client clock in the body', async () => {
@@ -240,7 +249,7 @@ describe('economy routes', () => {
       .set('Authorization', 'Bearer u1')
       .send({ nonce: 'd1', nowMs: 0, lastClaimDay: 0 })
       .expect(200);
-    expect(first.body.profile.bankrollCents).toBeGreaterThan(STARTING_BANKROLL_CENTS);
+    expect(profileOf(first).bankrollCents).toBeGreaterThan(STARTING_BANKROLL_CENTS);
 
     // A second claim on the same real day is refused however the body is dressed up.
     await request(server)
@@ -272,8 +281,9 @@ describe('leaderboard route', () => {
       .get('/leaderboard?limit=5')
       .set('Authorization', 'Bearer u1')
       .expect(200);
-    expect(res.body.entries).toHaveLength(1);
-    expect(res.body.entries[0]).toMatchObject({
+    const entries = bodyOf<{ entries: LeaderboardEntry[] }>(res).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
       uid: 'u1',
       wins: 1,
       played: 1,
