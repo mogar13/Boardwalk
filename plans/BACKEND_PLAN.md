@@ -4,8 +4,32 @@
 Backups, the restore drill and the nightly timer landed first, then the migration and cutover; the
 frontend merged (PR #23) and the Pages build carries the Funnel URL. The one-shot **backfill has now
 run** — one `migration:v1` marker, and SQLite matches Firebase field for field. Owed steps 1–3 done.
-**Step 4, the live money round-trip, is the one thing still open** (it needs a real sign-in), along
-with the full stop/swap/start restore rehearsal in `boardwalk-api/BACKUP.md`.
+**All five owed steps are now done**, including the live money round-trip and the full
+stop/swap/start restore rehearsal — see "Verified in prod" below.
+
+### Verified in prod (2026-07-18)
+
+Driven against the live Pi with a real Firebase ID token, on a throwaway account since deleted
+(Auth account removed, its 14 SQLite rows removed; the ledger is back to the one real player):
+
+| Check | Result |
+|---|---|
+| opening stake | `500000` — the SERVER's grant, not a client claim |
+| bet $10 | `499000` — exactly the price |
+| **replay the same nonce** | `499000`, unchanged — and `mutations` holds ONE row for it |
+| settle win $20 | `501000` |
+| **hostile $1M payout** | **409** `payout with no open wager` |
+| buy `cb_green5` (a P4 id) | **409** `insufficient funds` — the server KNOWS the id, which is the catalogue-drift fix live |
+| buy an **earn-only** title | **409** `that item cannot be bought — it is earned` |
+| daily claim | `551000` |
+| daily again, fresh nonce | **409** `already claimed today` |
+| **hostile `PUT /profile`** carrying `bankrollCents: 999999999` | 200, and the balance stayed `500000` |
+
+The ledger it wrote is a clean audit trail — `signup 500000, bet -1000, settle 2000, daily 50000` —
+summing to exactly the `551000` the API reported. Refused mutations still claimed their nonce and
+wrote no ledger row, which is what makes a retry replay the refusal instead of re-deciding it.
+
+**"Editing devtools changes nothing durable" is now a demonstrated claim rather than a design.**
 🚧 **Phase D is code-complete and green, and NOT deployed** — see
 [The deploy delta](#the-deploy-delta-phase-d) for what it adds to that same trip, including one
 thing that must be **checked before deploying**, because it can fail the deploy at `npm install`.
