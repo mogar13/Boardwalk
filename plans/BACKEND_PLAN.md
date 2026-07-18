@@ -390,23 +390,47 @@ blackjack).
 **Still owed — and it rides along with Phase B's deploy, it does not add a second one:**
 see [The deploy delta](#the-deploy-delta-phase-d) below.
 
-### The deploy delta (Phase D)
+### The deploy delta (Phase D) — DONE, and what it turned out to be
 
-**Read this before deploying.** Phase B is *also* still undeployed, so both phases go to the Pi in
-one trip.
+**Deployed 2026-07-18.** The question this section used to flag as UNVERIFIED — whole repo on the
+Pi, or only the `boardwalk-api/` directory? — resolved to **the bad case**. `~/boardwalk-api` is a
+standalone directory, not a git checkout (`fatal: not a git repository`), with no `packages/`
+sibling, so `file:../packages/game-logic` could not resolve. Flagging it was worth more than
+guessing it.
 
-1. **`ExecStart` and `WorkingDirectory` do NOT change.** That was the entire point of the build
-   seam. The unit still runs `node dist/server.js` from `boardwalk-api/`.
-2. **But `packages/game-logic/` must be present next to `boardwalk-api/`** — the dependency is
-   `file:../packages/game-logic`, a relative path out of the API directory.
-3. **`npm install` must be re-run in `boardwalk-api/`** so the symlink into `node_modules` is
-   created, and **the package must be built** — `boardwalk-api`'s own `npm run build` does that
-   first, so a normal build covers it.
-4. ⚠️ **UNVERIFIED: whether the Pi has the whole repo checked out or only the `boardwalk-api/`
-   directory.** Nobody SSH'd to it during this work. **If it is only the directory, the `file:`
-   dependency will not resolve and the deploy fails at `npm install`.** Check this first; if the Pi
-   has only `boardwalk-api/`, the deploy needs `packages/game-logic/` copied or the checkout
-   widened before anything else happens.
+`ExecStart` and `WorkingDirectory` did NOT change — the entire point of the build seam, and it
+held. The fix is the smallest one that makes the relative path honest: **`packages/game-logic/` is
+rsync'd to `~/packages/game-logic`**, next to `~/boardwalk-api`. The deploy is two rsyncs, not one:
+
+```bash
+ssh mogar13@<pi> 'mkdir -p ~/packages/game-logic'
+rsync -az --delete --exclude node_modules --exclude dist \
+  packages/game-logic/ mogar13@<pi>:~/packages/game-logic/
+rsync -az --delete --exclude node_modules --exclude dist --exclude .env \
+  boardwalk-api/ mogar13@<pi>:~/boardwalk-api/
+ssh mogar13@<pi> 'cd ~/boardwalk-api && npm install && npm run build && npm test'
+ssh mogar13@<pi> 'sudo systemctl restart boardwalk-api'
+```
+
+**Do NOT pass `--omit=optional` to that install.** It completes, and the service builds and runs
+fine on it — but rollup's native binary is an optional dependency, so `npm test` then dies with a
+`MODULE_NOT_FOUND` inside vitest. The tests are the gate; an install flag that quietly removes the
+ability to run them is worse than a slower install.
+
+Secrets live in `~/boardwalk-secrets/boardwalk-api.env` via `EnvironmentFile=`, outside the rsync'd
+tree, so the deploy cannot clobber them. 171/171 ran green **on the Pi** before the restart, the
+ledger was byte-identical either side of it (1 profile, 2 rows, $5,215.00), and the journal is clean.
+
+### The cutover order, because it is the lesson
+
+The frontend deploys automatically on push to `main`; the Pi is deployed by hand. So merging Phase D
+shipped a client calling `POST /blackjack/deal` at a Pi that had no such route, and **prod blackjack
+was broken for about ten minutes**. `VITE_API_BLACKJACK=0` plus a re-run of Deploy restored it in
+two, which is the kill switch doing exactly the job it was written for.
+
+**Deploy the Pi BEFORE merging a frontend that depends on it** — or set the kill switch in the same
+breath as the merge and clear it once the Pi is up. A phase whose two halves deploy by different
+mechanisms has an ordering, and it is not the order the commits are in.
 
 ---
 
