@@ -86,6 +86,18 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          # The Phase-B kill switch. Set the secret to `0` to force the economy back to the
+          # Phase-A arrangement (Firebase authoritative, the API a shadow mirror) with a rebuild
+          # and no code change; unset/anything else leaves the referee authoritative.
+          #
+          # THIS LINE IS THE KILL SWITCH. Until it existed, the switch was documented in three
+          # places (CLAUDE.md, BACKEND_PLAN.md, repo/index.ts) and wired into none — Vite only
+          # embeds a VITE_* var that is actually in the build environment, so setting the secret
+          # did precisely nothing and the deploy went green while doing it. A switch you reach for
+          # during an incident is the worst possible place to discover that. Same for VITE_WS_ROOMS
+          # below, which had the identical hole.
+          VITE_API_ECONOMY: ${{ secrets.VITE_API_ECONOMY }}
+          VITE_WS_ROOMS: ${{ secrets.VITE_WS_ROOMS }}
         run: npm run build
 
       - uses: actions/configure-pages@v5
