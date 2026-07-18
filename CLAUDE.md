@@ -419,6 +419,7 @@ builds the thing it guards.
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file |
 | Every card maps to art that is on disk | `tests/cards.test.ts` (5) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, `cardBackSrc` clamp, `isRed` |
+| Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (43 — incl. the two Phase-6 rules, falsified with the rule off), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (21), `tests/firebase-config.test.ts` (12) |
 
 | Not yet enforced | Lands in |
