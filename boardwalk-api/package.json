@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "backup": "node scripts/backup.mjs",
+    "backfill": "node scripts/backfill.mjs",
     "restore:drill": "node scripts/restore-drill.mjs",
     "lint": "eslint src tests"
   },
