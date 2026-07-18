@@ -21,6 +21,14 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_ID?: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID?: string;
   /**
+   * The `boardwalk-api` base URL (BACKEND_PLAN.md Phase A). OPTIONAL, unlike the Firebase keys: its
+   * absence disables shadow mode rather than failing the build, so a fresh clone and the emulator
+   * harness run without it. When present, the composition root mirrors profile writes here — see
+   * `@/system/repo` and `@/system/repo/shadow`. Injected like the Firebase config; a GitHub Actions
+   * secret in prod.
+   */
+  readonly VITE_API_BASE_URL?: string;
+  /**
    * DEV-ONLY opt-in: `'1'` points the app at the local Firebase emulators (see
    * `@/system/repo/firebase/app`). Gated by `import.meta.env.DEV` there, so it is inert in a
    * production build. This is how the Phase 5 lobby harness drives a real room flow locally.

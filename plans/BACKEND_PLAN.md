@@ -1,13 +1,25 @@
 # The Boardwalk — Backend Plan (Node + SQLite)
 
-**Status:** 🚧 Phase A scaffold in progress. The launch five have shipped, so the gate is passed.
-`boardwalk-api/` now exists — Express + `better-sqlite3` + Firebase-Admin token verification, the
-schema below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests, and
-driven end-to-end locally. The frontend's server-backed repos exist at `src/system/repo/api/`
-against the real `ProfileRepo`/`LeaderboardRepo` interfaces but are **NOT wired into the composition
-root** — shadow mode (below) is the next step, and cut-over needs a deployed server + an empty diff
-first. Deploy host is a Raspberry Pi on the LAN; the DB stick is mounted at `/mnt/boardwalk-db`.
-**Last updated:** 2026-07-17
+**Status:** 🚧 Phase A shadow mode is WIRED. The launch five have shipped, so the gate is passed.
+`boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
+below (with the append-only `ledger`), profile + leaderboard endpoints, 15 passing tests — and is
+**deployed live** on the Pi at `https://boardwalk-pi.tail1bed2f.ts.net` (Tailscale Funnel). The
+frontend's server-backed repos at `src/system/repo/api/` are now **wired into the composition root in
+shadow mode**: when `VITE_API_BASE_URL` is set, `src/system/repo/index.ts` keeps Firebase as the
+source of truth and mirrors every profile write to the API via `src/system/repo/shadow/`
+(`shadowProfileRepo` + the pure `diffProfiles`), logging any read-back disagreement — the primary
+write is never blocked or failed by the mirror. It is gated off under the emulator (whose
+`demo-boardwalk` tokens the Pi's `boardwalk-fca02` verifier rejects). **Still owed to close Phase A:**
+end-to-end verification on the deployed site (a real token against the live Pi — CORS `ALLOWED_ORIGIN`
+is `https://mogar13.github.io`, so this runs in prod, not localhost), and an empty shadow diff for a
+week of real play before cut-over. Deploy host is a Raspberry Pi on the LAN; the DB stick is mounted
+at `/mnt/boardwalk-db`. **Last updated:** 2026-07-17
+
+**Phase-B decisions (locked 2026-07-17):** guests stay **local-only** (localStorage remains a real
+offline mode; only accounts sync to SQLite). Offline wins are **ranked with sync-on-reconnect** —
+the user wants real mobile/offline play (power or internet outage) — which means Phase B owes a
+**replay-hardening story** for offline-banked results (server-side idempotency / signed nonces /
+monotonic per-device sequence, TBD) since a naïve reconnect-sync is replayable.
 
 Adapted from The Game Shack's `BACKEND_PLAN.md`, which was written for a migration that no longer
 exists. The security analysis carried over unchanged, because **Boardwalk inherits the same gap**:
