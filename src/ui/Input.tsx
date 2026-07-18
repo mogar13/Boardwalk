@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import type { InputHTMLAttributes, ReactNode } from 'react';
 import { cx } from '@/ui/cx';
 
@@ -60,10 +60,20 @@ const FIELD_ERROR = cx(
   'focus:border-error focus:shadow-glow-error'
 );
 
-export function Input({ label, hint, error, className, ...rest }: InputProps) {
+export function Input({ label, hint, error, className, type, ...rest }: InputProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
+
+  // The reveal toggle: a password field, and nothing else, gets the eye. We key off
+  // the ORIGINAL prop (not the live input type) — once revealed the element is a
+  // `text` input, so asking "is this a password field" of the live type would make
+  // the button vanish the instant it's used. `isPassword` is that question asked of
+  // intent, which is stable. A non-password field never pays for any of this: no
+  // state, no wrapper button, no extra padding.
+  const isPassword = type === 'password';
+  const [revealed, setRevealed] = useState(false);
+  const effectiveType = isPassword && revealed ? 'text' : type;
 
   // Only one message shows. Rendering the hint under a red field means the user
   // reads the advice they already failed to follow, and the actual problem is the
@@ -81,16 +91,43 @@ export function Input({ label, hint, error, className, ...rest }: InputProps) {
           {label}
         </label>
       )}
-      <input
-        id={id}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={message !== undefined ? messageId : undefined}
-        // Ternary, not `error && FIELD_ERROR`: `error` is a ReactNode, and
-        // ReactNode includes 0 — so `&&` yields the number 0, not false. tsc caught
-        // it; the runtime would not have.
-        className={cx(FIELD, error ? FIELD_ERROR : undefined)}
-        {...rest}
-      />
+      <div className="relative">
+        <input
+          id={id}
+          type={effectiveType}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={message !== undefined ? messageId : undefined}
+          // Ternary, not `error && FIELD_ERROR`: `error` is a ReactNode, and
+          // ReactNode includes 0 — so `&&` yields the number 0, not false. tsc caught
+          // it; the runtime would not have. `pr-11` only on a password field, so the
+          // text never runs under the toggle; other fields keep their normal padding.
+          className={cx(FIELD, isPassword && 'pr-11', error ? FIELD_ERROR : undefined)}
+          {...rest}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            // NOT in the tab order: a keyboard user tabbing through the form wants
+            // the next field, not a detour through a reveal toggle they didn't ask
+            // for. It's still clickable, and screen readers reach it in browse mode.
+            tabIndex={-1}
+            onClick={() => {
+              setRevealed((r) => !r);
+            }}
+            // aria-pressed makes it a toggle to a screen reader, not a button that
+            // fires once; the label says what the NEXT press does.
+            aria-pressed={revealed}
+            aria-label={revealed ? 'Hide password' : 'Show password'}
+            className={cx(
+              'text-bw-muted hover:text-base-content absolute inset-y-0 right-0 flex items-center px-3',
+              'transition-colors duration-200 ease-strike',
+              'focus-visible:text-secondary focus-visible:outline-none'
+            )}
+          >
+            <EyeIcon off={revealed} />
+          </button>
+        )}
+      </div>
       {message !== undefined && (
         <p
           id={messageId}
@@ -104,5 +141,40 @@ export function Input({ label, hint, error, className, ...rest }: InputProps) {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Eye / eye-with-a-slash, inline. No icon dependency for two glyphs — the same call
+ * `cx` makes for itself. `currentColor` and `none` only, never a hex: the button
+ * owns the colour through `text-*`, so `no-raw-palette` stays satisfied and the icon
+ * inherits hover/focus for free. `off` draws the slash — shown WHILE revealed, the
+ * standard "click to hide" affordance.
+ */
+function EyeIcon({ off }: { off: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-4 w-4"
+    >
+      {off ? (
+        <>
+          <path d="M9.9 5.2A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.7 17.7 0 0 1-2.4 3.4M6.6 6.6A17.7 17.7 0 0 0 2 12s3.5 7 10 7a10.9 10.9 0 0 0 3.3-.5" />
+          <path d="M10.6 10.6a3 3 0 0 0 4.2 4.2" />
+          <path d="M3 3l18 18" />
+        </>
+      ) : (
+        <>
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
+    </svg>
   );
 }
