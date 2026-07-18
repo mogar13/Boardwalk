@@ -1,6 +1,7 @@
 # Progression Overhaul — Store, Achievements, Leaderboards, Assets
 
-**Status: DESIGN DRAFT — react before we build.** Nothing here is code yet. This is the contract
+**Status: P1–P4 SHIPPED (2026-07-17/18). P5 in progress.** Sections 1–8 are the original design
+contract, kept as written; §9 carries the build log and is the honest record of what landed. This is the contract
 for the phase(s) that build it, in the same spirit as [BACKEND_PLAN.md](BACKEND_PLAN.md).
 
 > This is OS work, not game-count creep. It makes the five games we already have *deeper*, which is
@@ -34,7 +35,12 @@ Three levers do almost all the work:
 
 ---
 
-## 2. What exists today (honest inventory)
+## 2. What existed when this plan was written (2026-07-17, pre-P1)
+
+> Kept for the reasoning, not as a description of the tree. Everything below has since changed, and
+> every `system/…` path in it moved in Phase D: the economy, profile, progress, store, rewards and
+> the five rulebooks now live in `packages/game-logic/src/…`, which the browser and the referee both
+> import. Read §9 for what is true now.
 
 Grounded in the actual code, so the design proposes real deltas, not fantasy.
 
@@ -48,7 +54,7 @@ Grounded in the actual code, so the design proposes real deltas, not fantasy.
 | **Daily** | `system/rewards/daily.ts` | 7-day streak ladder $500→$5,000, then flat. UTC day index. |
 | **Award pipeline** | `system/economy/result.ts` | `applyResult` — the **one** pure call that moves bankroll+xp+stats+achievements together. XP flat by outcome (win 100 / push 20 / loss 10). |
 
-**The load-bearing constraint, and why the store is thin.** [`catalog.ts`](../src/system/store/catalog.ts)
+**The load-bearing constraint, and why the store is thin.** [`catalog.ts`](../packages/game-logic/src/store/catalog.ts)
 says it outright: a cosmetic *must have a reader* or it's `loadout.color` — v1's cosmetic written by
 the store and read by nothing. Avatars are the only cosmetic with a reader today (the top bar + profile
 card render `profile.avatar`). Card backs, felts, dice have **no reader** — nothing drew a game board
@@ -364,7 +370,7 @@ Each is a green, deployable slice, in the phase spirit of the repo:
   (profile renders all five chains + feats + hidden ??? + "0 / 27 · 0%", zero console errors). Feeds P2's
   earn-only cosmetics.
 - ✅ **P4 — Packs — SHIPPED 2026-07-18.** The variable-reward loop, on top of P2's rarity. Three
-  packs (`src/system/store/packs.ts`): Card Back $2,500, Avatar $10,000, Grand $20,000, each
+  packs (`packages/game-logic/src/store/packs.ts`): Card Back $2,500, Avatar $10,000, Grand $20,000, each
   publishing its rate table on the card — and the displayed table IS `pack.odds`, the object
   `openPack` rolls against, so the shown rate cannot drift from the real one. The roll is **pure and
   seeded** (`openPack(profile, pack, seed)`, mulberry32; the nonce is minted in `useStore`, never
@@ -400,4 +406,4 @@ gated behind rarity (P2) existing.
 
 ---
 
-*Design draft. React on §8, and I'll turn the agreed slice into a build.*
+*Was a design draft; §8 was answered 2026-07-17 and P1–P4 were built from it. P5 is the last slice.*

@@ -4,8 +4,8 @@ Node + Express + SQLite. The server half of [`../plans/BACKEND_PLAN.md`](../plan
 This is the thing a browser is not allowed to be: it verifies Firebase ID tokens and owns the
 **ledger**, so the bankroll becomes a derived sum no client can overwrite.
 
-**Status: Phases B and D — the referee is real, and neither phase is deployed.** The four money
-routes (`/bet`, `/settle`, `/purchase`, `/daily`) compute every delta server-side against the
+**Status: Phases B, C and D are DEPLOYED (2026-07-18).** The five money
+routes (`/bet`, `/settle`, `/purchase`, `/daily`, `/pack`) compute every delta server-side against the
 append-only ledger, `PUT /profile` accepts only cosmetics, and every mutation is idempotent on a
 client-minted nonce. Phase D added the parts a ceiling could never cover: the server **deals
 blackjack** (`/blackjack/deal`, `/blackjack/move` — it shuffles, validates each move and computes
@@ -13,11 +13,12 @@ the payout from its own cards, and the request has nowhere to name one), and it 
 achievements itself** from its own tables instead of recording what a client reported, so a chain
 badge and the earn-only cosmetic it grants can no longer be forged. Both read the same rules the
 browser plays, from `@boardwalk/game-logic` — see [Where the rules live](#where-the-rules-live).
-The frontend is wired to it as primary. **The Pi is still running the Phase-A build** — deploying,
-running the restore drill there, and verifying in prod are the owed steps in
-[`../plans/BACKEND_PLAN.md`](../plans/BACKEND_PLAN.md#phase-b--cut-over-profile-economy-stats), and
-Phase D rides along with that same trip (see [Deploy target](#deploy-target) — **one item there must
-be checked before you deploy**).
+The frontend is wired to it as primary, and it is **live on the Pi**, deployed from `cb42e44`: the
+backfill has run, backups and the restore drill are real on the box, and the money round-trip is
+verified in prod — see
+[Verified in prod](../plans/BACKEND_PLAN.md#verified-in-prod-2026-07-18). Phase C runs on top of the
+same process: rooms and chat are served by the WS gateway here rather than RTDB, with
+`VITE_WS_ROOMS=0` as the client-side kill switch back.
 
 ## What it is not
 
@@ -123,14 +124,16 @@ below them cannot see far enough to be affected.
 
 ## Deploy target
 
-The Pi (`mogar13@192.168.100.99`). The DB lives on a mounted USB stick, off the SD card:
-`DB_PATH=/mnt/boardwalk-db/data/boardwalk.db`. Reaching it from GitHub Pages (HTTPS) needs a tunnel
-+ TLS (Cloudflare Tunnel / Tailscale) — mixed content blocks a plain-HTTP LAN endpoint.
+The Pi — `mogar13@boardwalk-pi.tail1bed2f.ts.net` over Tailscale (the LAN address
+`mogar13@192.168.100.99` only works on the home network). Served to GitHub Pages through a Tailscale
+Funnel at `https://boardwalk-pi.tail1bed2f.ts.net`, because mixed content blocks a plain-HTTP LAN
+endpoint. The DB lives on a mounted USB stick, off the SD card:
+`DB_PATH=/mnt/boardwalk-db/data/boardwalk.db`.
 
-### The Phase-D deploy delta — read before deploying
+### The Phase-D deploy delta — DONE, kept as the procedure
 
-Phase B is also still undeployed, so both phases go up in one trip. This adds **no new deploy**, but
-it does add a precondition.
+**Deployed 2026-07-18.** This is retained because the Pi deploys **by hand** and the next one has to
+follow the same steps. The precondition below is the part that nearly failed the deploy.
 
 1. **`ExecStart` and `WorkingDirectory` do NOT change.** That was the entire point of taking the
    shared package as a `file:` dependency instead of compiling it into this `tsc`. Still
@@ -139,7 +142,9 @@ it does add a precondition.
    relative path out of it.
 3. **Re-run `npm install` here** so the symlink lands in `node_modules`, then build (`npm run build`
    compiles the shared package first, so this is covered by a normal build).
-4. ⚠️ **UNVERIFIED — check this first: does the Pi have the whole repo checked out, or only
-   `boardwalk-api/`?** Nobody SSH'd to it during this work. **If it has only this directory, the
-   `file:../packages/game-logic` dependency will not resolve and the deploy fails at
-   `npm install`.** Widen the checkout or copy the package across before doing anything else.
+4. ✅ **RESOLVED, and it resolved to the bad case.** The Pi has only this directory —
+   `~/boardwalk-api` is a standalone tree, not a git checkout — so `file:../packages/game-logic`
+   could not resolve on its own. `packages/game-logic/` is now rsync'd to `~/packages/game-logic`
+   beside it, which makes the deploy **two** rsyncs rather than one. Flagging this as unverified was
+   worth more than guessing it. Procedure and the `--omit=optional` trap:
+   [The deploy delta](../plans/BACKEND_PLAN.md#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be).

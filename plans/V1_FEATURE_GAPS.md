@@ -7,6 +7,12 @@ point of this doc is the opposite of "port the rest": it's to make sure the thin
 dropped on purpose, and the OS-level things we eventually *want* have a written home when a game
 finally needs one.
 
+> **Written 2026-07-16, before the progression overhaul.** Rows 5 and 11 have since been largely
+> delivered by [PROGRESSION_PLAN.md](PROGRESSION_PLAN.md) P1–P4 — the "Boardwalk today" columns
+> below are corrected inline where they were flatly wrong. Every `src/system/…` path predates Phase
+> D, which moved the economy, profile, progress, store, rewards and the five rulebooks into
+> `packages/game-logic/src/…`.
+
 > **Why these are different from "port the games."** Every item here is an **OS/SDK capability that
 > spans games** (difficulty tiers, a room browser, a cosmetics loadout), not a 32nd game. v1's own
 > lesson is that the reusable framework was the good 4,700 lines and the 30,000 lines of games were
@@ -37,13 +43,13 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 2 | **Declarative game options / variants / house rules** | most games | nothing; every option is baked into `logic/` | **Design the seam**; wire per game |
 | 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam |
 | 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | none as OS services | **Opt-in shared services**, build the one a game needs first |
-| 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | avatars only (`CosmeticKind = 'avatar'`) | Build alongside their consumer (chat colors ↔ chat, card backs ↔ a card game) |
+| 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **partly shipped (P2)** — `CosmeticKind = 'avatar' \| 'cardback' \| 'title'`, 31 items, each with a reader; chat colours, felts and dice still absent (felts are P5) | Build alongside their consumer — the rule held: card backs shipped *with* `cardBackSrc`, dice still wait for a dice game |
 | 6 | Level **titles** (rank names) | yes | `level` number only | Cheap, pure — good early add |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
 | 8 | Hub discovery: search, favorites, recently-played, categories | yes | piers only | Build when the catalogue outgrows a screen |
 | 9 | **Live room browser** ("Active Matches") | yes | share-a-code only | Real multiplayer-UX gap; medium lift |
 | 10 | Meta/admin: bug report, dev tools, patch notes, bankrupt refill | yes | none | Situational; refill is the most missed |
-| 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | 6 achievements, single ranking | Incremental |
+| 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | **CLOSED (P1+P3)** — 27 achievements across 5 Bronze→Platinum chains incl. per-game mastery, plus feats; 4 leaderboard boards as tabs | Done |
 
 ---
 
@@ -161,8 +167,11 @@ color` slots):
 - **Card backs** — 22 (blue/red/green sets + HD "Jumbo").
 - **Dice skins**, and a functional **Jumbo/HD deck**.
 
-**Boardwalk today:** The store is **avatars only** — `CosmeticKind = 'avatar'`, 12 emoji tiers
-$0–$10M. There is no equip loadout beyond the avatar, no chat colour, no card back, no title.
+**Boardwalk today (updated after P2/P4):** the store carries **31 cosmetics** — 12 avatars, 15 card
+backs, 4 titles — over a rarity ladder, with an `equipped` map on the profile and three packs to
+pull from. Card backs read in Blackjack and Solitaire; titles read on the profile card and the
+leaderboard row. The best titles are **earn-only**, unbuyable at any price. Still missing: chat
+colours, felts (P5), dice, decks.
 
 **Recommendation:** Each cosmetic type should ship **with its consumer**, not as a store dump (the
 same "bring the asset with its reader" rule the audio/card registries hold):
@@ -183,7 +192,7 @@ same "bring the asset with its reader" rule the audio/card registries hold):
 **Boardwalk today:** `level` is a derived number (`levelFromXp`) with no name.
 
 **Recommendation:** Cheap, pure, and self-contained — a `titleFromLevel(level)` next to
-`levelFromXp` in `src/system/profile/xp.ts`, rendered on the profile/top-bar. Good early morale win;
+`levelFromXp` in `packages/game-logic/src/profile/xp.ts`, rendered on the profile/top-bar. Good early morale win;
 no new data, no store dependency. (If titles also become *purchasable* cosmetics, that's #5, kept
 separate.)
 
@@ -257,9 +266,12 @@ per-game localStorage** for settings persistence.
 Butterfly" first chat message), each paying XP + chips; a **Trophy Room** viewer with locked/unlocked
 cards; and a leaderboard with **three sort tabs** (Bankroll / Level / Wins) + medal ranks.
 
-**Boardwalk today:** 6 achievements (`first_win`, `big_win`, `high_roller`, `seasoned`,
-`table_regular`, `deep_pockets`), an `AchievementShelf`, and a **single** leaderboard ranking (wins,
-tie-broken by bankroll then XP — no sort tabs). No per-game achievement hooks.
+**Boardwalk today (updated after P1/P3):** **27 achievements** — 4 standalone, 5 Bronze→Platinum
+chains (wins / level / bankroll / chess mastery / blackjack mastery) and 3 feats, one hidden — with
+an `AchievementShelf`, a completion %, and **4 leaderboard boards** as tabs (Wins / Richest / Level /
+Win Rate). `seasoned` and `deep_pockets` were deleted in P3, being redundant with chain tiers.
+Per-game hooks exist: the mastery chains read `winsByGame`, and feats ride a filtered channel. Since
+Phase D the referee recomputes all of it server-side — a badge is never reported.
 
 **Recommendation:** Incremental, add as content:
 

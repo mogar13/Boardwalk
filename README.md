@@ -3,14 +3,20 @@
 A neon arcade built on **Casino OS v2** — a typed game SDK where adding a game means writing pure
 logic, drawing a component, and exporting a manifest.
 
-React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase
+React 19 · TypeScript · Vite · Tailwind v4 + DaisyUI · Firebase Auth · Node + Express + SQLite (the referee) · WebSockets
 
-> **Status: Phases 0–5 shipped** — live at https://mogar13.github.io/Boardwalk/. There is a scaffold
-> and a green pipeline (0), a theme and a UI kit (1), a data layer — Firebase Auth, profiles, repo
-> interfaces and tested security rules (2), the shell — router, auth gate, top bar, hub (3), the
-> economy — one-way money through `useBet`/`reportResult`, XP, stats, achievements, store, daily
-> reward (4), and multiplayer — rooms, seats, presence, chat, and hidden information that is a rule
-> not a layout (5). Still to come: **the five games** (6). The architecture was written down first,
+> **Status: Phases 0–6 shipped, plus backend Phases A–D** — live at
+> https://mogar13.github.io/Boardwalk/. There is a scaffold and a green pipeline (0), a theme and a
+> UI kit (1), a data layer — Firebase Auth, profiles, repo interfaces and tested security rules (2),
+> the shell — router, auth gate, top bar, hub (3), the economy — one-way money through
+> `useBet`/`reportResult`, XP, stats, achievements, store, daily reward (4), multiplayer — rooms,
+> seats, presence, chat, and hidden information that is a rule not a layout (5), and **all five
+> games** — Tic-Tac-Toe, Blackjack, Chess, UNO, Solitaire (6).
+>
+> Behind it now sits a referee: `boardwalk-api`, a Node + SQLite server that owns the ledger, prices
+> every money intent, deals blackjack and serves rooms/chat over WebSockets — with the rulebooks
+> living in a shared `packages/game-logic` workspace that **both** the browser and the server import,
+> so a rule cannot be enforced one way and played another. The architecture was written down first,
 > on purpose. Start at [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md).
 
 ## What this is
@@ -48,7 +54,9 @@ unspellable rather than documenting "don't."
 |---|---|
 | [plans/done/ARCHITECTURE.md](plans/done/ARCHITECTURE.md) | The design and the *why*. Stack, SDK, data model, phases. **Read this first.** |
 | [CLAUDE.md](CLAUDE.md) | The rules, and what enforces each one. Short on purpose — every rule is paid for by a specific v1 bug. |
-| [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | 🔒 Later. Node + SQLite, server-authoritative economy. Not scheduled. |
+| [plans/BACKEND_PLAN.md](plans/BACKEND_PLAN.md) | The referee. Node + SQLite, server-authoritative economy — **Phases A–D shipped and deployed**. |
+| [plans/PROGRESSION_PLAN.md](plans/PROGRESSION_PLAN.md) | Store, achievements, leaderboards, assets. P1–P4 shipped; P5 (felts/frames/SFX) in progress. |
+| [boardwalk-api/README.md](boardwalk-api/README.md) | The server's own docs — routes, schema, deploy target. |
 
 Two tiers, deliberately: rules live in `CLAUDE.md` in present tense and must have a guard behind them;
 history lives in `ARCHITECTURE.md` in past tense, where it can't rot. *"v1 had no `off()`"* stays true
@@ -90,5 +98,7 @@ npm run rules:test     # runs the REAL rules file against the RTDB emulator
 npm run rules:deploy   # push them to Firebase. NOTHING IN CI DOES THIS — do it in the same breath.
 ```
 
-**Next: Phase 6 — the five games** (Tic-Tac-Toe first, the SDK's smoke test). Phases are one per
+**Next: PROGRESSION_PLAN P5 — felts / frames / polish + celebration SFX.** Phases 0–6 and backend
+A–D are done; there is deliberately **no game checklist** beyond the launch five (see
+[CLAUDE.md](CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated)). Phases are one per
 conversation, each ending green and deployed; see [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases).

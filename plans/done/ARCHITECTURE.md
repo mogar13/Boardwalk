@@ -4,7 +4,10 @@
 and 5 (multiplayer) shipped 2026-07-17 — live at https://mogar13.github.io/Boardwalk/. Phase 6 (the
 five games) is **complete**: **Tic-Tac-Toe** (the SDK's smoke test), **Blackjack** (the economy
 proof), **Chess** (the hot-seat proof), **UNO** (the hidden-hands proof) and **Solitaire** (the
-room-less proof) all shipped 2026-07-17.
+room-less proof) all shipped 2026-07-17. **Since then, backend Phases A–D shipped and deployed
+(2026-07-18)** — a Node + SQLite referee that owns the ledger, serves rooms over WebSockets and deals
+blackjack, with the rulebooks moved into a shared `packages/game-logic` both sides import. See
+[BACKEND_PLAN.md](../BACKEND_PLAN.md).
 **Started:** 2026-07-16
 
 A React 19 + TypeScript arcade built on **Casino OS v2** — a typed game SDK where adding a game
@@ -186,23 +189,34 @@ src/
 │   ├── store/       catalog, purchase
 │   └── repo/
 │       ├── types.ts         ← ProfileRepo, RoomRepo, ChatRepo interfaces
-│       └── firebase/        ← THE ONLY PLACE `firebase/*` MAY BE IMPORTED (lint-enforced)
+│       ├── firebase/        ← THE ONLY PLACE `firebase/*` MAY BE IMPORTED (lint-enforced)
+│       ├── api/             ← the referee: HTTP + the WebSocket room transport
+│       ├── local/           ← offline twins (the blackjack kill switch)
+│       └── shadow/          ← Phase A's mirror, kept as the economy kill switch
 ├── games/
 │   ├── registry.ts          ← replaces games.json; typed; derives gameId
 │   └── blackjack/
 │       ├── manifest.ts
 │       ├── BlackjackGame.tsx   ← default export, lazy-loaded
-│       ├── logic/             ← PURE TS. no DOM, no React, no imports from system/. unit-tested.
-│       └── components/
+│       └── components/         ← logic/ MOVED OUT in Phase D, see packages/ below
 packages/
-└── theme/           @boardwalk/theme ✅ — the ONLY file that may name a colour
+├── theme/           @boardwalk/theme ✅ — the ONLY file that may name a colour
+└── game-logic/      @boardwalk/game-logic ✅ — the shared rulebook: the five games'
+                     src/games/<game>/logic/, plus economy, profile, progress, store,
+                     rewards. Imported by the app AND by boardwalk-api, so a rule the
+                     referee enforces and a rule the client plays are the same lines.
+boardwalk-api/       the referee ✅ — Node + Express + SQLite, OUTSIDE the npm workspace,
+                     depending on game-logic by `file:` path so it consumes built CommonJS
 eslint-rules/        the local plugin ✅ — no-daisyui-classes, no-raw-palette
 ```
 
-Routes: `/` · `/play/:gameId` · `/store` · `/profile` · `/leaderboard`
+Routes: `/` · `/play/:gameId` · `/store` · `/profile` · `/leaderboard` · `/_dev/lobby` (DEV only)
 
 **Rules:** nothing under `games/` may import from another game's folder. `logic/` may not import from
-`system/` — that's what lets the same rules run on a server later. Both lint-enforced.
+`system/` — that's what lets the same rules run on a server, which since Phase D they literally do.
+Both lint-enforced, and both guards name **two** games trees (`src/games` and
+`packages/game-logic/src/games`) — a rule left pointing only at the old location would have gone
+silent on every line of logic in the repo while still reporting success.
 
 ---
 
@@ -342,9 +356,17 @@ One phase per conversation. Each ends green and deployed.
 | 3 | ~~**Shell**~~ ✅ | Router (BrowserRouter + Pages SPA fallback), top bar with bankroll + XP, hub, `registry.ts`, piers. `level` derived from `xp`. |
 | 4 | ~~**Economy + progress**~~ ✅ | `useBet`, `reportResult`, stats, achievements, store (avatars), daily rewards, live leaderboard. |
 | 5 | ~~**Multiplayer**~~ ✅ | `useRoom`, seats, `localSeatIds`, lobby, chat, presence, lifecycle tests, and the `rooms/`/`hands/`/`chat/` rules Phase 2 deferred. |
-| 6 | **The five games** | ✅ Complete — Tic-Tac-Toe, Blackjack, Chess, UNO, Solitaire. See below. |
+| 6 | ~~**The five games**~~ ✅ | Tic-Tac-Toe, Blackjack, Chess, UNO, Solitaire. See below. |
 
-Phases 0→5 are sequential. Phase 6 is five independent units.
+Phases 0→5 are sequential. Phase 6 is five independent units. **All seven shipped.**
+
+Since then the work continued in two plans that are not phases of this list, and a reader who stops
+here gets an incomplete picture:
+
+| Plan | State |
+|---|---|
+| [BACKEND_PLAN.md](../BACKEND_PLAN.md) — the referee (Node + SQLite) | Phases A, B, C and D all shipped and deployed (2026-07-17/18): the server owns the ledger, prices every money intent, serves rooms/chat over WebSockets, deals blackjack and computes achievements. Phase C's "retire RTDB" is **not** met — the Firebase repos remain as kill-switch fallbacks. |
+| [PROGRESSION_PLAN.md](../PROGRESSION_PLAN.md) — store, achievements, boards | P1–P4 shipped; P5 (felts / frames / celebration SFX) in progress. |
 
 ### The five
 
@@ -359,8 +381,10 @@ keep the coverage or the OS ships untested.
 | **UNO** ✅ | 1,079 | Private hands (host-as-dealer), seq ordering, AI-as-occupant, 7 seats, zero betting. |
 | **Solitaire** ✅ | 547 | A game can opt out of rooms entirely. Cheap, and it keeps multiplayer from becoming mandatory. |
 
-Build **Tic-Tac-Toe first**, immediately after Phase 5 — it's the SDK's smoke test, and it's better to
-find the SDK is wrong on a 150-line game than on Blackjack.
+Tic-Tac-Toe was built **first**, immediately after Phase 5 — the SDK's smoke test, on the theory that
+it is better to find the SDK is wrong on a 150-line game than on Blackjack. It paid for itself
+immediately: it is where RTDB's drop-null-children bug surfaced (the `-1` sentinel), on the cheapest
+possible game to be wrong about.
 
 ---
 

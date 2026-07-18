@@ -1,6 +1,13 @@
 # The Phase-B cutover runbook — Firebase → SQLite backfill
 
-**Status: NOT RUN. Nothing in here has been executed against production.**
+**Status: RUN against production 2026-07-18. Complete — one `migration:v1` marker present (it was
+0), `reconcile` clean, and the frontend cut over.** Kept as the record of what was done, and as the
+procedure if it ever has to be repeated against a *fresh* database.
+
+> **Do not re-run this against the live Pi.** The `migration:v1` marker makes a second run a total
+> no-op by design, so it would not corrupt anything — it would silently do *nothing* while looking
+> like it worked, and any play since the cutover lives only in SQLite, which this procedure reads
+> *from* Firebase. The no-op is a safety property, not an invitation.
 
 This is the ordered procedure for moving every real player's account from Firebase RTDB into the
 referee's SQLite database, and only then pointing the frontend at the referee.

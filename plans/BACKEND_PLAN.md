@@ -30,19 +30,27 @@ summing to exactly the `551000` the API reported. Refused mutations still claime
 wrote no ledger row, which is what makes a retry replay the refusal instead of re-deciding it.
 
 **"Editing devtools changes nothing durable" is now a demonstrated claim rather than a design.**
+✅ **Phase C is DEPLOYED** (2026-07-17) — rooms and chat run over the WS gateway **by default**
+wherever `VITE_API_BASE_URL` is set, with `VITE_WS_ROOMS=0` as the kill switch back to RTDB. Its
+"Done when" — RTDB no longer read or written — is **not** met, and the reasons are named in
+[the residual](#phase-c--realtime-rooms-over-websocket).
+
 ✅ **Phase D is DEPLOYED too** (2026-07-18) — see
 [The deploy delta](#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be) for what it turned
 out to be, including the `npm install` trap it very nearly failed on.
-Phase A shadow mode was WIRED. The launch five have shipped, so the gate is passed.
+
+**So A, B, C and D have all shipped.** The launch five have shipped, so that gate is long passed.
 `boardwalk-api/` exists — Express + `better-sqlite3` + Firebase-Admin token verification, the schema
 below (with the append-only `ledger`), profile + leaderboard endpoints, the money routes, the WS room
-gateway and the blackjack dealer, 171 passing tests across 8 files — and is
+gateway and the blackjack dealer, 188 passing tests across 8 files — and is
 **deployed live** on the Pi at `https://boardwalk-pi.tail1bed2f.ts.net` (Tailscale Funnel). The
-frontend's server-backed repos at `src/system/repo/api/` are now **wired into the composition root in
-shadow mode**: when `VITE_API_BASE_URL` is set, `src/system/repo/index.ts` keeps Firebase as the
-source of truth and mirrors every profile write to the API via `src/system/repo/shadow/`
+frontend's server-backed repos at `src/system/repo/api/` were **wired into the composition root in
+shadow mode** (Phase A; Phase B has since inverted this — the API is primary now, and the shadow
+arrangement survives only as the `VITE_API_ECONOMY=0` fallback): when `VITE_API_BASE_URL` was set,
+`src/system/repo/index.ts` kept Firebase as the source of truth and mirrored every profile write to
+the API via `src/system/repo/shadow/`
 (`shadowProfileRepo` + the pure `diffProfiles`), logging any read-back disagreement — the primary
-write is never blocked or failed by the mirror. It is gated off under the emulator (whose
+write was never blocked or failed by the mirror. It is gated off under the emulator (whose
 `demo-boardwalk` tokens the Pi's `boardwalk-fca02` verifier rejects). **Still owed to close Phase A:**
 end-to-end verification on the deployed site (a real token against the live Pi — CORS `ALLOWED_ORIGIN`
 is `https://mogar13.github.io`, so this runs in prod, not localhost), and an empty shadow diff for a
@@ -175,16 +183,18 @@ SQLite becomes the source of truth for everything that isn't realtime.
 
 **Done when:** editing devtools changes nothing durable, and the leaderboard is server-computed.
 
-**✅ CODE COMPLETE, NOT YET DEPLOYED (2026-07-18).** The composition root now wires `api.profile`,
+**✅ DEPLOYED (2026-07-18).** The composition root wires `api.profile`,
 `api.economy` and `api.leaderboard` as primary wherever `VITE_API_BASE_URL` is set;
 **`VITE_API_ECONOMY=0`** is the kill switch back to the Phase-A arrangement (Firebase
 authoritative, API a shadow mirror) with a rebuild and no code change — the twin of Phase C's
 `VITE_WS_ROOMS=0`, which is why `shadowProfileRepo` stays in the tree.
 
 **Money moves as an INTENT, never as a number.** `EconomyRepo.apply(uid, intent, clientNext)` is
-the one path; the four intents are `bet`, `settle`, `purchase`, `daily`, and none of them has a
-field for a balance, a price, an XP amount, a stat count or a clock — a client cannot ask for money
-because the request has nowhere to put the ask. The server computes each delta itself
+the one path; the five intents are `bet`, `settle`, `purchase`, `daily` and `pack`, and none of them
+has a field for a balance, a price, an XP amount, a stat count, a clock, a seed or an item — a client
+cannot ask for money because the request has nowhere to put the ask. `pack` is the sharpest case:
+it carries a `packId` and nothing else, so the server rolls the pull, prices it and grants it, and a
+client cannot pick its own legendary. The server computes each delta itself
 (`boardwalk-api/src/domain/mutations.ts`, one transaction per mutation) and answers with the whole
 authoritative profile, which the store swaps in over its optimistic copy. `useBet().commit()` stays
 **synchronous** on purpose so no game's deal path changed: the local check decides whether the chip
@@ -246,11 +256,13 @@ economy and leaderboard all resolve to the API.
 3. ✅ **The Firebase→SQLite backfill has been RUN** — `1 migrated, reconcile OK`, and a re-run
    reports `0 migrated, 1 already migrated`, so the idempotency marker is confirmed against real
    production data rather than only in tests. See [BACKFILL_RUNBOOK.md](BACKFILL_RUNBOOK.md).
-4. ⬜ **Install the backup timer and confirm the off-box copy lands** — still owed. Backups are
-   currently taken by hand.
-5. ⬜ **Verify in prod** that a bet/settle/purchase/claim round-trips end-to-end in a browser, and
-   that devtools cannot move the bankroll. Until that is driven, "editing devtools changes nothing
-   durable" is a design, not a claim.
+4. ✅ **Backup timer installed and the off-box copy confirmed** — done on the box 2026-07-18, along
+   with the full stop/swap/start restore rehearsal. See [BACKUP.md](../boardwalk-api/BACKUP.md).
+5. ✅ **Verified in prod** — bet/settle/purchase/daily round-tripped against the live Pi on a
+   throwaway account, a replayed nonce moved nothing, a $1M payout with no open wager was refused,
+   and a hostile `PUT /profile` left the balance alone. The table is at the top of this file:
+   [Verified in prod](#verified-in-prod-2026-07-18). "Editing devtools changes nothing durable" is
+   now a demonstrated claim rather than a design.
 
 **What the cutover actually found, recorded because the plan's premise was wrong.** This phase was
 written expecting a population of real players whose accounts had to survive the migration. There
@@ -273,14 +285,17 @@ urgent** — it is one query and it dissolved a whole incident.
   idempotency marker exists to survive. Fixed with `closeFirebase()`.
 
 ### Phase C — Realtime rooms over WebSocket
-Retire the RTDB *database* (Auth stays). Biggest phase — budget accordingly.
+**✅ SHIPPED AND ON BY DEFAULT (2026-07-17), deployed to the Pi.** What it set out to do, in past
+tense because it is done:
 
 - The WS server owns rooms: create, join, **server-arbitrated seat assignment** (the claim-then-verify
-  race dies here), presence, disconnect cleanup.
-- Rewrite `RoomRepo` / `ChatRepo` against it. **`useRoom` / `useChat` signatures do not change** —
-  that's the entire point of the boundary.
+  race died here), presence, disconnect cleanup.
+- `RoomRepo` / `ChatRepo` were rewritten against it. **`useRoom` / `useChat` signatures did not
+  change** — that was the entire point of the boundary, and it held: no game, hook or component was
+  touched.
 
-**Done when:** RTDB is no longer read or written at all.
+**Done when:** RTDB is no longer read or written at all. **NOT met** — see the residual below. Rooms
+and chat moved off it; the database itself is still there.
 
 **✅ LIVE — rooms + chat run over the WS referee by default (2026-07-17).** The gateway
 (`boardwalk-api/src/rooms/`) is attached to the Express HTTP server in `server.ts` at `/rooms`, sharing
@@ -302,10 +317,25 @@ The composition root now uses these **by default** wherever `VITE_API_BASE_URL` 
 it); **`VITE_WS_ROOMS=0`** is the kill switch back to RTDB (rebuild, no code change) for a Pi outage. The
 Firebase room/chat repos stay in the tree as that fallback.
 
-**Remaining:** watch a stretch of real prod play (any console/connection errors, PNA on a tailnet
-browser), then **delete the Firebase room/chat repos** so RTDB is no longer read or written at all —
-that is the literal "Done when." The Phase-B replay-hardening story for offline-banked results is still
-owed before offline wins are trusted.
+**What Phase C did NOT do — the honest residual.** The "Done when" above is *not* met, and calling
+this phase closed would be the same overclaim this document has already made twice.
+
+- **The Firebase room/chat repos are still in the tree and still wired**, as the `VITE_WS_ROOMS=0`
+  fallback — `repos.room` is literally `wsRooms ? wsRooms.room : firebaseRoomRepo`.
+- **`database.rules.json` still carries the whole `rooms/` ruleset**, including the per-seat
+  `private/` read rules. Dead weight on the WS path, and the live security boundary the moment the
+  kill switch flips.
+- **RTDB is still read and written outside rooms entirely** — the Firebase profile and leaderboard
+  repos remain composed on the `VITE_API_ECONOMY=0` path. So the *database* is a live dependency for
+  reasons that have nothing to do with rooms.
+- **UNO's hidden hands are still enforced by RTDB rules** on that fallback path (host-as-dealer
+  client + owner-only `hands/` reads), which is a second, independent reason the rules cannot be
+  deleted yet.
+
+Closing it means deleting both repos and their rules, and accepting that a Pi outage takes rooms
+*down* rather than degrading them to RTDB. That is a decision to make deliberately, not a chore to
+tick off. Separately, the Phase-B replay-hardening story for offline-banked results is still owed
+before offline wins are trusted.
 
 ### Phase D — Server-authoritative game state
 Only worth doing for games where it matters.
@@ -318,7 +348,7 @@ Only worth doing for games where it matters.
 **Done when:** a player with devtools open cannot see an opponent's hand — because the server never
 sent it.
 
-**✅ CODE COMPLETE FOR BLACKJACK, NOT YET DEPLOYED (2026-07-18).** Three commits: the shared package,
+**✅ DEPLOYED FOR BLACKJACK (2026-07-18).** Three commits: the shared package,
 the referee computing achievements, and the dealer dealing.
 
 **One source for the rules — `packages/game-logic`.** The five rulebooks moved (each behind a subpath
@@ -408,8 +438,8 @@ projecting one hand, and it is not started. The bound today is: *a dishonest cli
 level and its win count, and it can never take a chip.* UNO's hidden hands, likewise, are still
 enforced by RTDB rules and a host-as-dealer client, not by this server.
 
-**Counts:** frontend 435 across 26 files, `boardwalk-api` 171 across 8 (45 in economy, 22 in
-blackjack).
+**Counts (at this audit, 2026-07-18):** frontend 536 across 30 files, `boardwalk-api` 188 across 8
+(62 in economy, 22 in blackjack).
 
 **How it shipped — it rode along with Phase B's deploy and did not add a second one:**
 see [The deploy delta](#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be) below.
