@@ -3,7 +3,7 @@
  *
  * A ticket is a server-signed nonce: the client spends one per banked `settle`, and it cannot mint
  * more than it was issued. That is what bounds how much work a client can fabricate while it is
- * the only witness. See `plans/OFFLINE_HARDENING.md` for the whole design; what lives HERE is only
+ * the only witness. See `plans/done/OFFLINE_HARDENING.md` for the whole design; what lives HERE is only
  * the numbers, because they are the part the referee enforces and the client plays.
  *
  * WHY THESE TWO CONSTANTS ARE SHARED AND THE CRYPTO IS NOT. The server caps a uid's outstanding

@@ -332,9 +332,14 @@ this phase closed would be the same overclaim this document has already made twi
   client + owner-only `hands/` reads), which is a second, independent reason the rules cannot be
   deleted yet.
 
-Closing it means deleting both repos and their rules, and accepting that a Pi outage takes rooms
-*down* rather than degrading them to RTDB. That is a decision to make deliberately, not a chore to
-tick off. Separately, the Phase-B replay-hardening story for offline-banked results is still owed
+Closing it means deleting both repos and their rules. **That decision was taken on 2026-07-18 and the
+answer was "not yet"** — see [ROADMAP item 3](../ROADMAP.md#3-close-phase-c--decided-2026-07-18-not-yet-and-here-is-the-trigger)
+for the reasoning and the concrete trigger that reopens it. Two corrections found while deciding are
+worth carrying here: the `VITE_WS_ROOMS` fallback is **build-time, not runtime**, so a Pi outage
+takes rooms down today too and the fallback is a recovery procedure rather than a degradation; and
+deleting the room rules leaves the rules file, the Firebase repo directory and the hand-deploy gap
+all standing, so the real unit of decision is retiring RTDB entirely — rooms *and* the
+`VITE_API_ECONOMY=0` economy fallback — not rooms alone. Separately, the Phase-B replay-hardening story for offline-banked results is still owed
 before offline wins are trusted.
 
 ### Phase D — Server-authoritative game state

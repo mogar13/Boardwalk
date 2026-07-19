@@ -1,6 +1,6 @@
 # Offline replay-hardening — the design
 
-**Written 2026-07-18.** Item 1 in [ROADMAP.md](ROADMAP.md), owed since Phase B, never built. This
+**Written 2026-07-18.** Item 1 in [ROADMAP.md](../ROADMAP.md), owed since Phase B, never built. This
 document answers the five design questions before any code exists, because the scope decision
 (**FULL: server-signed nonces, unbounded offline duration**) has more surface to get wrong than to
 write.
@@ -75,7 +75,7 @@ the leaderboard, not the bankroll.
 
 **What they do NOT buy, and no ticket scheme can:** they do not make a self-reported outcome true. A
 client that is *online* can already spam `/settle` for chess with fresh tickets, refilling its batch
-each time. Closing that is [ROADMAP item 4's](ROADMAP.md#4-a-sixth-game--only-if-one-sounds-fun)
+each time. Closing that is [ROADMAP item 4's](../ROADMAP.md#4-a-sixth-game--only-if-one-sounds-fun)
 much larger job — the server holding the match. **Tickets bound the offline surface to the online
 surface; they do not shrink the online one.** Anyone reading this later should not mistake the
 mechanism for a solution to outcome-forgery.
@@ -146,7 +146,7 @@ justification stated rather than assumed:
 
 It logs loudly at boot (`configProblems` gets a non-fatal warning line) and `/health` reports
 `tickets: 'on' | 'off'` so the state is checkable from the artifact rather than inferred — the
-[health-is-not-deploy-evidence](../CLAUDE.md) lesson applied to this feature's own switch.
+[health-is-not-deploy-evidence](../../CLAUDE.md) lesson applied to this feature's own switch.
 
 ---
 
@@ -375,7 +375,7 @@ the uid check from `verifyTicket` (the cross-account test must fail); make the c
 of per-uid (the fabricated-devices test must fail); make the outbox flush non-idempotent (the ledger
 test must fail); remove the `kid` selection and try both keys (the dropped-key test must fail).
 
-**Beyond the suite:** the [browser verification recipe](../CLAUDE.md) applies, and a passing suite is
+**Beyond the suite:** the [browser verification recipe](../../CLAUDE.md) applies, and a passing suite is
 explicitly not evidence here. The real drive is: emulator + local API, sign in, play a chess game
 online and confirm the settle lands; kill the API; play two more and watch them queue with the XP
 showing optimistically; bring the API back; watch the queue flush and the profile reconcile; then

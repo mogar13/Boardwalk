@@ -22,9 +22,9 @@ Ordered by **what goes wrong if you never do it**, not by effort:
 
 | # | Item | If never done |
 |---|---|---|
-| 1 | ~~Offline replay-hardening~~ — **DONE, deployed + enforcing 2026-07-18** | ~~A reconnect can pay a win twice.~~ Closed. See [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md). |
-| 2 | ~~Crash-recovery for rooms~~ — **DONE 2026-07-18** | ~~A crashed host strands a table permanently.~~ Closed. See [CRASH_RECOVERY.md](CRASH_RECOVERY.md). |
-| 3 | Close Phase C (delete RTDB rooms) | Nothing breaks. Two systems stay alive instead of one. |
+| 1 | ~~Offline replay-hardening~~ — **DONE, deployed + enforcing 2026-07-18** | ~~A reconnect can pay a win twice.~~ Closed. See [OFFLINE_HARDENING.md](done/OFFLINE_HARDENING.md). |
+| 2 | ~~Crash-recovery for rooms~~ — **DONE 2026-07-18** | ~~A crashed host strands a table permanently.~~ Closed. See [CRASH_RECOVERY.md](done/CRASH_RECOVERY.md). |
+| 3 | Close Phase C (delete RTDB rooms) — **DECIDED 2026-07-18: not yet** | Nothing breaks. Two systems stay alive instead of one. Decision + the trigger that reopens it are in [item 3](#3-close-phase-c--decided-2026-07-18-not-yet-and-here-is-the-trigger). |
 | 4 | A sixth game | Nothing. This is the point. |
 
 Two smaller items ride along with whatever you touch next; they are at the bottom under
@@ -34,7 +34,7 @@ Two smaller items ride along with whatever you touch next; they are at the botto
 
 ## 1. Offline replay-hardening — DONE, deployed and enforcing
 
-> **Closed 2026-07-18** by [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md), which is the design, the
+> **Closed 2026-07-18** by [OFFLINE_HARDENING.md](done/OFFLINE_HARDENING.md), which is the design, the
 > answers to the five questions, and the evidence. Read that instead of what follows; the rest of
 > this section is kept because its framing of the problem is still the right one, with **one
 > correction found on contact with the code**, below.
@@ -91,7 +91,7 @@ the answer is "one session's worth," the fix is a bound and a counter, not a sig
 
 ## 2. Crash-recovery for rooms — DONE
 
-> **Closed 2026-07-18** by [CRASH_RECOVERY.md](CRASH_RECOVERY.md), which is the design, the fork the
+> **Closed 2026-07-18** by [CRASH_RECOVERY.md](done/CRASH_RECOVERY.md), which is the design, the fork the
 > owner decided, and the bound. Read that instead of what follows; the rest of this section is kept
 > because its instinct — *verify the gateway before designing* — was right, and because the
 > **correction it earned on contact with the code** is worth keeping.
@@ -140,7 +140,7 @@ plainly that the fallback is degraded. That is a reason to consider item 3 first
 
 ---
 
-## 3. Close Phase C — a decision, not a chore
+## 3. Close Phase C — DECIDED 2026-07-18: not yet, and here is the trigger
 
 **Status:** Phase C shipped and is deployed; its own **"Done when: RTDB is no longer read or written
 at all" is NOT met**, and [BACKEND_PLAN.md](done/BACKEND_PLAN.md#phase-c--realtime-rooms-over-websocket)
@@ -149,24 +149,80 @@ names the four reasons.
 To close it you would delete the Firebase room/chat repos, delete the `rooms/`/`hands/`/`chat/`
 rules, and remove the `VITE_WS_ROOMS=0` fallback.
 
-**The thing to decide first, because it is not reversible in a hurry:** today a Pi outage
-**degrades** rooms to RTDB. After closing, a Pi outage **takes rooms down**. That is a real
-availability trade for a real simplicity win — one room system instead of two, and no rules file
-that is dead weight on the live path and load-bearing the instant a flag flips.
+**The decision was taken on 2026-07-18 and the answer is no, not yet.** What follows is the original
+framing with **two corrections found on contact with the code** — both of which change the trade —
+and a concrete revisit trigger replacing the one that could never be met.
 
-Two things block a clean close regardless of the decision:
+### Correction 1: the fallback is NOT automatic, so "degrades vs. takes down" is wrong
+
+This section used to say a Pi outage today **degrades** rooms to RTDB. It does not.
+[src/system/repo/index.ts](../src/system/repo/index.ts) gates on `import.meta.env.VITE_WS_ROOMS` — a
+**build-time** constant, injected from a GitHub secret in `deploy.yml`. `api/socket.ts` has no
+runtime fallback path at all. A Pi outage takes rooms **down**, and the fallback is a *recovery
+procedure* (set the secret, re-run the deploy workflow), not a degradation.
+
+So the real trade is much narrower than it read:
+
+| | Pi outage today | Pi outage after closing |
+|---|---|---|
+| Rooms | Down; recoverable in ~a deploy cycle by flipping a secret | Down until the Pi is back |
+
+Both branches are an outage. One has a manual escape hatch costing a rebuild. **That is a smaller
+availability win than "degrades" implied, and it was the load-bearing argument in this item.**
+
+### Correction 2: closing this buys less simplicity than "one room system instead of two"
+
+`database.rules.json` is 374 lines; the `rooms`/`hands`/`chat` blocks are ~152 of them. Deleting
+those leaves the rules file, `src/system/repo/firebase/`, and the hand-deploy gap all standing,
+because of blocker 2 below. You retire ~460 lines of repo and ~40% of a rules file. You do **not**
+retire RTDB, the second database, or the deploy-by-hand risk.
+
+**The right unit of decision is "do we retire RTDB entirely" — rooms *and* the `VITE_API_ECONOMY=0`
+profile/leaderboard fallback, together — not "do we delete the room rules."** Closing Phase C alone
+pays the full availability cost for a partial simplicity win.
+
+### The two blockers, unchanged
 
 1. **UNO's hidden hands are still enforced by those rules** on the fallback path (host-as-dealer
-   client + owner-only `hands/` reads). The WS gateway addresses private payloads by seat index, so
-   the mechanism exists on both sides — but the *rules* are the enforcement today.
+   client + owner-only `hands/` reads). Confirmed fallback-path-only: the gateway enforces
+   owner-only delivery itself (`gateway.ts`, "Deliver a private hand to its owner only", plus
+   re-evaluation of every private subscription when seats change), so the *live* path does not lean
+   on the rules. They are the enforcement on the fallback alone.
 2. **RTDB is still read and written outside rooms entirely** — the Firebase profile and leaderboard
    repos remain composed on the `VITE_API_ECONOMY=0` path. Deleting the room rules does not retire
-   the database; it only stops rooms using it. Retiring RTDB is a *separate, larger* decision about
-   whether the economy kill switch survives.
+   the database; it only stops rooms using it.
 
-**Recommendation: leave it open until the Pi has a longer track record.** The fallback is cheap to
-keep and expensive to rebuild. Revisit after item 1, which will teach you more about how much you
-trust a single host.
+### Why crash-recovery (item 2) did not tip it
+
+Item 2 landing on both paths is a real argument *for* closing: it cost a second executor of one rule,
+and the fallback's residual orphan case (host crashes, guests then leave cleanly) is closable only by
+a rules change or a reaper. Both true.
+
+But that cost is **sunk and one day old**, and it *closed* the axis on which the fallback was
+degraded — so the fallback's ongoing carrying cost is **lower** now than when this item was written,
+not higher. And the residual orphan case is a fallback-only defect that can only bite during a Pi
+outage, which is the moment an orphaned room ranks last among your problems. Deleting working code
+one day after paying for it, to avoid a defect that only manifests when the thing replacing it is
+already down, is the wrong order.
+
+### The old recommendation was unfalsifiable — replaced
+
+This item used to say "leave it open until the Pi has a longer track record." **That condition could
+never be met.** Phase C shipped 2026-07-17, one day before this decision, and prod carries 1 profile
+/ 2 auth accounts, both the owner's. With no traffic, waiting generates no evidence — a year of
+waiting would teach exactly what today knows. A wait condition nothing can satisfy is not caution;
+it is a fallback becoming permanent by default instead of by choice.
+
+**Revisit when EITHER:**
+
+- **(a)** you take the RTDB-retirement question as one decision — including whether the
+  `VITE_API_ECONOMY=0` economy kill switch survives — at which point rooms come along for free. This
+  is the one actually reachable today, and it is the recommended path; **or**
+- **(b)** you have observed one real Pi outage and know first-hand what it costs, plus a handful of
+  real online sessions driven on the WS path with no fallback needed.
+
+Until one of those, the Firebase room/chat repos and their rules stay, and they stay **maintained** —
+a fallback nobody keeps working is worse than no fallback, because it reads like an option.
 
 ---
 

@@ -809,7 +809,7 @@ describe('the multi-path write ProfileRepo.create actually performs', () => {
 });
 
 /**
- * CRASH RECOVERY (plans/CRASH_RECOVERY.md, ROADMAP item 2). The RTDB fallback arms its teardown as
+ * CRASH RECOVERY (plans/done/CRASH_RECOVERY.md, ROADMAP item 2). The RTDB fallback arms its teardown as
  * an `onDisconnect` multi-path write, so a killed tab cleans up even though no client code runs.
  * Whether Firebase FIRES that write is Firebase's business; whether the RULES permit it is ours,
  * and it is the half that fails silently — an armed write the rules refuse leaves the table stalled

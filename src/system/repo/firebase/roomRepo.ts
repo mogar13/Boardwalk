@@ -44,7 +44,7 @@ import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
  */
 
 /**
- * CRASH RECOVERY (plans/CRASH_RECOVERY.md) — the multi-path write this client arms as an
+ * CRASH RECOVERY (plans/done/CRASH_RECOVERY.md) — the multi-path write this client arms as an
  * `onDisconnect`, so the teardown it would run on a clean exit happens anyway when the tab is
  * killed. PURE and exported so it is unit-testable without a network: what to write is the part
  * that can be wrong (the seat's fallback, who may delete the room), and `onDisconnect().update()`
