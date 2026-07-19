@@ -88,6 +88,20 @@ export class RoomStore {
   }
 
   /**
+   * Every room where `uid` holds a seat. The disconnect path asks the STORE which seats a leaver
+   * holds rather than trusting a per-connection mirror: a socket that claimed a seat and never
+   * declared presence used to leak that seat forever on close, because the close path walked the
+   * connection's presence set alone. A derived answer cannot drift from the seats it describes.
+   */
+  roomsHolding(uid: string): { gameId: string; roomId: string }[] {
+    const out: { gameId: string; roomId: string }[] = [];
+    for (const room of this.rooms.values())
+      if (room.seats.some((s) => s.kind === 'human' && s.uid === uid))
+        out.push({ gameId: room.gameId, roomId: room.roomId });
+    return out;
+  }
+
+  /**
    * Create a room, seat the host at index 0, mint a unique code. Fails only if the server cannot
    * find a free code in a handful of tries (contention the lobby renders), or the host cannot be
    * seated (a non-positive seat count) — both returned as values, never thrown.

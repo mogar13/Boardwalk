@@ -807,3 +807,75 @@ describe('the multi-path write ProfileRepo.create actually performs', () => {
     expect(existed).toBe(false);
   });
 });
+
+/**
+ * CRASH RECOVERY (plans/CRASH_RECOVERY.md, ROADMAP item 2). The RTDB fallback arms its teardown as
+ * an `onDisconnect` multi-path write, so a killed tab cleans up even though no client code runs.
+ * Whether Firebase FIRES that write is Firebase's business; whether the RULES permit it is ours,
+ * and it is the half that fails silently — an armed write the rules refuse leaves the table stalled
+ * in exactly the way the arming exists to prevent, with nothing anywhere reporting a problem.
+ *
+ * The shapes asserted here are the literal output of `disconnectUpdates`, whose unit test
+ * (`tests/crash-recovery.test.ts`) pins the decision. This pins that the decision is permitted.
+ */
+describe('the armed onDisconnect write — crash recovery on the RTDB fallback', () => {
+  it('lets the host delete room, hands and chat in ONE write', async () => {
+    // THE LOAD-BEARING ONE. All three delete rules authorise against
+    // `rooms/<g>/<r>/meta/host`, so three sequential deletes would let whichever lands first take
+    // the host check away from the other two and orphan them. This asserts the single update is
+    // evaluated against the PRE-write root, which is the entire reason it is one write.
+    await seedRoom();
+    await seed(async (db) => {
+      await set(ref(db, `${HANDS_PATH}/0`), { cards: ['x'] });
+      await set(ref(db, `${CHAT_PATH}/k1`), { uid: ME, name: 'Me', text: 'hi', key: 'k1' });
+    });
+    await assertSucceeds(
+      update(ref(asUser(ME)), {
+        [CHAT_PATH]: null,
+        [HANDS_PATH]: null,
+        [ROOM_PATH]: null,
+      })
+    );
+  });
+
+  it('refuses that same write from a guest — a crashed guest cannot wipe the host game', async () => {
+    await seedRoom();
+    await assertFails(
+      update(ref(asUser(STRANGER)), {
+        [CHAT_PATH]: null,
+        [HANDS_PATH]: null,
+        [ROOM_PATH]: null,
+      })
+    );
+  });
+
+  it('lets a guest arm their OWN seat to an AI, so the table survives their crash', async () => {
+    await seedRoom({
+      seats: [
+        { kind: 'human', name: 'Me', uid: ME },
+        { kind: 'human', name: 'Stranger', uid: STRANGER },
+      ],
+      meta: { host: ME, status: 'playing', createdAt: 1 },
+    });
+    await assertSucceeds(
+      update(ref(asUser(STRANGER)), {
+        [`${ROOM_PATH}/seats/1`]: { kind: 'ai', name: 'Stranger' },
+      })
+    );
+  });
+
+  it('still refuses arming SOMEONE ELSE seat — no-evict survives the crash path', async () => {
+    await seedRoom({
+      seats: [
+        { kind: 'human', name: 'Me', uid: ME },
+        { kind: 'human', name: 'Stranger', uid: STRANGER },
+      ],
+      meta: { host: ME, status: 'playing', createdAt: 1 },
+    });
+    await assertFails(
+      update(ref(asUser(STRANGER)), {
+        [`${ROOM_PATH}/seats/0`]: { kind: 'ai', name: 'Me' },
+      })
+    );
+  });
+});

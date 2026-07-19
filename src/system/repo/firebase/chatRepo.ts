@@ -24,7 +24,14 @@ import type { ChatRepo, RepoResult, Unsubscribe } from '@/system/repo/types';
  * rule the room's `seq` enforces, applied to chat.
  */
 
-const CHAT = (g: string, r: string) => `chat/${g}/${r}`;
+/**
+ * Exported for `roomRepo.armDisconnect`, which arms the crash-recovery teardown as ONE atomic
+ * multi-path write and therefore has to name the chat node alongside the room and hands nodes.
+ * Sequential deletes cannot do this job: every one of those three delete rules authorises against
+ * `rooms/<g>/<r>/meta/host`, so whichever delete lands first takes the host check away from the
+ * others and they orphan. In a single update every rule evaluates against the PRE-write root.
+ */
+export const CHAT = (g: string, r: string) => `chat/${g}/${r}`;
 
 /**
  * Per-sender tiebreak so two messages in the same millisecond get distinct keys. Module-level and

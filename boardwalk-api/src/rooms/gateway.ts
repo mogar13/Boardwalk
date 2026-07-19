@@ -18,6 +18,13 @@
  * reaped on an abrupt close). When a socket drops, the server itself releases the uid's seats
  * (→ AI mid-game so the table survives, → open in the lobby), clears presence, and GCs a room once
  * nobody is left — no client code has to run for a crashed tab to be cleaned up.
+ *
+ * THE GRACE PERIOD is the other half of that, and it exists because the safety net used to fire too
+ * eagerly: a three-second network blip closed the socket, handed your seat to a bot, and the
+ * reconnect — which replays subscriptions and presence but has never re-claimed a seat — left you
+ * watching the house play your hand. So a seat is not released ON close; it is SCHEDULED, and
+ * declaring presence again cancels it. A crash waits out the window and becomes an AI; a blip
+ * resumes and the bot never existed. See plans/CRASH_RECOVERY.md.
  */
 
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -55,13 +62,24 @@ const asOccupant = (v: unknown): SeatOccupant | null =>
 const asStatus = (v: unknown): RoomStatus | null =>
   v === 'waiting' || v === 'playing' || v === 'finished' ? v : null;
 
+/**
+ * How long a dropped socket keeps its seats before the house takes over. Long enough to ride out a
+ * blip and a reconnect (the socket's own backoff caps well inside it), short enough that a table
+ * waiting on a genuinely crashed player is not stuck for a noticeable stretch.
+ */
+export const DEFAULT_GRACE_MS = 20_000;
+
 export class RoomGateway {
   private readonly conns = new Set<Conn>();
+  /** `roomKey::uid` → the armed seat-release. Cancelled by a reconnect, by GC, or by firing. */
+  private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly verifier: TokenVerifier,
     /** Injectable so a test can hold the same store the assertions read. */
-    readonly store: RoomStore = new RoomStore()
+    readonly store: RoomStore = new RoomStore(),
+    /** Injectable so a test can drive the grace window in milliseconds instead of waiting one out. */
+    private readonly graceMs: number = DEFAULT_GRACE_MS
   ) {}
 
   /** Wire this gateway to an existing HTTP server (shares the Express port and the tunnel). */
@@ -265,6 +283,9 @@ export class RoomGateway {
     if (conn.uid === null) return;
     conn.presence.add(roomKey(gameId, roomId));
     this.store.addPresence(gameId, roomId, conn.uid);
+    // THE RESUME. A reconnect replays presence, which is this frame — so cancelling the armed
+    // release here is what lets a blipped player keep the seat a bot was about to inherit.
+    this.cancelRelease(roomKey(gameId, roomId), conn.uid);
     this.broadcastRoom(gameId, roomId);
   }
 
@@ -278,9 +299,8 @@ export class RoomGateway {
 
   private onRemove(conn: Conn, id: number, gameId: string, roomId: string): void {
     if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: true }); // idempotent
-    this.store.remove(gameId, roomId);
     this.reply(conn, id, { ok: true });
-    this.broadcastRoom(gameId, roomId); // now null → subscribers learn the room is gone
+    this.gcRoom(gameId, roomId); // removes, cancels armed releases, and broadcasts null
   }
 
   private onChatSend(conn: Conn, id: number, gameId: string, roomId: string, message: unknown): void {
@@ -352,33 +372,96 @@ export class RoomGateway {
 
   /** GC a room nobody is present in, and tell any lingering subscribers it is gone. */
   private gcRoom(gameId: string, roomId: string): void {
+    this.cancelRoomReleases(roomKey(gameId, roomId));
     this.store.remove(gameId, roomId);
     this.broadcastRoom(gameId, roomId);
   }
 
+  /** Split a `gameId/roomId` key back apart. `roomId` never contains a slash; `gameId` never does. */
+  private static parseKey(key: string): { gameId: string; roomId: string } {
+    const slash = key.indexOf('/');
+    return { gameId: key.slice(0, slash), roomId: key.slice(slash + 1) };
+  }
+
+  /** Whether another LIVE socket carries this uid into this room — a second tab, not a departure. */
+  private hasLiveConn(uid: string, key: string): boolean {
+    for (const conn of this.conns) if (conn.uid === uid && conn.presence.has(key)) return true;
+    return false;
+  }
+
+  private cancelRelease(key: string, uid: string): void {
+    const pk = `${key}::${uid}`;
+    const timer = this.pending.get(pk);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pending.delete(pk);
+    }
+  }
+
+  /** Drop every armed release for a room — it is being GC'd, so there is nothing left to release. */
+  private cancelRoomReleases(key: string): void {
+    const prefix = `${key}::`;
+    for (const [pk, timer] of this.pending)
+      if (pk.startsWith(prefix)) {
+        clearTimeout(timer);
+        this.pending.delete(pk);
+      }
+  }
+
   /**
-   * The crash-recovery safety net. On any socket close, for every room this connection was present
-   * in: release the uid's seats (AI mid-game, open in the lobby), drop presence, and GC the room if
-   * it is now empty. This is the code no client runs on an abrupt tab-kill — and the reason a
-   * crashed player no longer wedges a table.
+   * Arm the seat release for a leaver, to fire once the grace window passes without them coming
+   * back. The `'ai'` vs `'open'` fallback is decided WHEN IT FIRES, not now: a lobby that starts
+   * during the window must hand the seat to a bot so the table can play, not open a chair mid-game.
+   */
+  private scheduleRelease(gameId: string, roomId: string, uid: string): void {
+    const key = roomKey(gameId, roomId);
+    const pk = `${key}::${uid}`;
+    if (this.pending.has(pk)) return;
+    const timer = setTimeout(() => {
+      this.pending.delete(pk);
+      const playing = this.store.statusOf(gameId, roomId) === 'playing';
+      for (const index of seatsHeldBy(this.store.seatsOf(gameId, roomId), uid))
+        this.store.releaseSeat(gameId, roomId, index, playing ? 'ai' : 'open');
+      this.broadcastRoom(gameId, roomId);
+      this.broadcastRoomPrivates(gameId, roomId);
+    }, this.graceMs);
+    timer.unref(); // a pending grace window must never hold the process open
+    this.pending.set(pk, timer);
+  }
+
+  /**
+   * The crash-recovery safety net. On any socket close: drop presence, GC a room nobody is left in,
+   * and otherwise ARM the seat release (see the grace period in the header). This is the code no
+   * client runs on an abrupt tab-kill — and the reason a crashed player no longer wedges a table.
+   *
+   * The rooms considered are the ones this socket declared presence in PLUS every room the store
+   * says the uid holds a seat in — the presence set alone used to miss a seat claimed by a socket
+   * that never declared presence, and leak it forever.
    */
   private onClose(conn: Conn): void {
     this.conns.delete(conn);
     const uid = conn.uid;
     if (uid === null) return;
-    for (const key of conn.presence) {
-      const slash = key.indexOf('/');
-      const gameId = key.slice(0, slash);
-      const roomId = key.slice(slash + 1);
-      const playing = this.store.statusOf(gameId, roomId) === 'playing';
-      for (const index of seatsHeldBy(this.store.seatsOf(gameId, roomId), uid))
-        this.store.releaseSeat(gameId, roomId, index, playing ? 'ai' : 'open');
+
+    const keys = new Set(conn.presence);
+    for (const { gameId, roomId } of this.store.roomsHolding(uid)) keys.add(roomKey(gameId, roomId));
+
+    for (const key of keys) {
+      // Another tab of this account is still at the table. Not a departure: leave presence (which
+      // is per-uid, not per-socket) and the seat exactly as they are.
+      if (this.hasLiveConn(uid, key)) continue;
+
+      const { gameId, roomId } = RoomGateway.parseKey(key);
       const empty = this.store.removePresence(gameId, roomId, uid);
-      if (empty) this.gcRoom(gameId, roomId);
-      else {
-        this.broadcastRoom(gameId, roomId);
-        this.broadcastRoomPrivates(gameId, roomId);
+      if (empty) {
+        // Nobody is left to wait for, so there is nothing to be gracious about — take the room.
+        this.gcRoom(gameId, roomId);
+        continue;
       }
+      if (seatsHeldBy(this.store.seatsOf(gameId, roomId), uid).length > 0)
+        this.scheduleRelease(gameId, roomId, uid);
+      this.broadcastRoom(gameId, roomId);
+      this.broadcastRoomPrivates(gameId, roomId);
     }
   }
 }

@@ -15,6 +15,8 @@ import {
   releaseSeat as releaseSeatPure,
 } from '@/system/room/seats';
 import { nextSeq } from '@/system/room/ordering';
+import { teardownPlan } from '@/system/room/lifecycle';
+import { CHAT } from '@/system/repo/firebase/chatRepo';
 import type { RoomMeta, RoomSnapshot, Seat } from '@/system/room/types';
 import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
 
@@ -40,6 +42,79 @@ import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
  * scope to move atomically with it. `readRoom` lifts `state.seq` back up into `meta.seq` so the
  * domain `RoomSnapshot` still reads the way `@/system/room/types` describes.
  */
+
+/**
+ * CRASH RECOVERY (plans/CRASH_RECOVERY.md) — the multi-path write this client arms as an
+ * `onDisconnect`, so the teardown it would run on a clean exit happens anyway when the tab is
+ * killed. PURE and exported so it is unit-testable without a network: what to write is the part
+ * that can be wrong (the seat's fallback, who may delete the room), and `onDisconnect().update()`
+ * is not. This is the same split as `teardownPlan` — which it calls rather than reimplements, so
+ * the crash path and the clean path cannot disagree about who clears what.
+ *
+ * ONE update, not several, because all three delete rules authorise against
+ * `rooms/<g>/<r>/meta/host`: sequential deletes would let the first take the host check away from
+ * the rest. In a single multi-path update every rule evaluates against the pre-write root.
+ */
+export function disconnectUpdates(
+  gameId: string,
+  roomId: string,
+  snapshot: RoomSnapshot<unknown>,
+  myUid: string
+): Record<string, unknown> {
+  const updates: Record<string, unknown> = {};
+  for (const step of teardownPlan(snapshot, myUid)) {
+    switch (step.target) {
+      case 'presence':
+        // ARMED HERE TOO, and it has to be. `trackPresence` arms its own `onDisconnect` on the
+        // presence leaf at mount — but `onDisconnect().cancel()` cancels the queued ops at a
+        // location AND ALL ITS CHILDREN, and re-arming this plan cancels at the ROOT (the only
+        // common ancestor of rooms/, hands/ and chat/). So every re-arm was silently disarming
+        // presence, and a crashed player stayed "connected" forever — the one part of crash
+        // cleanup that already worked, broken by the code meant to extend it. Caught by driving a
+        // real SIGKILL against the emulator, not by any test here. Folding presence into this one
+        // atomic write makes the cancel-and-re-arm self-consistent.
+        updates[`${ROOM(gameId, roomId)}/presence/${myUid}`] = null;
+        break;
+      case 'seat': {
+        // The same ai-in-a-game / open-in-the-lobby split the clean path takes, from the same pure
+        // function. Re-armed on every snapshot, so a game that STARTS after this was armed re-arms
+        // it to 'ai' — the fallback tracks the status instead of freezing at mount.
+        const next = releaseSeatPure(
+          snapshot.seats,
+          step.seatIndex,
+          snapshot.meta.status === 'playing' ? 'ai' : 'open'
+        )[step.seatIndex];
+        if (next !== undefined)
+          updates[`${ROOM(gameId, roomId)}/seats/${String(step.seatIndex)}`] = {
+            kind: next.kind,
+            name: next.name,
+          };
+        break;
+      }
+      case 'chat':
+        updates[CHAT(gameId, roomId)] = null;
+        break;
+      case 'room':
+        // Hands go WITH the room, in this one write, for the ordering reason above.
+        updates[HANDS(gameId, roomId)] = null;
+        updates[ROOM(gameId, roomId)] = null;
+        break;
+    }
+  }
+
+  // A multi-path update may not contain a path AND an ancestor of it — RTDB rejects the whole
+  // write, which means an arming that names both the room delete and this client's presence leaf
+  // under it arms NOTHING, and a lone host's crash orphans the room it was supposed to remove.
+  // Deleting the room already removes everything beneath it, so drop the redundant descendants.
+  // (Found by driving a real crash; the SDK reports it as a thrown `OnDisconnect.update failed`,
+  // which no test here was listening for.)
+  const roomPath = ROOM(gameId, roomId);
+  if (roomPath in updates)
+    for (const key of Object.keys(updates))
+      if (key.startsWith(`${roomPath}/`)) delete updates[key];
+
+  return updates;
+}
 
 const ROOM = (g: string, r: string) => `rooms/${g}/${r}`;
 // Hidden information lives OUTSIDE the room node — a room is signed-in-readable and read access
@@ -263,6 +338,18 @@ export const firebaseRoomRepo: RoomRepo = {
       void onDisconnect(presRef).cancel();
       void dbRemove(presRef);
     };
+  },
+
+  armDisconnect(gameId, roomId, snapshot, myUid): void {
+    // One registration, at the ROOT, so re-arming is a single cancel and the ops it holds land
+    // atomically (see CHAT's note in chatRepo — three sequential deletes de-authorise each other).
+    // Cancelling first leaves a sliver of a window where a crash does nothing; that is strictly
+    // better than an armed plan that has gone stale, which is what a snapshot change makes it.
+    const rootRef = ref(firebaseDb());
+    void onDisconnect(rootRef).cancel();
+    if (snapshot === null) return;
+    const updates = disconnectUpdates(gameId, roomId, snapshot, myUid);
+    if (Object.keys(updates).length > 0) void onDisconnect(rootRef).update(updates);
   },
 
   async remove(gameId, roomId): Promise<void> {
