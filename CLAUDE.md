@@ -366,7 +366,11 @@ lint rule that matches nothing reports success.
 - **AI is an occupant kind, not a mode.** ✅ Live — a leaving human's seat can be handed *back* to an
   AI (`releaseSeat(…, 'ai')`) so the table stays alive, v1's best drop-in/drop-out idea.
 - **A crashed tab is cleaned up by someone who is not the crashed tab, and one plan decides what.**
-  ✅ Live (ROADMAP item 2, [plans/done/CRASH_RECOVERY.md](plans/done/CRASH_RECOVERY.md)). `teardownPlan` is no
+  ✅ Live, and **verified in production 2026-07-18** — a real socket carrying a real Firebase token
+  through the Funnel, the guest a separate OS process SIGKILL'd, every assertion read off the wire
+  protocol: seat still human at +6s, `{"kind":"ai","uid":null}` at +28s, room alive throughout, the
+  surviving host pushed to without asking. 8/8
+  (ROADMAP item 2, [plans/done/CRASH_RECOVERY.md](plans/done/CRASH_RECOVERY.md)). `teardownPlan` is no
   longer only what to RUN on a clean exit — it is also what to ARM for a crash, which is what keeps
   this from becoming a second implementation of the leave rule. Two executors, one rule: on the WS
   path the **gateway** watches the socket die and releases seats itself; on the RTDB fallback the

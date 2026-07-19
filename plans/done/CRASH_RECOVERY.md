@@ -194,6 +194,58 @@ linted, and passed every test in this repo:
 
 This is the Phase 1 `<dialog>` lesson repeating: static green is not evidence.
 
+### The prod drive — a real socket, a real token, a real kill (2026-07-18)
+
+The emulator drive above proves the rule; it does not prove the deployed artifact runs it. So the
+same crash was driven **against production**: two throwaway accounts on the real `boardwalk-fca02`
+project, two real Firebase ID tokens, two real sockets through the Tailscale Funnel to
+`wss://boardwalk-pi.tail1bed2f.ts.net/rooms`. The guest is a **separate OS process**, SIGKILL'd — no
+close frame, no `pagehide`, no client code on the way out. Every assertion is read back off the wire
+protocol (a fresh `subscribe` re-serves the current snapshot), never off a UI.
+
+```
+room chess/T48S, 2 seats, status=playing
+before crash        : [human VIScSl… "CrashHost" | human lwX9RE… "CrashGuest"]  presence=2
+*** SIGKILL pid 164425 ***
++6s  (inside grace) : [human VIScSl… "CrashHost" | human lwX9RE… "CrashGuest"]  presence=1
++28s (past grace)   : [human VIScSl… "CrashHost" | ai    uid=null "CrashGuest"] presence=1
+room still alive = true, then removed cleanly on exit
+```
+
+Eight assertions, all green: two humans seated; the game started with chess state on the wire; the
+seat **still human** inside the 20 s window; presence already reaped to the host alone (presence is
+immediate, the seat is graceful — the two are deliberately not the same clock); `{"kind":"ai",
+"uid":null}` past the window; the room alive and still `playing`; the surviving host **told without
+asking** (an unsolicited push when the timer fired, not a poll); and no orphan left behind.
+
+The crashing client is a node process rather than Chrome, and that is the honest scope of it: a
+SIGKILL'd process is a SIGKILL'd process to the gateway, so the socket semantics under test are
+identical, but the **deployed frontend bundle** is not in this loop. The browser half is the emulator
+drive above.
+
+**The drive touched no durable state, structurally.** `RoomGateway` is constructed with the verifier
+alone and never opens the database — a room is a `Map` entry, not a row — and the drive made zero
+HTTP calls, so no signup grant, no ledger row, no profile.
+
+**The durable stores were then read back, not reasoned about.** On the Pi: `profiles` = 1, `ledger` =
+2 rows, `SUM(delta_cents)` = 521500, `PRAGMA integrity_check` = ok, **zero rows for any crashdrive
+uid**, and the real player's row exactly `xp=700 / $5,215.00`. In RTDB: `users/` and `leaderboard/`
+each hold one uid — the real player's — and `usernames/` one name. Both throwaways were deleted from
+Firebase Auth and the account list read back to prove it.
+
+One honest note about the harness, not the system: the **first** attempt died on a self-referential
+promise in the drive script *after* creating its two accounts, stranding them. They were removed by
+admin delete, and the script now persists each account to disk the instant it is created — a harness
+bug must never strand an account it cannot name.
+
+**And the residual gap has a specimen in production.** `rooms/tic-tac-toe/` holds two orphaned RTDB
+rooms hosted by the real player from before this change (`7U6N`, `status: playing`, with *stale
+presence* for a host who is long gone; `VKD5`, `waiting`, with no presence node at all). Both predate
+the armed `onDisconnect`, so they are what the old behaviour left behind rather than a failure of the
+new one — but they are the concrete form of the orphan class named above, sitting in the live
+database, and worth pointing at the next time ROADMAP item 3 is discussed. They are the real
+account's data and were left in place.
+
 ### One pre-existing thing found next door, not fixed here
 
 In **dev only**, a lone host creating a table on the WS path immediately sees *"This table has
