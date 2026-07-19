@@ -24,7 +24,7 @@
  * reconnect — which replays subscriptions and presence but has never re-claimed a seat — left you
  * watching the house play your hand. So a seat is not released ON close; it is SCHEDULED, and
  * declaring presence again cancels it. A crash waits out the window and becomes an AI; a blip
- * resumes and the bot never existed. See plans/CRASH_RECOVERY.md.
+ * resumes and the bot never existed. See plans/done/CRASH_RECOVERY.md.
  */
 
 import { WebSocketServer, type WebSocket } from 'ws';

@@ -16,7 +16,7 @@ import {
  *   POST /tickets   {deviceId, want}   → a batch of signed nonces, capped per-UID
  *   (a gate on /settle)                → refuses a settle whose nonce is not a live ticket
  *
- * See `domain/tickets.ts` for the mechanism and `plans/OFFLINE_HARDENING.md` for the argument.
+ * See `domain/tickets.ts` for the mechanism and `plans/done/OFFLINE_HARDENING.md` for the argument.
  */
 
 const DEVICE_ID_MAX_LEN = 64;

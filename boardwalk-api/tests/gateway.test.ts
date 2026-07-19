@@ -244,7 +244,7 @@ describe('RoomGateway — over a real socket', () => {
   });
 
   /**
-   * CRASH RECOVERY (plans/CRASH_RECOVERY.md). Before this block the gateway's docblock CLAIMED to
+   * CRASH RECOVERY (plans/done/CRASH_RECOVERY.md). Before this block the gateway's docblock CLAIMED to
    * close the crash-recovery gap and one test asserted only that a solo player's room is GC'd — the
    * branch the claim rests on (a seat becomes an AI so the table survives for everyone else) had no
    * coverage at all. These are that branch, plus the grace window that keeps a blip from costing a

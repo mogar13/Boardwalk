@@ -304,7 +304,7 @@ export interface TicketBatch {
  * `deviceId` is a client-chosen sequence namespace and NOT a credential: nothing attests it, a
  * client may claim to be a hundred devices, and the server's cap is per-uid precisely so that
  * inventing devices divides the budget instead of multiplying it. See
- * `plans/OFFLINE_HARDENING.md` and `boardwalk-api/src/domain/tickets.ts`.
+ * `plans/done/OFFLINE_HARDENING.md` and `boardwalk-api/src/domain/tickets.ts`.
  */
 export interface TicketRepo {
   issue(deviceId: string, want: number): Promise<TicketBatch>;
@@ -534,7 +534,7 @@ export interface RoomRepo {
   trackPresence(gameId: string, roomId: string, uid: string): Unsubscribe;
 
   /**
-   * CRASH RECOVERY (plans/CRASH_RECOVERY.md). Arm the teardown this client would run on a clean
+   * CRASH RECOVERY (plans/done/CRASH_RECOVERY.md). Arm the teardown this client would run on a clean
    * exit, so it happens anyway when the tab is killed, crashes, or the battery dies — the case
    * where NO client code runs and, before this, only presence was ever reaped.
    *

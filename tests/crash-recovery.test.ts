@@ -1,5 +1,5 @@
 /**
- * CRASH RECOVERY on the RTDB fallback (plans/CRASH_RECOVERY.md, ROADMAP item 2).
+ * CRASH RECOVERY on the RTDB fallback (plans/done/CRASH_RECOVERY.md, ROADMAP item 2).
  *
  * The WebSocket path's half of this is `boardwalk-api/tests/gateway.test.ts`, driven over a real
  * socket that gets terminated. This file covers the fallback's half: the multi-path write a client

@@ -7,19 +7,19 @@ the owner's fork decision, and the bound stated honestly.
 
 ## What the ROADMAP note said, and what was actually true
 
-The note ([ROADMAP.md item 2](ROADMAP.md#2-crash-recovery-for-rooms--the-known-unfixed-data-gap)) says an
+The note ([ROADMAP.md item 2](../ROADMAP.md#2-crash-recovery-for-rooms--the-known-unfixed-data-gap)) says an
 abrupt tab-close reaps presence and nothing else, leaving both **a stalled table** and **orphaned
 `rooms/`/`hands/`/`chat/` nodes**. It was written before Phase C, and it invited exactly the check it
 needed: *"verify what the gateway does on disconnect today before designing anything."*
 
 Verified. **On the WebSocket path — the default, live path — the server-side half was not "most of
-the way built". It was built.** [`gateway.ts`](../boardwalk-api/src/rooms/gateway.ts) `onClose`
+the way built". It was built.** [`gateway.ts`](../../boardwalk-api/src/rooms/gateway.ts) `onClose`
 already released the uid's seats (`'ai'` mid-game, `'open'` in the lobby), dropped presence, GC'd the
 room once empty, and re-broadcast to everyone left.
 
 And the orphaned-nodes half **cannot happen on that path at all**. `rooms/`, `hands/` and `chat/` are
 not three nodes there; they are three fields of one `RoomRecord` in one `Map`
-([`store.ts`](../boardwalk-api/src/rooms/store.ts)). `store.remove()` takes the chat and the hidden
+([`store.ts`](../../boardwalk-api/src/rooms/store.ts)). `store.remove()` takes the chat and the hidden
 hands with it. That half of the note describes an RTDB layout the live path does not have.
 
 So the note **overstated the job on the default path**. It also, less comfortably, understated a
@@ -70,7 +70,7 @@ substitution**, which fixes the crash case and the blip case with one mechanism.
 
 The constraint this codebase leans on hardest is that a rule lives once. Teardown already had its
 rule expressed once, purely, and tested: **`teardownPlan(snapshot, myUid)`**
-([`lifecycle.ts`](../src/system/room/lifecycle.ts)) decides what leaving should clear — my presence,
+([`lifecycle.ts`](../../src/system/room/lifecycle.ts)) decides what leaving should clear — my presence,
 my seat, and (host only, last one out) the chat and the room.
 
 The insight this design turns on: **that plan is not only what to RUN on a clean exit. It is what to
@@ -120,7 +120,7 @@ finding 3's fix and cannot drift the way a per-connection mirror would.
   the client would be the second implementation this design exists to avoid.
 
 The existing rules already permit every armed op — the seat `.write` at
-[`database.rules.json`](../database.rules.json) allows writing a seat you already own, and room
+[`database.rules.json`](../../database.rules.json) allows writing a seat you already own, and room
 removal is host-gated, which is precisely who arms it. **No rules change, and therefore no manual
 `rules:deploy`.**
 
@@ -153,7 +153,7 @@ node survives with its meta, seats, state and chat. It is small, it burns one 4-
 out of ~1M, and nothing reads it. **Closing it requires either a rules change (a new "no presence"
 delete condition, plus its manual deploy) or a reaper process** — and for one real player, a reaper is
 disproportionate. This is written down rather than fixed, which is the honest position, and it is one
-more argument for [ROADMAP item 3](ROADMAP.md#3-close-phase-c--a-decision-not-a-chore).
+more argument for [ROADMAP item 3](../ROADMAP.md#3-close-phase-c--decided-2026-07-18-not-yet-and-here-is-the-trigger).
 
 ---
 

@@ -111,7 +111,7 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
       // and it is the arbiter of seats, so it releases them itself — with a grace period a client
       // could not implement, since the client in question is the one that vanished. Arming
       // anything here would be the second implementation of the leave rule that
-      // plans/CRASH_RECOVERY.md exists to avoid, and it would race the server that is already
+      // plans/done/CRASH_RECOVERY.md exists to avoid, and it would race the server that is already
       // doing the job.
     },
 

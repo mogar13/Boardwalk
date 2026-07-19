@@ -5,7 +5,7 @@ import type { Db } from '../db/db';
 /**
  * SERVER-SIGNED NONCES — the bound on how much work an offline client can fabricate.
  *
- * Read `plans/OFFLINE_HARDENING.md` first; this file is the mechanism, not the argument. The short
+ * Read `plans/done/OFFLINE_HARDENING.md` first; this file is the mechanism, not the argument. The short
  * version: the locked Phase-B decision is that offline wins are RANKED and sync on reconnect, which
  * means results are banked while the client is the only witness. Every mutation is already
  * idempotent on a nonce, and that collapses a retry into one effect — but it assumes the nonce was
