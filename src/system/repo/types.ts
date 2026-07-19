@@ -534,6 +534,27 @@ export interface RoomRepo {
   trackPresence(gameId: string, roomId: string, uid: string): Unsubscribe;
 
   /**
+   * CRASH RECOVERY (plans/CRASH_RECOVERY.md). Arm the teardown this client would run on a clean
+   * exit, so it happens anyway when the tab is killed, crashes, or the battery dies — the case
+   * where NO client code runs and, before this, only presence was ever reaped.
+   *
+   * `snapshot` is the live room; the implementation derives WHAT to arm by calling the same pure
+   * `teardownPlan` the clean-exit path executes, which is what keeps this from becoming a second
+   * implementation of the leave rule. Pass `null` to disarm. Call it on every snapshot change:
+   * the armed plan has to track the live one, because who is last out and whether the game has
+   * started both change under you.
+   *
+   * Not a promise — arming is fire-and-forget, and a caller that awaited it would be waiting on
+   * something whose whole purpose is to run when the caller is gone.
+   */
+  armDisconnect(
+    gameId: string,
+    roomId: string,
+    snapshot: RoomSnapshot<unknown> | null,
+    myUid: string
+  ): void;
+
+  /**
    * Remove the whole room node. Host-only (rule-enforced), and called by the hook only when the
    * pure planner (`@/system/room/lifecycle`) says the last participant is leaving — a granular
    * step the hook maps a `{ target: 'room' }` teardown step to, alongside `releaseSeat` for a

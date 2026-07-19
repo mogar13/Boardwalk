@@ -106,6 +106,15 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
       return socket.trackPresence(gameId, roomId);
     },
 
+    armDisconnect(): void {
+      // DELIBERATE NO-OP. The gateway owns crash recovery on this path: it sees the socket die,
+      // and it is the arbiter of seats, so it releases them itself — with a grace period a client
+      // could not implement, since the client in question is the one that vanished. Arming
+      // anything here would be the second implementation of the leave rule that
+      // plans/CRASH_RECOVERY.md exists to avoid, and it would race the server that is already
+      // doing the job.
+    },
+
     async remove(gameId, roomId): Promise<void> {
       // Host-gated but idempotent at the server (a non-host is a no-op ok), so never throws.
       await socket.request({ t: 'remove', gameId, roomId });

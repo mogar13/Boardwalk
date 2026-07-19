@@ -39,6 +39,12 @@ export function RoomProvider({ identity, children }: RoomProviderProps) {
     const onSnapshot = (snap: RoomSnapshot<unknown> | null) => {
       snapshotRef.current = snap;
       setSnapshot(snap);
+      // CRASH RECOVERY. Re-arm the teardown on EVERY snapshot, because the plan it derives moves
+      // under us: the game starts (a freed seat must become a bot, not an open chair), the last
+      // guest leaves (the host becomes the one who removes the room). An armed plan is only as
+      // good as the snapshot it was armed from. A no-op on the WebSocket path, where the server
+      // watches the socket itself.
+      repos.room.armDisconnect(gameId, roomId, snap, myUid);
     };
     const unsubscribe = repos.room.subscribe<unknown>(gameId, roomId, onSnapshot);
     const clearPresence = repos.room.trackPresence(gameId, roomId, myUid);
@@ -49,6 +55,11 @@ export function RoomProvider({ identity, children }: RoomProviderProps) {
     const teardown = () => {
       if (torn) return;
       torn = true;
+      // DISARM FIRST. We are leaving deliberately and are about to run the plan ourselves; an
+      // armed copy still pending on the socket would fire afterwards and re-create a `seats/<i>`
+      // leaf under a room we just deleted — the resurrection hazard `teardownPlan` documents,
+      // arriving by a different door.
+      repos.room.armDisconnect(gameId, roomId, null, myUid);
       clearPresence();
       const snap = snapshotRef.current;
       if (snap === null) return;

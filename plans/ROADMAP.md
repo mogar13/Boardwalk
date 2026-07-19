@@ -5,8 +5,9 @@ Phases A–D shipped and deployed, and the Progression Overhaul closed with P5. 
 document with an open item in it. This file exists so that fact does not read as "nothing left to
 do", because four real things were outstanding and three of them had a money or data consequence.
 
-**Item 1 closed 2026-07-18** — offline banking is built, deployed and enforcing. Three remain, and
-none of them can move a chip.
+**Items 1 and 2 closed 2026-07-18** — offline banking is built, deployed and enforcing; room
+crash-recovery is built and guarded. Two remain, and neither can move a chip: item 3 is a decision
+and item 4 is optional forever.
 
 **This is not a checklist and finishing it is not a goal.** Same rule as
 [Scope discipline](../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated): work happens
@@ -22,7 +23,7 @@ Ordered by **what goes wrong if you never do it**, not by effort:
 | # | Item | If never done |
 |---|---|---|
 | 1 | ~~Offline replay-hardening~~ — **DONE, deployed + enforcing 2026-07-18** | ~~A reconnect can pay a win twice.~~ Closed. See [OFFLINE_HARDENING.md](OFFLINE_HARDENING.md). |
-| 2 | Crash-recovery for rooms | A crashed host strands a table permanently. **Data.** |
+| 2 | ~~Crash-recovery for rooms~~ — **DONE 2026-07-18** | ~~A crashed host strands a table permanently.~~ Closed. See [CRASH_RECOVERY.md](CRASH_RECOVERY.md). |
 | 3 | Close Phase C (delete RTDB rooms) | Nothing breaks. Two systems stay alive instead of one. |
 | 4 | A sixth game | Nothing. This is the point. |
 
@@ -88,7 +89,30 @@ the answer is "one session's worth," the fix is a bound and a counter, not a sig
 
 ---
 
-## 2. Crash-recovery for rooms — the known, unfixed data gap
+## 2. Crash-recovery for rooms — DONE
+
+> **Closed 2026-07-18** by [CRASH_RECOVERY.md](CRASH_RECOVERY.md), which is the design, the fork the
+> owner decided, and the bound. Read that instead of what follows; the rest of this section is kept
+> because its instinct — *verify the gateway before designing* — was right, and because the
+> **correction it earned on contact with the code** is worth keeping.
+>
+> **The correction, in two directions.** This section says the server-side half "may be most of the
+> way built." It was *built*: the gateway already released a crashed uid's seats (AI mid-game),
+> dropped presence and GC'd the room. And the orphaned-nodes half **cannot happen on that path at
+> all** — `rooms/`, `hands/` and `chat/` are three fields of one in-memory record there, not three
+> nodes. So the note **overstated** the job on the live path.
+>
+> It also **understated** a different one. The AI branch the whole claim rests on had **zero test
+> coverage** while the gateway's docblock asserted it. And the net fired too eagerly: a reconnect
+> replays subscriptions and presence but never re-claims a seat, so a three-second blip handed a
+> live player's seat to a bot, permanently. That was a real bug nobody had noticed, and it is the
+> one a player would actually have felt.
+>
+> **The fork was put to the owner and answered "fix both paths"** (against a recommendation of
+> gateway-only). Both are fixed for the seat — the stalled-table bug. The fallback's residual
+> orphan case is named in the design doc rather than papered over.
+
+### The original framing, kept
 
 **Status:** known and deliberately unfixed. There is no plan document for it.
 

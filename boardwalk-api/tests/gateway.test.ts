@@ -93,7 +93,18 @@ class Client {
   close(): void {
     this.ws.close();
   }
+
+  /** A CRASH, not a leave — the socket dies with no close handshake and no client code running. */
+  kill(): void {
+    this.ws.terminate();
+  }
 }
+
+/** The grace window these tests run against — long enough to act inside, short enough to wait out. */
+const GRACE_MS = 60;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Wait past the grace window plus the scheduler's slack, so a fired timer has definitely landed. */
+const waitOutGrace = () => sleep(GRACE_MS * 3);
 
 describe('RoomGateway — over a real socket', () => {
   let server: Server;
@@ -102,7 +113,7 @@ describe('RoomGateway — over a real socket', () => {
 
   beforeEach(async () => {
     server = createServer();
-    gateway = new RoomGateway(fakeVerifier, new RoomStore(() => 1_000));
+    gateway = new RoomGateway(fakeVerifier, new RoomStore(() => 1_000), GRACE_MS);
     gateway.attach(server);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const port = (server.address() as AddressInfo).port;
@@ -230,5 +241,177 @@ describe('RoomGateway — over a real socket', () => {
     expect(gateway.store.statusOf('chess', roomId)).toBe('playing');
     ada.close();
     bob.close();
+  });
+
+  /**
+   * CRASH RECOVERY (plans/CRASH_RECOVERY.md). Before this block the gateway's docblock CLAIMED to
+   * close the crash-recovery gap and one test asserted only that a solo player's room is GC'd — the
+   * branch the claim rests on (a seat becomes an AI so the table survives for everyone else) had no
+   * coverage at all. These are that branch, plus the grace window that keeps a blip from costing a
+   * live player their seat.
+   */
+  describe('crash recovery', () => {
+    /** A started 2-seat table: ada hosts, bob sits at 1, both present, status `playing`. */
+    async function playingTable(): Promise<{ ada: Client; bob: Client; roomId: string }> {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({
+        t: 'create',
+        gameId: 'chess',
+        host: { uid: 'ada', name: 'Ada' },
+        seatCount: 2,
+      });
+      const roomId = okValue(created) as string;
+      const bob = await Client.open(url, 'bob');
+      await bob.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 1, who: { uid: 'bob', name: 'Bob' } });
+      for (const c of [ada, bob]) {
+        c.fire({ t: 'subscribe', gameId: 'chess', roomId });
+        c.fire({ t: 'presence', gameId: 'chess', roomId });
+      }
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.bob === true);
+      await ada.request({ t: 'setStatus', gameId: 'chess', roomId, status: 'playing' });
+      return { ada, bob, roomId };
+    }
+
+    it('a crash mid-game hands the seat to an AI and the table survives', async () => {
+      const { ada, bob, roomId } = await playingTable();
+
+      bob.kill(); // force-quit: no teardown, no leave frame, nothing client-side runs
+      // The seat is NOT released on close — it is armed. Inside the window bob still holds it.
+      await sleep(GRACE_MS / 3);
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'human', uid: 'bob' });
+
+      await waitOutGrace();
+      // The house takes over so ada can finish the game, and the room is emphatically still there.
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'ai', uid: null });
+      expect(gateway.store.has('chess', roomId)).toBe(true);
+      expect(gateway.store.seatsOf('chess', roomId)[0]).toMatchObject({ kind: 'human', uid: 'ada' });
+      // And ada was TOLD, without asking — a stalled board that only fixes itself on refresh is
+      // the same bug wearing a hat.
+      const last = ada.pushes.filter((m) => m.t === 'room').at(-1) as Extract<ServerMsg, { t: 'room' }>;
+      expect(last.snapshot?.seats[1]).toMatchObject({ kind: 'ai' });
+      ada.close();
+    });
+
+    it('a reconnect inside the grace window keeps the seat — a blip is not a departure', async () => {
+      const { ada, bob, roomId } = await playingTable();
+      bob.kill();
+
+      // Bob's client comes back and replays presence, exactly as socket.ts does on reconnect.
+      const bob2 = await Client.open(url, 'bob');
+      bob2.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      bob2.fire({ t: 'presence', gameId: 'chess', roomId });
+      await bob2.waitFor((m) => m.t === 'room');
+
+      await waitOutGrace();
+      // The armed release was cancelled: bob still owns his own seat and no bot ever appeared.
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'human', uid: 'bob' });
+      ada.close();
+      bob2.close();
+    });
+
+    it('decides ai-vs-open when the timer FIRES, not when it is armed', async () => {
+      // Bob drops in the LOBBY (a departure there should open the chair) and the host starts the
+      // game during the window. A fallback fixed at arm time would open a seat mid-game.
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      const bob = await Client.open(url, 'bob');
+      await bob.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 1, who: { uid: 'bob', name: 'Bob' } });
+      for (const c of [ada, bob]) {
+        c.fire({ t: 'subscribe', gameId: 'chess', roomId });
+        c.fire({ t: 'presence', gameId: 'chess', roomId });
+      }
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.bob === true);
+
+      bob.kill();
+      // WAIT for the server to have SEEN the disconnect (it re-broadcasts with bob's presence
+      // gone) before starting the game. Without this the close can land after `setStatus` and the
+      // release gets armed while already `playing` — which makes arm-time and fire-time
+      // indistinguishable and the assertion below vacuous. This test passed against a deliberately
+      // arm-time implementation until the wait was added.
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.bob === undefined);
+      expect(gateway.store.statusOf('chess', roomId)).toBe('waiting'); // armed in the LOBBY
+
+      await ada.request({ t: 'setStatus', gameId: 'chess', roomId, status: 'playing' });
+      await waitOutGrace();
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'ai' });
+      ada.close();
+    });
+
+    it('opens the chair instead when the drop happens in the lobby', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      const bob = await Client.open(url, 'bob');
+      await bob.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 1, who: { uid: 'bob', name: 'Bob' } });
+      for (const c of [ada, bob]) {
+        c.fire({ t: 'subscribe', gameId: 'chess', roomId });
+        c.fire({ t: 'presence', gameId: 'chess', roomId });
+      }
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.bob === true);
+
+      bob.kill();
+      await waitOutGrace();
+      // Waiting room: free the chair for the next human rather than spawning a bot into a game
+      // that has not started.
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'open', uid: null });
+      ada.close();
+    });
+
+    it('releases a seat held by a socket that never declared presence', async () => {
+      // The leak finding 3 names: the close path used to walk the connection's presence set alone,
+      // so a seat claimed without presence survived the disconnect forever.
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      ada.fire({ t: 'presence', gameId: 'chess', roomId });
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.ada === true);
+
+      const bob = await Client.open(url, 'bob');
+      await bob.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 1, who: { uid: 'bob', name: 'Bob' } });
+      bob.kill(); // never sent a `presence` frame
+
+      await waitOutGrace();
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'open', uid: null });
+      ada.close();
+    });
+
+    it('a second tab of the same account is not a departure', async () => {
+      const { ada, bob, roomId } = await playingTable();
+      // Bob opens a second tab: same uid, a second socket, presence declared again.
+      const bobTab2 = await Client.open(url, 'bob');
+      bobTab2.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      bobTab2.fire({ t: 'presence', gameId: 'chess', roomId });
+      await bobTab2.waitFor((m) => m.t === 'room');
+
+      bob.kill(); // closing ONE tab
+      await waitOutGrace();
+      // Presence is per-uid, not per-socket: the surviving tab keeps both the seat and the mark.
+      expect(gateway.store.seatsOf('chess', roomId)[1]).toMatchObject({ kind: 'human', uid: 'bob' });
+      const snap = gateway.store.snapshot('chess', roomId);
+      expect(snap?.presence.bob).toBe(true);
+      ada.close();
+      bobTab2.close();
+    });
+
+    it('GCs immediately when the crash empties the room — nobody left to be gracious to', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      ada.fire({ t: 'presence', gameId: 'chess', roomId });
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.ada === true);
+      await ada.request({ t: 'writePrivate', gameId: 'chess', roomId, index: 0, data: { hand: ['secret'] } });
+      await ada.request({ t: 'chatSend', gameId: 'chess', roomId, message: { uid: 'ada', name: 'Ada', text: 'hi' } });
+
+      ada.kill();
+      await sleep(GRACE_MS / 3); // no waiting out the window — an empty room goes at once
+      // The room, its chat and its hidden hands are one record, so this single assertion is the
+      // whole of "no orphaned rooms/hands/chat nodes" on this path.
+      expect(gateway.store.has('chess', roomId)).toBe(false);
+      expect(gateway.store.getPrivate('chess', roomId, 0)).toBeNull();
+      expect(gateway.store.chatMessages('chess', roomId, 50)).toEqual([]);
+    });
   });
 });
