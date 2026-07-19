@@ -157,7 +157,8 @@ export function parseOffline(raw: string | null, fallbackDeviceId: string): Offl
   if (raw === null) return emptyOffline(fallbackDeviceId);
   try {
     const v = JSON.parse(raw) as Partial<OfflineState>;
-    const deviceId = typeof v.deviceId === 'string' && v.deviceId !== '' ? v.deviceId : fallbackDeviceId;
+    const deviceId =
+      typeof v.deviceId === 'string' && v.deviceId !== '' ? v.deviceId : fallbackDeviceId;
     const tickets = Array.isArray(v.tickets)
       ? v.tickets.filter((t): t is string => typeof t === 'string').slice(0, TICKET_BATCH)
       : [];

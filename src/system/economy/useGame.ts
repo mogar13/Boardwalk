@@ -67,7 +67,9 @@ export function useGame(): GameApi {
         if (ticket === null && required) {
           // The bound, as the player experiences it: offline, out of credits, and told so plainly
           // rather than shown a result that silently never lands.
-          toast.error("You're offline and out of saved-result credits — this game won't be ranked.");
+          toast.error(
+            "You're offline and out of saved-result credits — this game won't be ranked."
+          );
           return;
         }
 

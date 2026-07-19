@@ -2,10 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '@/App';
 import '@/index.css';
-import {
-  browserStaleBuildHost,
-  installStaleBuildRecovery,
-} from '@/system/staleBuild/staleBuild';
+import { browserStaleBuildHost, installStaleBuildRecovery } from '@/system/staleBuild/staleBuild';
 
 // Before anything renders: a lazy chunk from a build that no longer exists must reload the page
 // rather than white-screen it. This app is split per game and per system module, so the window
