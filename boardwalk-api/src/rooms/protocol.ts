@@ -37,7 +37,14 @@ export type RequestMsg =
   | { t: 'writePrivate'; id: number; gameId: string; roomId: string; index: number; data: unknown }
   | { t: 'remove'; id: number; gameId: string; roomId: string }
   | { t: 'chatSend'; id: number; gameId: string; roomId: string; message: { uid: string; name: string; text: string } }
-  | { t: 'chatClear'; id: number; gameId: string; roomId: string };
+  | { t: 'chatClear'; id: number; gameId: string; roomId: string }
+  // PHASE E — the dealt game. These two are the ONLY road a Liar's Dice action takes: it does not
+  // go through `patchState`, because that frame carries whatever state a client says and the whole
+  // point of a dealt game is that the client says nothing about the state. Neither frame has a
+  // field for a die, a face count, an outcome or a payout — absent, not validated — and no `uid`,
+  // which comes off the authenticated socket.
+  | { t: 'ldStart'; id: number; gameId: string; roomId: string; nonce: string; anteCents: number }
+  | { t: 'ldAction'; id: number; gameId: string; roomId: string; nonce: string; action: unknown };
 
 /** A subscription/registration: no reply, a stream of push frames instead. */
 export type SubscribeMsg =

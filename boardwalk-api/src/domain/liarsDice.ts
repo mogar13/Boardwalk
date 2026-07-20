@@ -259,6 +259,11 @@ export interface ActionOk {
 /**
  * Apply one player's action, and settle if it ended the match.
  *
+ * IT TAKES NO RNG. An action cannot roll — every roll is in `deal` or `advanceRound` — so applying
+ * one twice yields the same match, which is what makes the replay branch below safe without the
+ * persist-and-re-serve treatment packs need. The absent parameter is the guarantee, in the same
+ * way an absent `payoutCents` on a request is.
+ *
  * The turn check is here and NOT in the gateway, because a check in the transport that can drift
  * from the check in the rules is two rules. The reducer is total, so an action from the wrong seat
  * is already a no-op — this refuses it explicitly so the caller gets an error rather than silence,
@@ -270,8 +275,7 @@ export function playAction(
   matchId: number,
   nonce: string,
   action: Action,
-  now: number,
-  rng: () => number = Math.random
+  now: number
 ): Decision<ActionOk> {
   const run = db.transaction((): Decision<ActionOk> => {
     const row = loadMatchFor(db, uid, matchId);

@@ -3,6 +3,7 @@ import { configProblems, configWarnings, readConfig } from './config';
 import { openDb } from './db/db';
 import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import { RoomGateway } from './rooms/gateway';
+import { sweepAbandonedMatches } from './domain/liarsDice';
 
 /**
  * The process entrypoint. Reads config, refuses to boot on a dangerous one (see
@@ -35,7 +36,21 @@ function main(): void {
   // Phase C: the realtime rooms move off RTDB onto this WS gateway, sharing the Express port (and so
   // the same Tailscale Funnel / CORS origin). `attach` mounts it at `/rooms` on the HTTP server the
   // `listen` below returns, and echoes the Chrome PNA header onto the handshake for tailnet devices.
-  const gateway = new RoomGateway(verifier);
+  // PHASE E. The gateway gets the database because it now DEALS a game: Liar's Dice matches are
+  // durable rows and real ledger stakes, and the gateway is the only thing that knows when a
+  // player acted. Rooms themselves still touch nothing durable — that rule is intact.
+  const gateway = new RoomGateway(verifier, undefined, undefined, db);
+
+  // A room lives in this process and a match does not, so a restart leaves matches with no table
+  // to sit at while their antes have already left the ledger. Void and refund them BEFORE the
+  // gateway accepts a socket, so there is no window in which a client can act on a match that is
+  // about to be refunded.
+  const swept = sweepAbandonedMatches(db, Date.now());
+  if (swept.matches > 0) {
+    console.log(
+      `[liars-dice] voided ${String(swept.matches)} abandoned match(es), refunded ${String(swept.refundedCents)} cents`
+    );
+  }
 
   const server = app.listen(cfg.port, () => {
     console.log(
