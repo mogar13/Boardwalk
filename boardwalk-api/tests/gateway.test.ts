@@ -244,6 +244,52 @@ describe('RoomGateway — over a real socket', () => {
   });
 
   /**
+   * PATCHSTATE AUTHORISATION. `onPatchState` carried a comment saying "any seated participant may
+   * advance state" over code that checked only that the room existed — so a stranger who knew a
+   * four-character room code could overwrite any room's whole state. These pin the check, both
+   * directions: refused for an outsider, permitted for the two callers that legitimately write
+   * (a seated player and the host-as-dealer, who may not hold a seat).
+   */
+  describe('patchState authorisation', () => {
+    it('refuses a socket that holds no seat and does not host the room', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      await ada.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 0, who: { uid: 'ada', name: 'Ada' } });
+      await ada.request({ t: 'patchState', gameId: 'chess', roomId, data: { board: 'real' } });
+
+      // A stranger with the room code and a valid token — the whole attack, and it used to work.
+      const mallory = await Client.open(url, 'mallory');
+      const res = await mallory.request({ t: 'patchState', gameId: 'chess', roomId, data: { board: 'forged' } });
+
+      expect(res).toMatchObject({ ok: false });
+      expect(gateway.store.snapshot('chess', roomId)?.state).toEqual({ board: 'real' });
+      ada.close();
+      mallory.close();
+    });
+
+    it('permits a seated player, and the host even when it holds no seat', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      const bob = await Client.open(url, 'bob');
+      await bob.request({ t: 'claimSeat', gameId: 'chess', roomId, index: 1, who: { uid: 'bob', name: 'Bob' } });
+
+      const seated = await bob.request({ t: 'patchState', gameId: 'chess', roomId, data: { by: 'bob' } });
+      expect(seated.ok).toBe(true);
+      expect(gateway.store.snapshot('chess', roomId)?.state).toEqual({ by: 'bob' });
+
+      // Ada hosts but never claimed a chair — the host-as-dealer case, which a seats-only check
+      // would have broken for UNO.
+      const host = await ada.request({ t: 'patchState', gameId: 'chess', roomId, data: { by: 'ada' } });
+      expect(host.ok).toBe(true);
+      expect(gateway.store.snapshot('chess', roomId)?.state).toEqual({ by: 'ada' });
+      ada.close();
+      bob.close();
+    });
+  });
+
+  /**
    * CRASH RECOVERY (plans/done/CRASH_RECOVERY.md). Before this block the gateway's docblock CLAIMED to
    * close the crash-recovery gap and one test asserted only that a solo player's room is GC'd — the
    * branch the claim rests on (a seat becomes an AI so the table survives for everyone else) had no

@@ -250,7 +250,20 @@ export class RoomGateway {
   private onPatchState(conn: Conn, id: number, gameId: string, roomId: string, data: unknown): void {
     // Any seated participant may advance state (the turn-owner, or the host-as-dealer). The server
     // owns the seq bump, so a client cannot rewind or skip ordering.
+    //
+    // THAT COMMENT USED TO DESCRIBE AN AUTHORISATION THIS FUNCTION DID NOT PERFORM. It checked that
+    // the room existed and nothing else, so any authenticated socket that knew a room code — they are
+    // four characters — could overwrite any room's entire state. For UNO/Chess/Tic-Tac-Toe that was
+    // griefing rather than theft, because none of them bet; it became load-bearing the moment a game
+    // on this path could win money, and it is the room-state twin of leaving `POST /settle` open for
+    // a game the dealer settles. The check is membership, not turn: whose turn it is lives in a
+    // game's own state, which this layer deliberately cannot read. Liar's Dice does not come through
+    // here at all — a dealt game's actions carry their own turn-checked frames.
     if (!this.store.has(gameId, roomId)) return this.reply(conn, id, { ok: true });
+    const seats = this.store.seatsOf(gameId, roomId);
+    const seated = conn.uid !== null && seatsHeldBy(seats, conn.uid).length > 0;
+    const isHost = this.store.hostOf(gameId, roomId) === conn.uid;
+    if (!seated && !isHost) return this.reply(conn, id, { ok: false, error: 'Forbidden.' });
     this.store.patchState(gameId, roomId, data);
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
