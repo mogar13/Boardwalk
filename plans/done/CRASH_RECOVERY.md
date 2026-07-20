@@ -7,7 +7,7 @@ the owner's fork decision, and the bound stated honestly.
 
 ## What the ROADMAP note said, and what was actually true
 
-The note ([ROADMAP.md item 2](../ROADMAP.md#2-crash-recovery-for-rooms--the-known-unfixed-data-gap)) says an
+The note ([ROADMAP.md item 2](../ROADMAP.md#2-crash-recovery-for-rooms--done)) says an
 abrupt tab-close reaps presence and nothing else, leaving both **a stalled table** and **orphaned
 `rooms/`/`hands/`/`chat/` nodes**. It was written before Phase C, and it invited exactly the check it
 needed: *"verify what the gateway does on disconnect today before designing anything."*

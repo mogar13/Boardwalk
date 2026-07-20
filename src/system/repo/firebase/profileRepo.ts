@@ -130,7 +130,8 @@ function readInventory(wire: unknown): Inventory {
  */
 function readEquipped(wire: unknown): Equipped {
   const e = asRecord(wire);
-  const out: { cardback?: string; title?: string; felt?: string; frame?: string; dice?: string } = {};
+  const out: { cardback?: string; title?: string; felt?: string; frame?: string; dice?: string } =
+    {};
   if (typeof e.cardback === 'string' && e.cardback !== '') out.cardback = e.cardback;
   if (typeof e.title === 'string' && e.title !== '') out.title = e.title;
   // P5's two kinds. This whitelist is per-key by design — an unlisted key is DROPPED, so a kind

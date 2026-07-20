@@ -12,12 +12,17 @@ import type { EconomyIntent, RepoResult, EconomyOutcome, TicketBatch } from '@/s
  * silently switch the client back to minting its own nonces if they were inverted.
  */
 
-const apply = vi.fn<(uid: string, intent: EconomyIntent, next: Profile) => Promise<RepoResult<EconomyOutcome>>>();
+const apply =
+  vi.fn<
+    (uid: string, intent: EconomyIntent, next: Profile) => Promise<RepoResult<EconomyOutcome>>
+  >();
 const issue = vi.fn<(deviceId: string, want: number) => Promise<TicketBatch>>();
 
 vi.mock('@/system/repo', () => ({
-  repos: { economy: { apply: (...a: unknown[]) => apply(...(a as Parameters<typeof apply>)) },
-           tickets: { issue: (...a: unknown[]) => issue(...(a as Parameters<typeof issue>)) } },
+  repos: {
+    economy: { apply: (...a: unknown[]) => apply(...(a as Parameters<typeof apply>)) },
+    tickets: { issue: (...a: unknown[]) => issue(...(a as Parameters<typeof issue>)) },
+  },
 }));
 
 /**
@@ -34,7 +39,9 @@ Object.defineProperty(globalThis, 'localStorage', {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
     removeItem: (k: string) => void store.delete(k),
-    clear: () => { store.clear(); },
+    clear: () => {
+      store.clear();
+    },
   },
 });
 
@@ -43,7 +50,10 @@ const { emptyOffline, enqueue } = await import('@/system/offline/queue');
 type OfflineState = import('@/system/offline/queue').OfflineState;
 
 const profile = { name: 'Ada' } as unknown as Profile;
-const served = (p: Profile = profile): RepoResult<EconomyOutcome> => ({ ok: true, value: { profile: p, pull: null } });
+const served = (p: Profile = profile): RepoResult<EconomyOutcome> => ({
+  ok: true,
+  value: { profile: p, pull: null },
+});
 
 const settle = (nonce: string): EconomyIntent => ({
   kind: 'settle',
@@ -120,7 +130,9 @@ describe('the flush loop', () => {
 
   it('drops an entry the server genuinely refuses rather than wedging the queue', async () => {
     seed(['a', 'b']);
-    apply.mockResolvedValueOnce({ ok: false, error: 'payout with no open wager' }).mockResolvedValue(served());
+    apply
+      .mockResolvedValueOnce({ ok: false, error: 'payout with no open wager' })
+      .mockResolvedValue(served());
     await useOfflineStore.getState().flush(deps());
     expect(useOfflineStore.getState().state.queue).toEqual([]);
   });
@@ -144,7 +156,10 @@ describe('the flush loop', () => {
   it('RE-STAMPS a retired ticket and re-sends, spending exactly one spare', async () => {
     seed(['old'], ['spare-1', 'spare-2']);
     apply
-      .mockResolvedValueOnce({ ok: false, error: 'this ticket was signed with a key that is no longer in use' })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: 'this ticket was signed with a key that is no longer in use',
+      })
       .mockResolvedValue(served());
     await useOfflineStore.getState().flush(deps());
 
@@ -155,7 +170,10 @@ describe('the flush loop', () => {
 
   it('drops a retired entry when there is no spare, rather than retrying forever', async () => {
     seed(['old'], []);
-    apply.mockResolvedValue({ ok: false, error: 'this ticket was signed with a key that is no longer in use' });
+    apply.mockResolvedValue({
+      ok: false,
+      error: 'this ticket was signed with a key that is no longer in use',
+    });
     await useOfflineStore.getState().flush(deps());
     expect(apply).toHaveBeenCalledTimes(1);
     expect(useOfflineStore.getState().state.queue).toEqual([]);
@@ -163,8 +181,18 @@ describe('the flush loop', () => {
 
   it('does not run two drains at once', async () => {
     seed(['a', 'b']);
-    apply.mockImplementation(() => new Promise((r) => setTimeout(() => { r(served()); }, 5)));
-    await Promise.all([useOfflineStore.getState().flush(deps()), useOfflineStore.getState().flush(deps())]);
+    apply.mockImplementation(
+      () =>
+        new Promise((r) =>
+          setTimeout(() => {
+            r(served());
+          }, 5)
+        )
+    );
+    await Promise.all([
+      useOfflineStore.getState().flush(deps()),
+      useOfflineStore.getState().flush(deps()),
+    ]);
     // Two concurrent drains would race the same head entry into a double send — which the server
     // would collapse on the nonce, but which would also double-count the spend locally.
     expect(apply.mock.calls.map((c) => c[1].nonce)).toEqual(['a', 'b']);
@@ -183,7 +211,10 @@ describe('acquiring a nonce', () => {
 
   it('reports not-required on a server that does not enforce, so the caller mints as before', async () => {
     issue.mockResolvedValue({ enabled: false, tickets: [], outstanding: 0 });
-    expect(await useOfflineStore.getState().acquireNonce()).toEqual({ ticket: null, required: false });
+    expect(await useOfflineStore.getState().acquireNonce()).toEqual({
+      ticket: null,
+      required: false,
+    });
     // …and having learned that, it stops asking.
     await useOfflineStore.getState().acquireNonce();
     expect(issue).toHaveBeenCalledTimes(1);
@@ -195,13 +226,19 @@ describe('acquiring a nonce', () => {
     // value the client would silently switch back to minting its own nonces on a flaky connection,
     // which is the bound quietly turning itself off. It must stay `required`.
     issue.mockResolvedValue({ enabled: false, tickets: [], outstanding: 0 });
-    expect(await useOfflineStore.getState().acquireNonce()).toEqual({ ticket: null, required: true });
+    expect(await useOfflineStore.getState().acquireNonce()).toEqual({
+      ticket: null,
+      required: true,
+    });
     expect(useOfflineStore.getState().state.enabled).toBe(true);
   });
 
   it('spends without a round trip when the book is stocked', async () => {
     useOfflineStore.setState({ state: { ...emptyOffline('d'), enabled: true, tickets: ['t-9'] } });
-    expect(await useOfflineStore.getState().acquireNonce()).toEqual({ ticket: 't-9', required: true });
+    expect(await useOfflineStore.getState().acquireNonce()).toEqual({
+      ticket: 't-9',
+      required: true,
+    });
     expect(issue).not.toHaveBeenCalled();
   });
 });

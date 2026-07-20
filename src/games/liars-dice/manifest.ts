@@ -30,7 +30,8 @@ import type { GameManifest } from '@/games/registry';
 export const liarsDiceManifest = {
   id: 'liars-dice',
   name: "Liar's Dice",
-  blurb: 'Five dice under a cup. Bid high, call a bluff, or nail it exactly. Two to six, or fill with bots.',
+  blurb:
+    'Five dice under a cup. Bid high, call a bluff, or nail it exactly. Two to six, or fill with bots.',
   icon: 'liars-dice.png',
   pier: 'casino',
   seats: { min: 2, max: 6 },

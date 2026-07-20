@@ -15,7 +15,15 @@ import { cx } from '@/ui';
  * (below), because the client genuinely does not have the number. Drawing a face-down die from a
  * face the client secretly holds is how a projection leaks in the renderer.
  */
-export function Die({ face, diceId, size = 'md' }: { face: Pips; diceId: string; size?: 'sm' | 'md' }) {
+export function Die({
+  face,
+  diceId,
+  size = 'md',
+}: {
+  face: Pips;
+  diceId: string;
+  size?: 'sm' | 'md';
+}) {
   return (
     <img
       src={diceSrc(diceId, face)}

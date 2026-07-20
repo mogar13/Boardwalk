@@ -66,7 +66,12 @@ describe('the catalogue', () => {
     // And the list above is exhaustive over the union: an omission is a compile error, not a
     // silently unchecked kind.
     const exhaustive: Record<CosmeticKind, true> = {
-      avatar: true, cardback: true, title: true, felt: true, frame: true, dice: true,
+      avatar: true,
+      cardback: true,
+      title: true,
+      felt: true,
+      frame: true,
+      dice: true,
     };
     expect(Object.keys(exhaustive).sort()).toEqual([...kinds].sort());
   });

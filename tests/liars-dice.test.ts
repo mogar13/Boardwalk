@@ -31,10 +31,16 @@ function seq(values: readonly number[]): () => number {
 }
 
 /** An rng that always rolls `face` — the die is `floor(r * 6) + 1`, so aim at the band's middle. */
-const always = (face: Face): (() => number) => () => (face - 1) / 6 + 0.01;
+const always =
+  (face: Face): (() => number) =>
+  () =>
+    (face - 1) / 6 + 0.01;
 
 /** Build a match with exact cups, bypassing the roll. */
-function table(dice: readonly (readonly Face[])[], over: Partial<LiarsDiceMatch> = {}): LiarsDiceMatch {
+function table(
+  dice: readonly (readonly Face[])[],
+  over: Partial<LiarsDiceMatch> = {}
+): LiarsDiceMatch {
   return {
     dice: dice.map((d) => d.slice()),
     turn: 0,
@@ -99,7 +105,13 @@ describe('counting, and wilds', () => {
   });
 
   it('kills wilds in palifico', () => {
-    const m = table([[1, 3], [1, 3]], { palificoSeat: 0 });
+    const m = table(
+      [
+        [1, 3],
+        [1, 3],
+      ],
+      { palificoSeat: 0 }
+    );
     expect(isPalifico(m)).toBe(true);
     expect(countFace(m, 3)).toBe(2); // the 1s are just 1s now
   });
@@ -198,7 +210,10 @@ describe('challenge', () => {
   });
 
   it('is a no-op with no standing bid, rather than a crash', () => {
-    const m = table([[2, 2], [3, 3]]);
+    const m = table([
+      [2, 2],
+      [3, 3],
+    ]);
     expect(applyAction(m, 0, { type: 'challenge' })).toBe(m);
   });
 });
@@ -285,13 +300,24 @@ describe('elimination and the win', () => {
 
 describe('rounds and palifico', () => {
   it('re-rolls every living cup and keeps the counts', () => {
-    const m = table([[2, 2], [3, 3, 3]], {
-      phase: 'reveal',
-      resolution: {
-        kind: 'challenge', caller: 1, bid: { quantity: 1, face: 2 },
-        actual: 1, callerWon: false, losers: [1], eliminated: [],
-      },
-    });
+    const m = table(
+      [
+        [2, 2],
+        [3, 3, 3],
+      ],
+      {
+        phase: 'reveal',
+        resolution: {
+          kind: 'challenge',
+          caller: 1,
+          bid: { quantity: 1, face: 2 },
+          actual: 1,
+          callerWon: false,
+          losers: [1],
+          eliminated: [],
+        },
+      }
+    );
     const next = advanceRound(m, always(6));
     expect(next.phase).toBe('bidding');
     expect(next.dice[0]).toEqual([6, 6]);
@@ -308,7 +334,13 @@ describe('rounds and palifico', () => {
     expect(isPalifico(next)).toBe(true);
 
     const later = advanceRound(
-      table([[2, 2], [3, 3]], { phase: 'reveal', palificoSeat: 0 }),
+      table(
+        [
+          [2, 2],
+          [3, 3],
+        ],
+        { phase: 'reveal', palificoSeat: 0 }
+      ),
       always(4)
     );
     expect(later.palificoSeat).toBe(-1);
@@ -329,7 +361,10 @@ describe('rounds and palifico', () => {
 });
 
 describe('turn authority and totality', () => {
-  const m = table([[2, 2, 2], [3, 3, 3]]);
+  const m = table([
+    [2, 2, 2],
+    [3, 3, 3],
+  ]);
 
   it('refuses an action from the wrong seat', () => {
     // v1 gated the controls with CSS `pointer-events` and trusted `activeTurn`, so a console call
@@ -371,13 +406,16 @@ describe('turn authority and totality', () => {
 });
 
 describe('the projection — what a player may see', () => {
-  const m = table([
-    [1, 2, 3],
-    [4, 5, 6],
-    [2, 2],
-  ], { bid: { quantity: 3, face: 2 }, turn: 1 });
+  const m = table(
+    [
+      [1, 2, 3],
+      [4, 5, 6],
+      [2, 2],
+    ],
+    { bid: { quantity: 3, face: 2 }, turn: 1 }
+  );
 
-  it('carries counts and never another seat\'s faces', () => {
+  it("carries counts and never another seat's faces", () => {
     const view = publicView(m);
     expect(view.counts).toEqual([3, 3, 2]);
     expect(view.revealed).toEqual([]);
@@ -393,19 +431,21 @@ describe('the projection — what a player may see', () => {
     const wire = JSON.stringify(view);
     expect(wire).not.toContain('"dice"');
     // And no cup's contents are reachable anywhere in the serialised payload while bidding.
-    expect(JSON.parse(wire)).toEqual(
-      expect.objectContaining({ revealed: [] })
-    );
+    expect(JSON.parse(wire)).toEqual(expect.objectContaining({ revealed: [] }));
   });
 
   it('opens every cup at the reveal, and only then', () => {
     const revealed = publicView({ ...m, phase: 'reveal' });
-    expect(revealed.revealed).toEqual([[1, 2, 3], [4, 5, 6], [2, 2]]);
+    expect(revealed.revealed).toEqual([
+      [1, 2, 3],
+      [4, 5, 6],
+      [2, 2],
+    ]);
     expect(publicView({ ...m, phase: 'bidding' }).revealed).toEqual([]);
     expect(publicView({ ...m, phase: 'finished' }).revealed).toHaveLength(3);
   });
 
-  it('hands a seat its own cup and nobody else\'s', () => {
+  it("hands a seat its own cup and nobody else's", () => {
     expect(handFor(m, 0)).toEqual({ dice: [1, 2, 3] });
     expect(handFor(m, 2)).toEqual({ dice: [2, 2] });
     expect(handFor(m, 9)).toEqual({ dice: [] });
@@ -421,18 +461,24 @@ describe('the projection — what a player may see', () => {
 
 describe('the house', () => {
   it('challenges a bid the table cannot plausibly cover', () => {
-    const m = table([
-      [2, 2, 3, 4, 5],
-      [6, 6, 6, 6, 6],
-    ], { bid: { quantity: 9, face: 3 }, turn: 1 });
+    const m = table(
+      [
+        [2, 2, 3, 4, 5],
+        [6, 6, 6, 6, 6],
+      ],
+      { bid: { quantity: 9, face: 3 }, turn: 1 }
+    );
     expect(chooseAiAction(m, 1, () => 0.9).type).toBe('challenge');
   });
 
   it('bids rather than calling when the bid is plausible', () => {
-    const m = table([
-      [3, 3, 3, 4, 5],
-      [3, 3, 6, 6, 6],
-    ], { bid: { quantity: 3, face: 3 }, turn: 1 });
+    const m = table(
+      [
+        [3, 3, 3, 4, 5],
+        [3, 3, 6, 6, 6],
+      ],
+      { bid: { quantity: 3, face: 3 }, turn: 1 }
+    );
     const action = chooseAiAction(m, 1, () => 0.9);
     expect(action.type).toBe('bid');
   });
@@ -441,7 +487,7 @@ describe('the house', () => {
     // v1's bot escalated `quantity + 1` forever with no cap against the dice in play, and never
     // used the same-quantity-higher-face rung at all.
     for (let s = 0; s < 40; s += 1) {
-      const rng = seq([s / 40, (s * 7) % 10 / 10, (s * 3) % 10 / 10]);
+      const rng = seq([s / 40, ((s * 7) % 10) / 10, ((s * 3) % 10) / 10]);
       const m = deal(4, rng);
       const withBid = table(m.dice, { bid: { quantity: 3, face: 4 }, turn: 2 });
       const action = chooseAiAction(withBid, 2, rng);
@@ -454,7 +500,13 @@ describe('the house', () => {
   });
 
   it('opens with a legal bid when there is nothing to raise', () => {
-    const m = table([[4, 4, 4, 2, 5], [1, 1, 3, 3, 6]], { turn: 0 });
+    const m = table(
+      [
+        [4, 4, 4, 2, 5],
+        [1, 1, 3, 3, 6],
+      ],
+      { turn: 0 }
+    );
     const action = chooseAiAction(m, 0, () => 0.5);
     expect(action.type).toBe('bid');
     if (action.type === 'bid') {
@@ -467,10 +519,16 @@ describe('the house', () => {
     // unreachable forever. The rung that matters is the CONVERSION: against a tall bid, switching
     // to 1s at `ceil(q/2)` is far cheaper than one more die, and a bot that cannot spell it is
     // forced to either over-bid or call.
-    const m = table([[1, 1, 1, 2, 3], [2, 3, 4, 5, 6]], {
-      bid: { quantity: 6, face: 4 },
-      turn: 0,
-    });
+    const m = table(
+      [
+        [1, 1, 1, 2, 3],
+        [2, 3, 4, 5, 6],
+      ],
+      {
+        bid: { quantity: 6, face: 4 },
+        turn: 0,
+      }
+    );
     // Holding three wilds, "three 1s" is a claim it can nearly cover alone — far safer than the
     // seven-of-a-face the quantity rung would force. Ranking by risk-per-face is what finds it.
     const action = chooseAiAction(m, 0, () => 0.9);
@@ -483,10 +541,28 @@ describe('the house', () => {
     // nobody able to move. So the house choosing from a filtered legal set is load-bearing, not
     // tidiness. Palifico + a cup full of 1s is the case that actually hung.
     const scenarios: LiarsDiceMatch[] = [
-      table([[1, 1, 1], [2, 3, 4]], { palificoSeat: 0, turn: 0 }),
-      table([[1, 1, 1, 1, 1], [2, 3, 4, 5, 6]], { turn: 0 }),
+      table(
+        [
+          [1, 1, 1],
+          [2, 3, 4],
+        ],
+        { palificoSeat: 0, turn: 0 }
+      ),
+      table(
+        [
+          [1, 1, 1, 1, 1],
+          [2, 3, 4, 5, 6],
+        ],
+        { turn: 0 }
+      ),
       table([[6], [1, 1]], { palificoSeat: 0, turn: 0 }),
-      table([[2, 2], [3, 3]], { bid: { quantity: 4, face: 6 }, turn: 0 }),
+      table(
+        [
+          [2, 2],
+          [3, 3],
+        ],
+        { bid: { quantity: 4, face: 6 }, turn: 0 }
+      ),
     ];
     for (const m of scenarios) {
       for (let s = 0; s < 12; s += 1) {
@@ -510,9 +586,10 @@ describe('the house', () => {
     const rng = seq([0.13, 0.77, 0.41, 0.92, 0.05, 0.63, 0.28, 0.84, 0.51, 0.36, 0.7, 0.19]);
     let m = deal(3, rng);
     for (let step = 0; step < 500 && m.winner === -1; step += 1) {
-      m = m.phase === 'reveal'
-        ? advanceRound(m, rng)
-        : applyAction(m, m.turn, chooseAiAction(m, m.turn, rng));
+      m =
+        m.phase === 'reveal'
+          ? advanceRound(m, rng)
+          : applyAction(m, m.turn, chooseAiAction(m, m.turn, rng));
     }
     expect(m.winner).toBeGreaterThanOrEqual(0);
     expect(m.phase).toBe('finished');

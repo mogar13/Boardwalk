@@ -33,7 +33,7 @@ someone wants to play it — see [Scope discipline](../CLAUDE.md#scope-disciplin
 which is still the governing rule and is not repealed by this document.
 
 But it is also the game that forces two questions the codebase has been carrying openly:
-[ROADMAP item 4](ROADMAP.md#4-a-sixth-game--only-if-one-sounds-fun) names both — the `dice`
+[ROADMAP item 4](ROADMAP.md#4-a-sixth-game--built-and-it-was-liars-dice) names both — the `dice`
 cosmetic with no reader, and non-Blackjack outcomes still being self-reported. This build answers
 both, because a bluffing game that bets real chips cannot be built any other way.
 

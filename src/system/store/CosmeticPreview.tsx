@@ -30,7 +30,13 @@ import { cx } from '@/ui';
 import { diceSrc } from '@/system/dice/dice';
 import type { ReactElement } from 'react';
 
-export function CosmeticPreview({ item, large = false }: { item: Cosmetic; large?: boolean }): ReactElement | null {
+export function CosmeticPreview({
+  item,
+  large = false,
+}: {
+  item: Cosmetic;
+  large?: boolean;
+}): ReactElement | null {
   switch (item.kind) {
     case 'avatar':
       return (

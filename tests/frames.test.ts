@@ -51,9 +51,10 @@ describe('the frame registry', () => {
       const tone = frameTone(id) as Rarity;
       const cls = RARITY_RING[tone];
       expect(cls, `no ring class for tone ${tone}`).toBeTruthy();
-      expect(cls.startsWith('border-rarity-'), `${id} ring is not a flat rarity border: ${cls}`).toBe(
-        true
-      );
+      expect(
+        cls.startsWith('border-rarity-'),
+        `${id} ring is not a flat rarity border: ${cls}`
+      ).toBe(true);
       expect(cls).not.toMatch(/shadow|glow/);
     }
   });

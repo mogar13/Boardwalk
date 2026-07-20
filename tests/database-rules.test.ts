@@ -338,15 +338,26 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     await assertSucceeds(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
-        equipped: { cardback: 'cb_red3', title: 'ttl_grandmaster', felt: 'ft_blue', frame: 'fr_ember' },
+        equipped: {
+          cardback: 'cb_red3',
+          title: 'ttl_grandmaster',
+          felt: 'ft_blue',
+          frame: 'fr_ember',
+        },
       })
     );
     // Still partial-friendly: a felt with no frame, and a frame with no felt.
     await assertSucceeds(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { felt: 'ft_green' } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { felt: 'ft_green' },
+      })
     );
     await assertSucceeds(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { frame: 'fr_steel' } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { frame: 'fr_steel' },
+      })
     );
   });
 
@@ -356,12 +367,21 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     await assertSucceeds(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
-        equipped: { cardback: 'cb_red3', title: 'ttl_rookie', felt: 'ft_green', frame: 'fr_gold', dice: 'dc_ember' },
+        equipped: {
+          cardback: 'cb_red3',
+          title: 'ttl_rookie',
+          felt: 'ft_green',
+          frame: 'fr_gold',
+          dice: 'dc_ember',
+        },
       })
     );
     // And alone, since every key is optional.
     await assertSucceeds(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { dice: 'dc_ivory' } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { dice: 'dc_ivory' },
+      })
     );
   });
 
@@ -372,7 +392,10 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
       set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { dice: 42 } })
     );
     await assertFails(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { dice: 'x'.repeat(65) } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { dice: 'x'.repeat(65) },
+      })
     );
   });
 

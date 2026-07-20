@@ -59,7 +59,9 @@ export function BidControls({
       <div className="flex items-center justify-center gap-3">
         <Button
           variant="ghost"
-          onClick={() => { setQuantity((q) => Math.max(1, q - 1)); }}
+          onClick={() => {
+            setQuantity((q) => Math.max(1, q - 1));
+          }}
           disabled={quantity <= 1}
           aria-label="fewer dice"
         >
@@ -68,7 +70,9 @@ export function BidControls({
         <span className="font-display w-14 text-center text-3xl tabular-nums">{quantity}</span>
         <Button
           variant="ghost"
-          onClick={() => { setQuantity((q) => Math.min(state.total, q + 1)); }}
+          onClick={() => {
+            setQuantity((q) => Math.min(state.total, q + 1));
+          }}
           disabled={quantity >= state.total}
           aria-label="more dice"
         >
@@ -85,7 +89,9 @@ export function BidControls({
               key={f}
               type="button"
               disabled={disabled}
-              onClick={() => { setFace(f); }}
+              onClick={() => {
+                setFace(f);
+              }}
               aria-label={`face ${String(f)}`}
               aria-pressed={face === f}
               className={cx(
@@ -107,7 +113,9 @@ export function BidControls({
         <Button
           variant="primary"
           disabled={busy || !legal}
-          onClick={() => { onBid(quantity, face); }}
+          onClick={() => {
+            onBid(quantity, face);
+          }}
         >
           Bid {quantity} × {face}
         </Button>

@@ -400,11 +400,7 @@ export function chooseAiAction(match: LiarsDiceMatch, seat: number, rng: () => n
 
     // SPOT-ON when the bid sits almost exactly on the expectation and the table is small enough
     // for that to be more than a coin flip. Rare on purpose: it is the high-variance play.
-    if (
-      totalDice(match) <= 6 &&
-      Math.abs(plausible - current.quantity) < 0.35 &&
-      rng() < 0.18
-    ) {
+    if (totalDice(match) <= 6 && Math.abs(plausible - current.quantity) < 0.35 && rng() < 0.18) {
       return { type: 'spotOn' };
     }
 
@@ -447,12 +443,13 @@ export function chooseAiAction(match: LiarsDiceMatch, seat: number, rng: () => n
    * halving the quantity to switch to 1s is often the safest thing on the board, and it is
    * exactly the rung v1's house could not spell.
    */
-  const risk = (b: Bid): number => b.quantity - expected(b.face) + (b.face === 1 && wildOn ? 0.4 : 0);
+  const risk = (b: Bid): number =>
+    b.quantity - expected(b.face) + (b.face === 1 && wildOn ? 0.4 : 0);
   const bluffing = rng() < 0.25;
   legal.sort((a, b) => risk(a) - risk(b));
 
   // A bluff takes the second-safest rung instead of the safest, so the house is not readable off
   // the table the way v1's was — it swung to its own best face every single turn.
-  const pick = (bluffing ? legal[1] ?? legal[0] : legal[0]) as Bid;
+  const pick = (bluffing ? (legal[1] ?? legal[0]) : legal[0]) as Bid;
   return { type: 'bid', quantity: pick.quantity, face: pick.face };
 }

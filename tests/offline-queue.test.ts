@@ -31,7 +31,10 @@ const settle = (nonce: string, gameId = 'chess'): SettleIntent => ({
   payoutCents: 0,
 });
 
-const entry = (nonce: string, stampedAt = 1000): QueuedSettle => ({ intent: settle(nonce), stampedAt });
+const entry = (nonce: string, stampedAt = 1000): QueuedSettle => ({
+  intent: settle(nonce),
+  stampedAt,
+});
 
 const withTickets = (n: number): OfflineState =>
   addTickets(
@@ -145,10 +148,25 @@ describe('persistence', () => {
       enabled: true,
       tickets: ['t0', 7, null],
       queue: [
-        { intent: { kind: 'settle', nonce: 'ok', gameId: 'chess', outcome: 'win', payoutCents: 0 }, stampedAt: 1 },
+        {
+          intent: { kind: 'settle', nonce: 'ok', gameId: 'chess', outcome: 'win', payoutCents: 0 },
+          stampedAt: 1,
+        },
         { intent: { kind: 'purchase', nonce: 'x', itemId: 'i' }, stampedAt: 1 }, // not a settle
-        { intent: { kind: 'settle', nonce: '', gameId: 'chess', outcome: 'win', payoutCents: 0 }, stampedAt: 1 },
-        { intent: { kind: 'settle', nonce: 'n', gameId: 'chess', outcome: 'sideways', payoutCents: 0 }, stampedAt: 1 },
+        {
+          intent: { kind: 'settle', nonce: '', gameId: 'chess', outcome: 'win', payoutCents: 0 },
+          stampedAt: 1,
+        },
+        {
+          intent: {
+            kind: 'settle',
+            nonce: 'n',
+            gameId: 'chess',
+            outcome: 'sideways',
+            payoutCents: 0,
+          },
+          stampedAt: 1,
+        },
         { intent: { kind: 'settle', nonce: 'n', gameId: 'chess', outcome: 'win', payoutCents: 0 } }, // no stamp
       ],
     });

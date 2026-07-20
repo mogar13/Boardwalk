@@ -34,7 +34,9 @@ import type {
  * wrong rather than "no profile" — it is surfaced as a refusal instead of being adopted, because
  * adopting a null would blank a live top bar.
  */
-function asResult(reply: { ok: true; value?: unknown } | { ok: false; error: string }): RepoResult<Profile> {
+function asResult(
+  reply: { ok: true; value?: unknown } | { ok: false; error: string }
+): RepoResult<Profile> {
   if (!reply.ok) return { ok: false, error: reply.error };
   const profile = reply.value as Profile | null | undefined;
   return profile == null

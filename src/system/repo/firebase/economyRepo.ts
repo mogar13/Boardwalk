@@ -1,11 +1,6 @@
 import type { Profile } from '@boardwalk/game-logic';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
-import type {
-  EconomyIntent,
-  EconomyOutcome,
-  EconomyRepo,
-  RepoResult,
-} from '@/system/repo/types';
+import type { EconomyIntent, EconomyOutcome, EconomyRepo, RepoResult } from '@/system/repo/types';
 
 /**
  * THE CLIENT-AUTHORITATIVE FALLBACK — what the economy was through Phase 6, expressed as an

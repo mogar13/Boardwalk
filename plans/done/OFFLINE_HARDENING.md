@@ -75,7 +75,7 @@ the leaderboard, not the bankroll.
 
 **What they do NOT buy, and no ticket scheme can:** they do not make a self-reported outcome true. A
 client that is *online* can already spam `/settle` for chess with fresh tickets, refilling its batch
-each time. Closing that is [ROADMAP item 4's](../ROADMAP.md#4-a-sixth-game--only-if-one-sounds-fun)
+each time. Closing that is [ROADMAP item 4's](../ROADMAP.md#4-a-sixth-game--built-and-it-was-liars-dice)
 much larger job — the server holding the match. **Tickets bound the offline surface to the online
 surface; they do not shrink the online one.** Anyone reading this later should not mistake the
 mechanism for a solution to outcome-forgery.

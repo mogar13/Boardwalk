@@ -62,7 +62,13 @@ const INTERACTIVE = cx(
   'focus-within:border-secondary/60 focus-within:shadow-glow-secondary'
 );
 
-export function Card({ interactive = false, felt = null, className, children, ...rest }: CardProps) {
+export function Card({
+  interactive = false,
+  felt = null,
+  className,
+  children,
+  ...rest
+}: CardProps) {
   return (
     <div
       className={cx(
