@@ -107,7 +107,11 @@ CREATE TABLE IF NOT EXISTS wagers (
   -- game". Oldest-first is the right rule when the server cannot see the hand; it is the wrong one
   -- when it can, because an abandoned hand's wager would be consumed by a later, unrelated
   -- settlement. NULL for every non-blackjack wager, which still goes through the generic path.
-  hand_id      INTEGER
+  hand_id      INTEGER,
+  -- PHASE E. The Liar's Dice match this ante belongs to, closed by name for the same reason: a
+  -- match that is abandoned mid-play leaves an open wager, and oldest-first would let a LATER
+  -- match's settle consume it.
+  match_id     INTEGER
 );
 
 -- PHASE B. The idempotency log: one row per accepted mutation, keyed by the client's nonce.
@@ -130,6 +134,11 @@ CREATE TABLE IF NOT EXISTS mutations (
   -- wrong answer that looks like a dealing bug. NULL for the four money mutations, which have no
   -- hand. Added here AND in COLUMN_MIGRATIONS — see the note below.
   hand_id     INTEGER,
+  -- PHASE E. The same idea for a Liar's Dice match: a replayed action answers with the match it
+  -- acted on. Separate from \`hand_id\` rather than overloading it, because the two name rows in
+  -- different tables and a single column would make "which table is this id in?" depend on
+  -- \`kind\` — a join you cannot express and a bug you cannot see. Also in COLUMN_MIGRATIONS.
+  match_id    INTEGER,
   PRIMARY KEY (uid, nonce)
 );
 
@@ -213,9 +222,60 @@ CREATE TABLE IF NOT EXISTS ticket_devices (
   PRIMARY KEY (uid, device_id)
 );
 
+-- PHASE E. The server's own Liar's Dice matches — the second game the referee deals, and the
+-- first MULTIPLAYER one.
+--
+-- Blackjack made \`payoutCents\` stop being a client claim. This table makes the same move for a
+-- game where the hidden information is not one hole card but the entire point: every player's cup
+-- is hidden from every other player, so a client that could see the table would win every
+-- challenge and lose none. UNO solved hidden hands by trusting the HOST with all of them, which is
+-- survivable when a leaked hand costs you a card and fatal when it costs you the match and the pot.
+-- So nobody at the table holds anyone's dice. The referee rolls them and never sends them.
+--
+-- \`state_json\` is the whole \`LiarsDiceMatch\`, including every cup — the thing that must live
+-- server-side and nowhere else. Blob rather than columns for the same reason as
+-- \`blackjack_hands\`: nothing queries inside a match, and the shape belongs to the shared reducer.
+--
+-- THE SHAPE DIFFERS FROM BLACKJACK IN ONE LOAD-BEARING WAY. \`blackjack_hands.uid\` is both the
+-- owner and the only participant, so scoping a read to it is the whole authority check. A match
+-- has many participants and no owner, so authority lives in \`liars_dice_players\` and a load is a
+-- MEMBERSHIP join. Same rule as blackjack's — "an id is not a secret, so the query must carry the
+-- authority" — with ownership generalised to membership.
+CREATE TABLE IF NOT EXISTS liars_dice_matches (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id    TEXT NOT NULL,
+  room_id    TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  -- Total cents anted by every human seat. The winner is paid exactly this.
+  pot_cents  INTEGER NOT NULL DEFAULT 0,
+  -- 1 once the pot has been paid and the wagers closed, OR once the match was voided and refunded.
+  -- Either way it is terminal: the flag is what stops a second settle and a second refund.
+  settled    INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Who is in a match, and what they staked. The membership table that carries the authority for
+-- every read of the row above, and the record a refund is computed from.
+--
+-- \`ante_cents\` is per-player rather than one figure on the match because a player who leaves
+-- mid-match forfeits their stake to the pot: the pot and the sum of live antes stop being equal
+-- the moment that happens, and a refund has to know what THIS player put in, not what the pot
+-- holds now.
+CREATE TABLE IF NOT EXISTS liars_dice_players (
+  match_id   INTEGER NOT NULL REFERENCES liars_dice_matches(id) ON DELETE CASCADE,
+  uid        TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  seat       INTEGER NOT NULL,
+  ante_cents INTEGER NOT NULL,
+  PRIMARY KEY (match_id, uid)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;
+-- A match is looked up by room while it is live, and swept by \`settled\` at boot.
+CREATE INDEX IF NOT EXISTS idx_ld_matches_room ON liars_dice_matches(game_id, room_id, settled);
+CREATE INDEX IF NOT EXISTS idx_ld_players_uid ON liars_dice_players(uid);
 -- Every hand lookup is "this player's, live or not" — a hand id alone is never enough, because a
 -- hand id from another account must be a REFUSAL and not a read.
 CREATE INDEX IF NOT EXISTS idx_blackjack_hands_uid ON blackjack_hands(uid, settled);
@@ -253,4 +313,10 @@ export const COLUMN_MIGRATIONS: readonly {
   { table: 'profiles', column: 'equipped_frame', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_frame TEXT' },
   { table: 'mutations', column: 'hand_id', ddl: 'ALTER TABLE mutations ADD COLUMN hand_id INTEGER' },
   { table: 'wagers', column: 'hand_id', ddl: 'ALTER TABLE wagers ADD COLUMN hand_id INTEGER' },
+  // PHASE E. Two more columns on tables the Pi already has. The two `liars_dice_*` TABLES need no
+  // entry — a new table does reach an existing database — but these two columns would otherwise
+  // exist only on the databases the test suite creates, which is the exact prod-only blindness
+  // this list exists for.
+  { table: 'mutations', column: 'match_id', ddl: 'ALTER TABLE mutations ADD COLUMN match_id INTEGER' },
+  { table: 'wagers', column: 'match_id', ddl: 'ALTER TABLE wagers ADD COLUMN match_id INTEGER' },
 ];

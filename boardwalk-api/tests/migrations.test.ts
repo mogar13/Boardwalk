@@ -33,10 +33,63 @@ CREATE TABLE profiles (
   updated_at            INTEGER NOT NULL
 );`;
 
+/**
+ * `wagers` and `mutations` as they stood BEFORE Phase E — the shape the Pi's database is in now,
+ * carrying Phase D's `hand_id` but not the `match_id` a Liar's Dice ante is closed by.
+ */
+const PRE_PHASE_E_MONEY = `
+CREATE TABLE wagers (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  uid          TEXT NOT NULL,
+  game_id      TEXT NOT NULL,
+  wager_cents  INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL,
+  settled_at   INTEGER,
+  hand_id      INTEGER
+);
+CREATE TABLE mutations (
+  uid         TEXT NOT NULL,
+  nonce       TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  hand_id     INTEGER,
+  PRIMARY KEY (uid, nonce)
+);`;
+
 const columnsOf = (db: Database.Database, table: string): string[] =>
   (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 
 describe('additive column migrations', () => {
+  it('adds the Phase-E match_id columns to a database that predates them', () => {
+    // Liar's Dice closes an ante by match id. Without these two entries the column exists only on
+    // the databases this suite creates, and on the Pi every settle would close ZERO wagers — the
+    // stake would sit open forever and the bankroll would drift from the ledger that defines it.
+    const db = new Database(':memory:');
+    db.exec(PRE_PHASE_E_MONEY);
+    expect(columnsOf(db, 'wagers')).not.toContain('match_id');
+    expect(columnsOf(db, 'mutations')).not.toContain('match_id');
+
+    migrateColumns(db);
+
+    expect(columnsOf(db, 'wagers')).toContain('match_id');
+    expect(columnsOf(db, 'mutations')).toContain('match_id');
+    // And Phase D's columns are untouched beside them.
+    expect(columnsOf(db, 'wagers')).toContain('hand_id');
+  });
+
+  it('needs NO migration entry for the two new liars_dice tables', () => {
+    // The asymmetry this list exists for: a whole new TABLE does reach an existing database,
+    // because `CREATE TABLE IF NOT EXISTS` runs on every open with nothing to be a no-op against.
+    // Asserting it keeps someone from "fixing" the omission with entries that would then fail.
+    const tables = COLUMN_MIGRATIONS.map((m) => m.table);
+    expect(tables).not.toContain('liars_dice_matches');
+    expect(tables).not.toContain('liars_dice_players');
+
+    const db = openDb(':memory:');
+    expect(columnsOf(db, 'liars_dice_matches')).toContain('pot_cents');
+    expect(columnsOf(db, 'liars_dice_players')).toContain('ante_cents');
+  });
+
   it('adds the P5 equipped columns to a database that predates them', () => {
     const db = new Database(':memory:');
     db.exec(PRE_P5_PROFILES);
