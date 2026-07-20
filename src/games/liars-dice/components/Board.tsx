@@ -7,7 +7,7 @@ import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
-import { mintNonce } from '@/system/auth/authStore';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { repos } from '@/system/repo';
 import { formatMoney } from '@boardwalk/game-logic';
 import {
@@ -35,9 +35,10 @@ import { BidControls } from '@/games/liars-dice/components/BidControls';
  * feedback, the server's copy is the answer, and they are literally the same function.
  */
 export function Board() {
-  const { state, seats, status, gameId, roomId, isHost } = useRoom<LiarsDicePublic>();
+  const { state, seats, status, gameId, roomId, isHost, myId } = useRoom<LiarsDicePublic>();
   const { mySeatIndex } = useSeats();
-  const { manifest, reportResult } = useGame();
+  const { manifest } = useGame();
+  const adoptProfile = useAuthStore((s) => s.adoptProfile);
   const felt = useEquippedFelt();
   const diceId = useEquippedDice();
   const audio = useAudio();
@@ -48,7 +49,8 @@ export function Board() {
 
   const [busy, setBusy] = useState(false);
   const dealtRef = useRef(false);
-  const reportedRound = useRef<number | null>(null);
+  /** Which money-moving moment this client has already synced its profile for. */
+  const syncedMoment = useRef<string>('');
   const heardResolution = useRef<number | null>(null);
 
   const humans = seats.filter((s) => s.kind === 'human').length;
@@ -68,9 +70,10 @@ export function Board() {
     void repos.liarsDice
       .start(gameId, roomId, { nonce: mintNonce(), anteCents: ante })
       .then((res) => {
-        if (!res.ok) toast.error(res.error);
+        if (res.ok) adoptProfile(res.value);
+        else toast.error(res.error);
       });
-  }, [isHost, status, state, gameId, roomId, ante, toast]);
+  }, [isHost, status, state, gameId, roomId, ante, toast, adoptProfile]);
 
   // The reveal has a sound, and it fires once per resolution rather than on every re-render.
   useEffect(() => {
@@ -81,17 +84,37 @@ export function Board() {
   }, [state, audio]);
 
   /**
-   * Report the result once the match ends. Keyed on `round` like every other game's, so a rematch
-   * re-arms it and a re-render of a finished match does not double-count. Each client reports its
-   * OWN seat only, and passes no payout: the referee already moved the pot, and a `payoutCents`
-   * here would be the client pricing a game the server deals.
+   * THE PROFILE SYNC. THIS GAME DOES NOT CALL `reportResult`, and that is the point of a dealt game.
+   *
+   * Every other board reports its own outcome and the server prices it. Here the referee already
+   * ran `recordOutcome` inside the settle transaction — the stat, the XP and the achievements are
+   * banked before any client knows the match ended — so reporting again would be a client claiming
+   * a result the server has already recorded. `checkSettle` refuses `liars-dice` outright, so it
+   * would not double-count; it would simply toast "settled by the dealer, not by a claim" at every
+   * player at the end of every match. That is exactly what it did, and only the browser found it:
+   * both halves are individually right and tested, and nothing wired them together.
+   *
+   * What IS needed is a profile refresh at the TWO moments the referee moves money, and it has to
+   * be every seated player rather than whoever happened to act:
+   *
+   *   - THE DEAL takes every human's ante, but only the HOST sends `ldStart`. So the host learns its
+   *     new balance from that reply and nobody else learns anything — in a real browser the host's
+   *     top bar dropped a dollar and the other player's went on saying $5,000 while their ante sat
+   *     in the ledger.
+   *   - THE SETTLE pays the pot and records the outcome for everyone, and the action that triggers
+   *     it can be a BOT's, in which case no client made a request at all.
+   *
+   * Keyed so each fires once: the deal per match, the settle per round.
    */
   useEffect(() => {
-    if (state == null || state.winner < 0 || mySeatIndex < 0) return;
-    if (reportedRound.current === state.round) return;
-    reportedRound.current = state.round;
-    reportResult({ outcome: state.winner === mySeatIndex ? 'win' : 'loss' });
-  }, [state, mySeatIndex, reportResult]);
+    if (state == null || mySeatIndex < 0) return;
+    const moment = state.winner >= 0 ? `settled:${String(state.round)}` : 'dealt';
+    if (syncedMoment.current === moment) return;
+    syncedMoment.current = moment;
+    void repos.profile.load(myId).then((p) => {
+      if (p !== null) adoptProfile(p);
+    });
+  }, [state, mySeatIndex, myId, adoptProfile]);
 
   if (repos.liarsDice === null) {
     // Named rather than degraded. There is no RTDB version of "the server holds the dice", and a
@@ -121,7 +144,8 @@ export function Board() {
     setBusy(true);
     audio.play('chip');
     const res = await repos.liarsDice.act(gameId, roomId, { nonce: mintNonce(), action });
-    if (!res.ok) toast.error(res.error);
+    if (res.ok) adoptProfile(res.value);
+    else toast.error(res.error);
     setBusy(false);
   }
 

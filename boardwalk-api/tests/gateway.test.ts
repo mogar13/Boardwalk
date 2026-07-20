@@ -113,7 +113,8 @@ describe('RoomGateway — over a real socket', () => {
 
   beforeEach(async () => {
     server = createServer();
-    gateway = new RoomGateway(fakeVerifier, new RoomStore(() => 1_000), GRACE_MS);
+    // Both windows driven at GRACE_MS: the seat release (3rd) and the empty-room reap (5th).
+    gateway = new RoomGateway(fakeVerifier, new RoomStore(() => 1_000), GRACE_MS, null, GRACE_MS);
     gateway.attach(server);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const port = (server.address() as AddressInfo).port;
@@ -250,6 +251,45 @@ describe('RoomGateway — over a real socket', () => {
    * directions: refused for an outsider, permitted for the two callers that legitimately write
    * (a seated player and the host-as-dealer, who may not hold a seat).
    */
+  describe('an empty room is reaped on a grace, not instantly', () => {
+    it('survives an unpresence/presence remount — the StrictMode double-mount', async () => {
+      // React StrictMode double-invokes effects in dev, so `<RoomProvider>` mounts, declares
+      // presence, unmounts (sending a REAL unpresence) and re-declares. The room used to be
+      // collected between the two, so a table died the moment it was created and NO WS room game
+      // could be developed locally at all. Driving Liar's Dice in a browser is how this surfaced.
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      ada.fire({ t: 'presence', gameId: 'chess', roomId });
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.ada === true);
+
+      // The remount, over a socket that never closed.
+      ada.fire({ t: 'unpresence', gameId: 'chess', roomId });
+      ada.fire({ t: 'presence', gameId: 'chess', roomId });
+      await waitOutGrace();
+
+      expect(gateway.store.has('chess', roomId)).toBe(true);
+      ada.close();
+    });
+
+    it('still collects a room nobody comes back to', async () => {
+      // The grace must not become a leak: an unpresence with no return still takes the room.
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'chess', host: { uid: 'ada', name: 'Ada' }, seatCount: 2 });
+      const roomId = okValue(created) as string;
+      ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+      ada.fire({ t: 'presence', gameId: 'chess', roomId });
+      await ada.waitFor((m) => m.t === 'room' && m.snapshot?.presence.ada === true);
+
+      ada.fire({ t: 'unpresence', gameId: 'chess', roomId });
+      expect(gateway.store.has('chess', roomId)).toBe(true); // not yet
+      await waitOutGrace();
+      expect(gateway.store.has('chess', roomId)).toBe(false); // but eventually
+      ada.close();
+    });
+  });
+
   describe('patchState authorisation', () => {
     it('refuses a socket that holds no seat and does not host the room', async () => {
       const ada = await Client.open(url, 'ada');

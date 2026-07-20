@@ -395,10 +395,16 @@ export interface BlackjackRepo {
  *
  * `types.ts` says a generic `GameSessionRepo<TState>` was deliberately not invented when blackjack
  * was the only caller: "when a second game is dealt server-side, THAT is when the shape of the
- * general one is knowable." This IS the second caller, and the honest report is that the two do not
- * yet rhyme — blackjack answers each request with the whole hand and profile, while this answers
- * with nothing at all, because the state arrives over the room subscription the player is already
- * holding. Two callers, two shapes. The general one is still not knowable, so it is still not built.
+ * general one is knowable." This IS the second caller, and the two turn out to rhyme in the half
+ * that matters: both answer with the AUTHORITATIVE PROFILE. They differ only in the game state —
+ * blackjack returns the hand, because a solo table has no other channel, while a Liar's Dice table
+ * gets its state over the room subscription every seat is already holding.
+ *
+ * ANSWERING `void` WAS THE FIRST DRAFT AND IT WAS WRONG. The reasoning ("state arrives on the
+ * subscription anyway") is true of the state and false of the profile: `start` takes every human's
+ * ante and a settling action pays the pot, and neither of those travels over a room subscription.
+ * Two accounts anted a dollar each in a real browser, the ledger recorded both, and both top bars
+ * went on saying $5,000. So the profile comes back, exactly as blackjack's does.
  *
  * NEITHER INPUT HAS A FIELD FOR A DIE, AN OUTCOME OR A PAYOUT. Absent, not validated.
  */
@@ -413,14 +419,15 @@ export interface LiarsDiceActionInput {
 }
 
 export interface LiarsDiceRepo {
-  /** Roll, deal and take every human's ante. Host only. */
-  start(gameId: string, roomId: string, input: LiarsDiceStartInput): Promise<RepoResult<void>>;
+  /** Roll, deal and take every human's ante. Host only. Answers this caller's profile. */
+  start(gameId: string, roomId: string, input: LiarsDiceStartInput): Promise<RepoResult<Profile>>;
   /**
-   * Bid, challenge or call spot-on. Answers `void` on purpose: the resulting state reaches this
-   * client through the room subscription and its own private node, exactly as it reaches everyone
-   * else at the table, so there is one code path for "the match moved" rather than two.
+   * Bid, challenge or call spot-on. The resulting GAME STATE reaches this client through the room
+   * subscription and its own private node, exactly as it reaches everyone else at the table — so
+   * there is one code path for "the match moved". What comes back here is the PROFILE, because a
+   * settling action pays the pot and no subscription carries that.
    */
-  act(gameId: string, roomId: string, input: LiarsDiceActionInput): Promise<RepoResult<void>>;
+  act(gameId: string, roomId: string, input: LiarsDiceActionInput): Promise<RepoResult<Profile>>;
 }
 
 /**

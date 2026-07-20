@@ -71,10 +71,35 @@ const asStatus = (v: unknown): RoomStatus | null =>
  */
 export const DEFAULT_GRACE_MS = 20_000;
 
+/**
+ * How long an EMPTY room is kept before it is collected.
+ *
+ * The room used to be destroyed the instant its presence set emptied, which is right for "everyone
+ * went home" and wrong for every transient unmount. React StrictMode double-invokes effects in
+ * development, so `<RoomProvider>` mounts, declares presence, unmounts and re-declares — and the
+ * unmount sends a REAL `unpresence`. The room was collected between the two, so on this path a
+ * table died the moment it was created and no WS room game could be developed locally at all. It
+ * also meant a player navigating away and straight back lost the table.
+ *
+ * The answer is the one crash-recovery already established for seats: do not act on a
+ * disconnection, SCHEDULE the action and let a reconnection cancel it. Short, because an empty room
+ * is genuinely garbage and holding it costs memory; long enough to survive a remount.
+ *
+ * IT APPLIES TO `unpresence` AND NOT TO A SOCKET CLOSE, and the split is deliberate. An explicit
+ * `unpresence` is a client saying "I am stepping away from this table" over a connection that is
+ * still up — which is exactly what a remount sends, and what a player navigating away sends. A
+ * CLOSE is the tab going down, and crash-recovery already decided that case: an empty room goes at
+ * once, because there is nobody left to be gracious to. Gracing both would delay collecting rooms
+ * from genuinely departed players for no benefit; gracing neither is the bug above.
+ */
+export const EMPTY_ROOM_GRACE_MS = 5_000;
+
 export class RoomGateway {
   private readonly conns = new Set<Conn>();
   /** `roomKey::uid` → the armed seat-release. Cancelled by a reconnect, by GC, or by firing. */
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
+  /** `roomKey` → the armed collection of an empty room. Cancelled by anyone declaring presence. */
+  private readonly reaping = new Map<string, ReturnType<typeof setTimeout>>();
 
   /**
    * The referee for the one game the server DEALS over this socket. Null when no database was
@@ -96,7 +121,9 @@ export class RoomGateway {
      * ledger rows, and it lives here because the gateway is the only thing that knows when a
      * player acted. One process, one better-sqlite3 handle, already shared with the HTTP routes.
      */
-    db: Db | null = null
+    db: Db | null = null,
+    /** Injectable so a test can drive the empty-room window instead of waiting one out. */
+    private readonly emptyGraceMs: number = EMPTY_ROOM_GRACE_MS
   ) {
     this.dealer = db === null ? null : new LiarsDiceDealer(db, {
       seatsOf: (g, r) => this.store.seatsOf(g, r),
@@ -333,6 +360,9 @@ export class RoomGateway {
     if (conn.uid === null) return;
     conn.presence.add(roomKey(gameId, roomId));
     this.store.addPresence(gameId, roomId, conn.uid);
+    // Somebody is here, so an armed collection is wrong — the same cancel-on-return the seat
+    // release does one line below, for the room itself.
+    this.cancelReap(roomKey(gameId, roomId));
     // THE RESUME. A reconnect replays presence, which is this frame — so cancelling the armed
     // release here is what lets a blipped player keep the seat a bot was about to inherit.
     this.cancelRelease(roomKey(gameId, roomId), conn.uid);
@@ -343,7 +373,7 @@ export class RoomGateway {
     if (conn.uid === null) return;
     conn.presence.delete(roomKey(gameId, roomId));
     const empty = this.store.removePresence(gameId, roomId, conn.uid);
-    if (empty) this.gcRoom(gameId, roomId);
+    if (empty) this.scheduleReap(gameId, roomId);
     else this.broadcastRoom(gameId, roomId);
   }
 
@@ -362,13 +392,13 @@ export class RoomGateway {
     if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Host only.' });
     const anteCents = typeof ante === 'number' && Number.isFinite(ante) ? Math.floor(ante) : 0;
     const res = this.dealer.start(conn.uid, gameId, roomId, nonce, anteCents);
-    this.reply(conn, id, res.ok ? { ok: true } : { ok: false, error: res.error });
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
   }
 
   private onLdAction(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, action: unknown): void {
     if (this.dealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
     const res = this.dealer.act(conn.uid, gameId, roomId, nonce, action);
-    this.reply(conn, id, res.ok ? { ok: true } : { ok: false, error: res.error });
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
   }
 
   private onChatSend(conn: Conn, id: number, gameId: string, roomId: string, message: unknown): void {
@@ -449,7 +479,28 @@ export class RoomGateway {
   // ── lifecycle ──────────────────────────────────────────────────────────────────────────────
 
   /** GC a room nobody is present in, and tell any lingering subscribers it is gone. */
+  /** Arm the collection of a room nobody is in. Cancelled if anyone declares presence in time. */
+  private scheduleReap(gameId: string, roomId: string): void {
+    const key = roomKey(gameId, roomId);
+    if (this.reaping.has(key)) return;
+    const timer = setTimeout(() => {
+      this.reaping.delete(key);
+      // Re-check at FIRE time, not arm time: someone may have come back, and this timer is not
+      // the authority on whether the room is empty — the store is.
+      if (this.store.presenceCount(gameId, roomId) === 0) this.gcRoom(gameId, roomId);
+    }, this.emptyGraceMs);
+    timer.unref();
+    this.reaping.set(key, timer);
+  }
+
+  private cancelReap(key: string): void {
+    const timer = this.reaping.get(key);
+    if (timer !== undefined) clearTimeout(timer);
+    this.reaping.delete(key);
+  }
+
   private gcRoom(gameId: string, roomId: string): void {
+    this.cancelReap(roomKey(gameId, roomId));
     // A dead room must not leave a timer that would publish into it.
     this.dealer?.cancel(gameId, roomId);
     this.cancelRoomReleases(roomKey(gameId, roomId));

@@ -31,6 +31,8 @@ import {
   type SeatSpec,
 } from '../domain/liarsDice';
 import type { Db } from '../db/db';
+import { loadProfile } from '../domain/profile';
+import type { Profile } from '../domain/types';
 import type { Seat, RoomStatus } from './types';
 import type { Action, Face, LiarsDiceMatch } from '@boardwalk/game-logic/games/liars-dice';
 
@@ -48,7 +50,19 @@ export interface DealerHost {
   deal(gameId: string, roomId: string, index: number, data: unknown): void;
 }
 
-export type DealerResult = { readonly ok: true } | { readonly ok: false; readonly error: string };
+/**
+ * A dealer reply carries the caller's AUTHORITATIVE PROFILE, for blackjack's reason.
+ *
+ * The game state arrives over the room subscription, so an action does not need to answer with it
+ * — but the PROFILE does not travel that way, and `ldStart` moves money (every human's ante) while
+ * a settling `ldAction` moves more of it. A first draft answered `void` on the argument that "the
+ * state arrives on the subscription anyway", and the browser drive showed the hole immediately:
+ * two accounts anted a dollar each, the ledger recorded both, and both top bars kept saying $5,000
+ * until something unrelated refreshed them.
+ */
+export type DealerResult =
+  | { readonly ok: true; readonly profile: Profile | null }
+  | { readonly ok: false; readonly error: string };
 
 const key = (gameId: string, roomId: string): string => `${gameId}/${roomId}`;
 
@@ -91,7 +105,7 @@ export class LiarsDiceDealer {
 
     this.broadcast(gameId, roomId, res.value.match);
     this.schedule(gameId, roomId, res.value.match);
-    return { ok: true };
+    return { ok: true, profile: loadProfile(this.db, uid) };
   }
 
   act(uid: string, gameId: string, roomId: string, nonce: string, action: unknown): DealerResult {
@@ -109,7 +123,7 @@ export class LiarsDiceDealer {
 
     this.broadcast(gameId, roomId, res.value.match);
     this.schedule(gameId, roomId, res.value.match);
-    return { ok: true };
+    return { ok: true, profile: loadProfile(this.db, uid) };
   }
 
   // ── publishing ──────────────────────────────────────────────────────────────────────────────
