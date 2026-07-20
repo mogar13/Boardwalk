@@ -5,6 +5,7 @@ import { httpProfileRepo } from '@/system/repo/api/profileRepo';
 import { apiChatRepo } from '@/system/repo/api/chatRepo';
 import { httpTicketRepo } from '@/system/repo/api/ticketRepo';
 import { apiRoomRepo } from '@/system/repo/api/roomRepo';
+import { apiLiarsDiceRepo } from '@/system/repo/api/liarsDiceRepo';
 import { createRoomSocket } from '@/system/repo/api/socket';
 import type { ApiClientConfig } from '@/system/repo/api/client';
 import type {
@@ -12,6 +13,7 @@ import type {
   ChatRepo,
   EconomyRepo,
   LeaderboardRepo,
+  LiarsDiceRepo,
   ProfileRepo,
   RoomRepo,
   TicketRepo,
@@ -52,9 +54,13 @@ export function apiRepos(cfg: ApiClientConfig): ApiRepos {
  * lifecycle, where the HTTP repos are stateless. The composition root creates this only when the
  * WS-rooms cutover flag is on; until then room/chat stay on Firebase RTDB.
  */
-export function apiRoomChat(cfg: ApiClientConfig): { room: RoomRepo; chat: ChatRepo } {
+export function apiRoomChat(
+  cfg: ApiClientConfig
+): { room: RoomRepo; chat: ChatRepo; liarsDice: LiarsDiceRepo } {
   const socket = createRoomSocket(cfg);
-  return { room: apiRoomRepo(socket), chat: apiChatRepo(socket) };
+  // The dealt game rides the SAME socket as rooms and chat — it is not a second connection, and it
+  // shares the reconnect and subscription replay the transport already does.
+  return { room: apiRoomRepo(socket), chat: apiChatRepo(socket), liarsDice: apiLiarsDiceRepo(socket) };
 }
 
 export type { ApiClientConfig } from '@/system/repo/api/client';

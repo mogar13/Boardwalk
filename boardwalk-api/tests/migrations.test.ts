@@ -94,10 +94,12 @@ describe('additive column migrations', () => {
     const db = new Database(':memory:');
     db.exec(PRE_P5_PROFILES);
     expect(columnsOf(db, 'profiles')).not.toContain('equipped_felt');
+    expect(columnsOf(db, 'profiles')).not.toContain('equipped_dice');
 
     migrateColumns(db);
 
     expect(columnsOf(db, 'profiles')).toContain('equipped_felt');
+    expect(columnsOf(db, 'profiles')).toContain('equipped_dice');
     expect(columnsOf(db, 'profiles')).toContain('equipped_frame');
     // The columns it already had are untouched — a migration that rebuilt the table would be a
     // migration that could lose rows.

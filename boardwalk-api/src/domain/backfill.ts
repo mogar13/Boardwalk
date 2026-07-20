@@ -93,13 +93,15 @@ function readInventory(wire: unknown): Record<string, true> {
 
 function readEquipped(wire: unknown): Equipped {
   const e = asRecord(wire);
-  const out: { cardback?: string; title?: string; felt?: string; frame?: string } = {};
+  const out: { cardback?: string; title?: string; felt?: string; frame?: string; dice?: string } = {};
   if (typeof e.cardback === 'string' && e.cardback !== '') out.cardback = e.cardback;
   if (typeof e.title === 'string' && e.title !== '') out.title = e.title;
   // P5's kinds. A backfill that reads three of four equipped slots is a backfill that quietly
   // strips the fourth off every migrated account — a silent data loss no balance total would show.
   if (typeof e.felt === 'string' && e.felt !== '') out.felt = e.felt;
   if (typeof e.frame === 'string' && e.frame !== '') out.frame = e.frame;
+  // Phase E's kind, and the same warning one slot along.
+  if (typeof e.dice === 'string' && e.dice !== '') out.dice = e.dice;
   return out;
 }
 
@@ -241,10 +243,10 @@ export function backfillProfile(
     // after, which is how a backfilled player is refused a second signup stake on next sign-in.
     db.prepare(
       `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak,
-                             equipped_cardback, equipped_title, equipped_felt, equipped_frame,
+                             equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice,
                              updated_at)
        VALUES (@uid, @name, @avatar, @xp, @lastClaimDay, @streak, @cardback, @title,
-               @felt, @frame, @now)
+               @felt, @frame, @dice, @now)
        ON CONFLICT(uid) DO UPDATE SET
          name = excluded.name,
          avatar = excluded.avatar,
@@ -255,6 +257,7 @@ export function backfillProfile(
          equipped_title = excluded.equipped_title,
          equipped_felt = excluded.equipped_felt,
          equipped_frame = excluded.equipped_frame,
+         equipped_dice = excluded.equipped_dice,
          updated_at = excluded.updated_at`
     ).run({
       uid,
@@ -267,6 +270,7 @@ export function backfillProfile(
       title: source.equipped.title ?? null,
       felt: source.equipped.felt ?? null,
       frame: source.equipped.frame ?? null,
+      dice: source.equipped.dice ?? null,
       now,
     });
 

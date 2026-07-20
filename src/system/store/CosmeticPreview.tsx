@@ -12,6 +12,14 @@
  * version of the bug this repo keeps naming: the wrong thing was spellable and nothing went red.
  * The `never` arm below means the next kind is a type error at exactly the place that must decide
  * how it looks.
+ *
+ * PHASE E FOUND THAT ARM MISSING. The paragraph above has claimed it since P5 and there was no
+ * such arm — the return type was INFERRED, so an unhandled kind quietly widened it to include
+ * `undefined` and rendered nothing at all. Adding `dice` compiled clean, which is how this was
+ * noticed: a comment describing a guard that does not exist is the same defect it warns about,
+ * one level up. The explicit `ReactElement` return type plus the `never` assertion is the guard
+ * the comment was always describing. (It is `ReactElement | null`, not `ReactElement` — the felt
+ * arm legitimately draws nothing for an unresolvable id, and that null is a real answer.)
  */
 import { cardBackSrc } from '@/system/cards/cards';
 import type { Cosmetic } from '@boardwalk/game-logic';
@@ -19,8 +27,10 @@ import { feltSrc } from '@/system/felt/felts';
 import { frameTone } from '@/system/frame/frames';
 import { RARITY_RING } from '@/system/store/rarity';
 import { cx } from '@/ui';
+import { diceSrc } from '@/system/dice/dice';
+import type { ReactElement } from 'react';
 
-export function CosmeticPreview({ item, large = false }: { item: Cosmetic; large?: boolean }) {
+export function CosmeticPreview({ item, large = false }: { item: Cosmetic; large?: boolean }): ReactElement | null {
   switch (item.kind) {
     case 'avatar':
       return (
@@ -90,5 +100,27 @@ export function CosmeticPreview({ item, large = false }: { item: Cosmetic; large
           {item.name}
         </span>
       );
+    case 'dice': {
+      // Three faces, not one — a set reads as a set, and what you buy is the art the table gets.
+      const faces = [2, 4, 6] as const;
+      return (
+        <span className={cx('flex items-center justify-center gap-1', large ? 'h-36' : 'h-24')}>
+          {faces.map((pips) => (
+            <img
+              key={pips}
+              src={diceSrc(item.id, pips)}
+              alt=""
+              className={cx('drop-shadow', large ? 'size-12' : 'size-8')}
+            />
+          ))}
+        </span>
+      );
+    }
+    default: {
+      // The arm the docblock has always promised. A new `CosmeticKind` lands here as a type error
+      // rather than rendering nothing.
+      const unhandled: never = item.kind;
+      throw new Error(`CosmeticPreview: unhandled kind ${String(unhandled)}`);
+    }
   }
 }

@@ -41,7 +41,7 @@ import type { Profile } from '../profile/types';
  * `felt` and `frame` in P5. There is no `dice` and no `chip` — see the header for why absence is
  * the correct state for a kind whose art exists but whose reader does not.
  */
-export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame';
+export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame' | 'dice';
 
 /** Scarcity tier. Pure status — drives store styling and (P4) pack odds, never gameplay. */
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -230,6 +230,19 @@ export const CATALOG: readonly Cosmetic[] = [
   { id: 'ft_blue', name: 'Midnight Table', kind: 'felt', rarity: 'rare', priceCents: 250_000 },
   { id: 'ft_red', name: 'Crimson Table', kind: 'felt', rarity: 'epic', priceCents: 900_000 },
 
+  // ── Dice (Phase E: the set Liar's Dice rolls, read by `useEquippedDice`) ──────────────────────
+  //
+  // THE KIND THIS FILE WITHHELD SINCE P2, arriving with its reader in the same commit. The header
+  // above used to name `dice` as art with no consumer and refuse to stage it; that refusal was
+  // right, and it ends the moment a dice game exists to draw them. `dc_ivory` is a FREE STARTER
+  // rather than a purchase, unlike the felts: there is no such thing as not drawing a die you are
+  // holding, so an unequipped player still needs a face. That makes this kind structurally a card
+  // back and not a felt.
+  { id: 'dc_ivory', name: 'Ivory Dice', kind: 'dice', rarity: 'common', priceCents: 0 },
+  { id: 'dc_bone', name: 'Bone Dice', kind: 'dice', rarity: 'common', priceCents: 40_000 },
+  { id: 'dc_crimson', name: 'Crimson Dice', kind: 'dice', rarity: 'rare', priceCents: 250_000 },
+  { id: 'dc_ember', name: 'Ember Dice', kind: 'dice', rarity: 'epic', priceCents: 900_000 },
+
   // ── Frames (P5: the ring around your avatar) ─────────────────────────────────────────────────
   // NO ART AND NO NEW COLOUR. A frame is a ring drawn in a theme token, and the tokens it draws
   // from are the RARITY ladder P2 already cleared against the glow budget (blue=act, cyan=here,
@@ -280,6 +293,8 @@ export function isEquipped(profile: Profile, item: Cosmetic): boolean {
       return profile.equipped.felt === item.id;
     case 'frame':
       return profile.equipped.frame === item.id;
+    case 'dice':
+      return profile.equipped.dice === item.id;
   }
 }
 
@@ -340,6 +355,8 @@ export function applyEquip(profile: Profile, item: Cosmetic): Profile {
       return { ...profile, equipped: { ...profile.equipped, felt: item.id } };
     case 'frame':
       return { ...profile, equipped: { ...profile.equipped, frame: item.id } };
+    case 'dice':
+      return { ...profile, equipped: { ...profile.equipped, dice: item.id } };
   }
 }
 

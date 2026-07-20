@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   equipped_title        TEXT,
   equipped_felt         TEXT,
   equipped_frame        TEXT,
+  equipped_dice         TEXT,
   updated_at            INTEGER NOT NULL
   -- no bankroll column, on purpose. See the header.
 );
@@ -311,6 +312,8 @@ export const COLUMN_MIGRATIONS: readonly {
   // every database the test suite makes and none of the ones in production.
   { table: 'profiles', column: 'equipped_felt', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_felt TEXT' },
   { table: 'profiles', column: 'equipped_frame', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_frame TEXT' },
+  // PHASE E. The fifth equipped slot, and the third time this note has been needed.
+  { table: 'profiles', column: 'equipped_dice', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_dice TEXT' },
   { table: 'mutations', column: 'hand_id', ddl: 'ALTER TABLE mutations ADD COLUMN hand_id INTEGER' },
   { table: 'wagers', column: 'hand_id', ddl: 'ALTER TABLE wagers ADD COLUMN hand_id INTEGER' },
   // PHASE E. Two more columns on tables the Pi already has. The two `liars_dice_*` TABLES need no

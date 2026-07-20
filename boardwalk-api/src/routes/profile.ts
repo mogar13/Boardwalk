@@ -39,6 +39,7 @@ function coerceUpsert(body: unknown): { name: string; avatar: string; equipped: 
   const title = cosmeticId(e.title);
   const felt = cosmeticId(e.felt);
   const frame = cosmeticId(e.frame);
+  const dice = cosmeticId(e.dice);
   return {
     name: text(b.name, 'Player').slice(0, NAME_MAX_LEN),
     avatar: text(b.avatar, '👤').slice(0, AVATAR_MAX_LEN),
@@ -49,6 +50,7 @@ function coerceUpsert(body: unknown): { name: string; avatar: string; equipped: 
       ...(title === undefined ? {} : { title }),
       ...(felt === undefined ? {} : { felt }),
       ...(frame === undefined ? {} : { frame }),
+      ...(dice === undefined ? {} : { dice }),
     },
   };
 }
