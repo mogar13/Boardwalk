@@ -110,8 +110,7 @@ export function disconnectUpdates(
   // which no test here was listening for.)
   const roomPath = ROOM(gameId, roomId);
   if (roomPath in updates)
-    for (const key of Object.keys(updates))
-      if (key.startsWith(`${roomPath}/`)) delete updates[key];
+    for (const key of Object.keys(updates)) if (key.startsWith(`${roomPath}/`)) delete updates[key];
 
   return updates;
 }

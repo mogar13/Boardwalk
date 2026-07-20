@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run lint && npm run guard:filesize",
+    "prebuild": "npm run lint && npm run format:check && npm run guard:filesize",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

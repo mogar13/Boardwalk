@@ -80,8 +80,7 @@ describe('disconnectUpdates — what a crashed tab writes on its way out', () =>
       'hands/chess/ABCD': null,
       'rooms/chess/ABCD': null,
     });
-    for (const key of Object.keys(updates))
-      expect(key.startsWith('rooms/chess/ABCD/')).toBe(false);
+    for (const key of Object.keys(updates)) expect(key.startsWith('rooms/chess/ABCD/')).toBe(false);
     // NOT the seat. Releasing a seat under a room being deleted is the resurrection hazard
     // `teardownPlan` documents — the seat write can land after the delete and re-create a
     // `seats/<i>` leaf under a room with no `meta`, which nothing is then permitted to remove.

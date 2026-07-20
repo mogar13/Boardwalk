@@ -338,15 +338,26 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     await assertSucceeds(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
-        equipped: { cardback: 'cb_red3', title: 'ttl_grandmaster', felt: 'ft_blue', frame: 'fr_ember' },
+        equipped: {
+          cardback: 'cb_red3',
+          title: 'ttl_grandmaster',
+          felt: 'ft_blue',
+          frame: 'fr_ember',
+        },
       })
     );
     // Still partial-friendly: a felt with no frame, and a frame with no felt.
     await assertSucceeds(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { felt: 'ft_green' } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { felt: 'ft_green' },
+      })
     );
     await assertSucceeds(
-      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { frame: 'fr_steel' } })
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { frame: 'fr_steel' },
+      })
     );
   });
 

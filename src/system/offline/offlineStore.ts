@@ -197,7 +197,9 @@ export const useOfflineStore = create<OfflineStore>((set, get) => {
             // re-stamp is sound for: the gate refuses before the mutation's transaction opens, so
             // the old ticket is provably unspent. Everything else — a genuine refusal, an invalid
             // ticket — drops the entry, because retrying it forever would wedge the queue.
-            const stamped = isRetired(result.error) ? restamp(get().state, entry.intent.nonce) : null;
+            const stamped = isRetired(result.error)
+              ? restamp(get().state, entry.intent.nonce)
+              : null;
             if (stamped !== null) {
               put(stamped.state);
               continue;

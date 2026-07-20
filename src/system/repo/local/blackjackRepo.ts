@@ -82,7 +82,6 @@ export interface LocalBlackjackDeps {
   readonly rng?: () => number;
 }
 
-
 /**
  * Unwrap an economy answer to just the profile.
  *

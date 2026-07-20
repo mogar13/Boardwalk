@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { defaultProfile } from '@/system/profile/defaults';
 import { localBlackjackRepo } from '@/system/repo/local/blackjackRepo';
 import type {
-  EconomyOutcome, EconomyRepo, HandView, Profile, ProfileRepo, RepoResult } from '@/system/repo/types';
+  EconomyOutcome,
+  EconomyRepo,
+  HandView,
+  Profile,
+  ProfileRepo,
+  RepoResult,
+} from '@/system/repo/types';
 import {
   freshDeck,
   initialState,

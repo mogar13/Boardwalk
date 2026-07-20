@@ -40,9 +40,7 @@ describe('shouldReloadForStaleBuild', () => {
 
   it('refuses a second reload inside the cooldown — the loop guard', () => {
     expect(shouldReloadForStaleBuild(NOW, String(NOW - 1))).toBe(false);
-    expect(shouldReloadForStaleBuild(NOW, String(NOW - (STALE_BUILD_COOLDOWN_MS - 1)))).toBe(
-      false
-    );
+    expect(shouldReloadForStaleBuild(NOW, String(NOW - (STALE_BUILD_COOLDOWN_MS - 1)))).toBe(false);
   });
 
   it('allows another reload at and past the cooldown boundary', () => {

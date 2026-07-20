@@ -1,6 +1,6 @@
 # Build and deploy The Boardwalk to GitHub Pages.
 #
-# `npm run build` triggers `prebuild` (lint + file-size guard) through npm's
+# `npm run build` triggers `prebuild` (lint + format:check + file-size guard) through npm's
 # lifecycle, so the guards gate the deploy rather than merely existing. `npm test`
 # is a separate step because a test failure and a lint failure should not look the
 # same in the log.
