@@ -6,7 +6,24 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 **Phases 0–6 have shipped. All five launch games are live: Tic-Tac-Toe, Blackjack, Chess, UNO and
 Solitaire.**
-The registry carries five real games and a `React.lazy` component loader (`RegisteredGame` =
+**A sixth game shipped after the launch set: Liar's Dice, and it is the first game the referee
+DEALS for a table.** It was built because someone wanted to play it (the only sanctioned reason —
+see Scope discipline), and it happens to answer both things [ROADMAP item 4](plans/ROADMAP.md) left
+open: the `dice` cosmetic, declared in P2 and withheld for want of a reader, and a BETTING game that
+is not Blackjack. That second one forced the question the roadmap raised and deferred — who holds a
+multiplayer match — and the answer is the gateway, not a client. Every human antes, the last player
+standing takes the pot, and no client names a number at any point: `ldStart`/`ldAction` have no
+field for a die, an outcome or a payout, and `liars-dice` joined `SERVER_DEALT_GAMES` in the same
+commit that taught the referee to deal it, because the cheapest way to defeat a cutover is to leave
+the road it replaced standing. UNO's host-as-dealer was unavailable here for a reason worth stating:
+a host who can see every cup is a player who cannot lose. So the match lives in SQLite
+(`liars_dice_matches`/`liars_dice_players`, authority by MEMBERSHIP rather than ownership — a match
+has no owner), the gateway holds the dice, and the client is a renderer. It needed **two new
+client→server frames and zero new server→client ones**: the projection rides the existing `room`
+broadcast and each cup rides the existing owner-only `private` channel, so the board is thinner than
+UNO's rather than thicker. Design and evidence: [plans/LIARS_DICE.md](plans/LIARS_DICE.md).
+
+The registry carries six real games and a `React.lazy` component loader (`RegisteredGame` =
 `{ manifest, Component }`), the play route mounts a game inside `<GameShell>` + `<Suspense>`, the
 `<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe, Chess, UNO), or a solo
 game renders its board straight into the shell with no room at all (Blackjack, Solitaire). Every
@@ -18,7 +35,8 @@ the same lines of code or they will drift (they did — see the Money section). 
 rules this phase owed — `@boardwalk/no-impure-logic` (a game's `logic/` imports nothing impure) and
 `@boardwalk/no-cross-game-imports` (no game reaches into a sibling) — are live, govern **both**
 games trees, and their guards fire in `tests/lint-rules.test.ts`. **Phase 6 is complete — the launch
-set is done, and there is no game checklist beyond it (see Scope discipline).**
+set is done, and there is no game checklist beyond it (see Scope discipline). Liar's Dice is a sixth
+game, not a sixth item: it exists because it sounded fun.**
 
 **UNO is the hidden-hands proof, and the first (and only) consumer of the private `hands/` channel.**
 Its coverage is the multiplayer-hard half: **private hands** (each player sees only their own cards —
@@ -303,6 +321,18 @@ lint rule that matches nothing reports success.
   as before) — deliberate, because the Pi deploys by hand and this control protects the leaderboard,
   not the bankroll; `/health` reports `tickets: on|off` so the state is readable from the artifact.
   Design and the drive evidence: [plans/done/OFFLINE_HARDENING.md](plans/done/OFFLINE_HARDENING.md).
+- **The second game the referee deals is the first MULTIPLAYER one, and its board does not report a
+  result at all.** ✅ Live in the tree, **not yet deployed** (the Pi goes first, by hand). Liar's Dice
+  antes every human seat inside `ldStart`'s own transaction and pays the pot inside the settling
+  action, so `recordOutcome` has already banked the stat, the XP and the achievements before any
+  client learns the match ended. A board that also called `reportResult` would be claiming a result
+  the server had recorded — `checkSettle` refuses `liars-dice`, so it could not double-count, but it
+  toasted "settled by the dealer, not by a claim" at every player at the end of every match until a
+  browser pass found it. What the client DOES need is the authoritative profile, at the two moments
+  money moves: the DEAL (only the host sends it, but everyone antes) and the SETTLE (which a BOT's
+  challenge can trigger, so no client made a request at all). **Betting needs two humans** — one
+  human's pot is their own ante handed back, and a betting UI that cannot move a chip is worse than
+  none.
 - **`reportResult()` is one call** for bankroll + stats + XP + achievements. ✅ Live —
   `src/system/economy/result.ts` (`applyResult`), tested in `tests/economy.test.ts`. Do not split it
   back apart. v1's split is why `big_win` had no unlock site; it has one now, and a test proves it fires.
@@ -587,7 +617,7 @@ builds the thing it guards.
 | UNO's rules + wire projection are correct | `tests/uno.test.ts` (24) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, and `toPublic` hiding every card behind sentinels |
 | Every UNO card maps to art on disk | `tests/uno-art.test.ts` (4) — all 108 `unoCardSrc` paths resolve in `public/cards/uno/`, the action-kind→filename map (`skip`→`block`, `reverse`→`inverse`, `draw2`→`2plus`), both colourless wilds, and the back |
 | Solitaire's Klondike rules are correct | `tests/solitaire.test.ts` (34) — a 52-card face-down deck, deterministic shuffle (permutation, input untouched), the deal (column sizes 1–7, only the top face up, 24 to stock), `canStackTableau`/`canStackFoundation` (King-on-empty, alternating descending, Ace-on-empty, up-by-suit), `isValidRun`, `liftable` (waste/foundation tops, a tableau run, never the stock, refuses a face-down start), the draw (1 and 3, waste→stock **recycle** re-serves the order and bumps the `recycles` counter the Clean Sheet feat reads, no-op when empty), moves (waste→foundation, a run move that flips the exposed card, King-only-on-empty, illegal no-ops, one-card-to-foundation), `auto`, win detection, `canAutoComplete`/`autoComplete`, a won game frozen but re-dealable, and input immutability |
-| The security rules do what they say | `tests/database-rules.test.ts` (62) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, the P2 `equipped` map (card back + title accepted, a stray `frame`/`avatar` key and a wrong-type/over-long id refused), and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup |
+| The security rules do what they say | `tests/database-rules.test.ts` (65) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, the P2 `equipped` map (card back + title accepted, a stray `frame`/`avatar` key and a wrong-type/over-long id refused), and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup. Phase E added `dice` as the fifth `equipped` key (accepted whole and alone, wrong-type and over-long refused per-key), and moved the STRAY-key example to `chip` — the kind `catalog.ts` still withholds for want of a reader, which is what `dice` used to be |
 | Every leaderboard board ranks the way its name says | `tests/boards.test.ts` (16) — the four boards (wins/richest/level/win-rate), each board's order + tiebreak chain on a hand-built set, the win-rate min-games floor (a 1/1 player filtered off the skill board), `boardById` fallback, and `rankFor` non-mutation |
 | A production build without Firebase config | `vite.config.ts` fails `build`, naming every missing var |
 | `dist/404.html` is a byte-copy of `index.html` (Pages SPA fallback) | `scripts/spa-fallback.mjs` throws on missing/mismatch during `build`; `tests/spa-fallback.test.ts` (4) |
@@ -625,6 +655,12 @@ builds the thing it guards.
 | All four equipped slots survive the server round-trip | `boardwalk-api/tests/api.test.ts` (21) — a `PUT /profile` carrying cardback+title+felt+frame reads back with all four, asserted on a FRESH `GET` and not merely the write's own echo (a write can echo its input while the columns never held it), and un-equipping a felt CLEARS the column rather than leaving the old id |
 | Every game icon a manifest names is on disk | `tests/game-icons.test.ts` (2) — every `manifest.icon` resolves in `public/games/`, and `gameIconSrc` is base-path-aware + undefined-safe |
 | `boardwalk-api/` is linted, typechecked, tested and built in CI | `boardwalk-api/eslint.config.mjs` (flat, type-aware over `tsconfig.test.json` so **src, tests and `vitest.config.ts`** are all in the program — the build config includes only `src`, and the usual cure for the resulting "not in project" noise is to stop linting tests) + `.github/workflows/api.yml` on push **and pull_request**, `paths`-filtered to the package *and the workflow file*, so a change disabling the guard is checked by it |
+| Liar's Dice's rules are correct | `tests/liars-dice.test.ts` (44) — the deal clamped to 2..6 seats (v1's `[5,5,5,5]` literal made a 2- or 3-player match UNWINNABLE), wilds counted once and never twice on a bid of 1s, the **wild-ones conversion** (halve into 1s, double-plus-one out), opening refused on wilds but allowed in palifico where they are not wild, palifico's locked face, spot-on both directions (everyone-else vs the caller alone), elimination + a 2-player match that CAN be won, turn authority, `applyAction` totality + immutability, the projection asserted STRUCTURALLY (`'dice' in view === false` + a `JSON.stringify` scan), the reveal opening every cup and only at a reveal, and the house — never returning an action the reducer would refuse (an illegal bot action is a no-op, and a no-op on a bot's turn stalls the table forever) |
+| The referee deals Liar's Dice, and the money is its own | `boardwalk-api/tests/liarsDice.test.ts` (25) — antes taken through the LEDGER with a wager naming the match, NO betting below two humans (the pot would be your own ante handed back), an unaffordable ante refusing the WHOLE start and writing nothing, the nonce given back on refusal, authority by MEMBERSHIP (another account's match is a refusal, not a read), off-turn and illegal actions refused, the pot paid to the seat the RULES say won with wagers closed by match id, `recordOutcome` once per human, replay safety on both routes, and the boot sweep — a restart voids and REFUNDS every live match, because the room is in memory and the antes are not |
+| A dealt table never sends a cup to anyone but its owner | `boardwalk-api/tests/ldGateway.test.ts` (10, over a REAL socket) — each player sent their own five and `null` for every other seat on every frame, the public state carrying counts and no dice anywhere in the serialised payload, the antes taken and the pot paid with no client naming a number, a non-seated socket and an off-turn action both refused, a bot driven by the REFEREE with its cup written nowhere, and `parseAction` refusing (not coercing) anything that is not one of the three actions, extra hostile fields dropped |
+| `patchState` cannot be called by a stranger who knows a room code | `boardwalk-api/tests/gateway.test.ts` patchState block (2) — a socket holding no seat and not hosting is refused; a seated player and the host (who may hold no seat — UNO's dealer does not) are permitted. The handler's comment claimed this authorisation for two phases while checking only that the room existed |
+| A room survives a remount instead of being collected between two effects | `boardwalk-api/tests/gateway.test.ts` reap block (2) — an `unpresence`/`presence` pair leaves the room alive, and an `unpresence` nobody returns from still collects it. React StrictMode sends a real `unpresence`, so before this NO WS room game could be developed locally: the table died the moment it was created |
+| Every dice set maps to six faces on disk, and the store sells none without art | `tests/dice.test.ts` (10) — all six faces of every registered set resolve in `public/dice/`, each set has six DISTINCT files (a set missing only its 6 looks fine until somebody rolls well), each id maps to its own art, an unknown id falls back to the free STARTER rather than 404ing (a die must always draw — the card-back rule, not the felt's `null`), a known id gets its own art and not the fallback, every catalogue set is registered, exactly one free starter, and no earn-only set with no grant site |
 | Every guard above actually fires | `tests/lint-rules.test.ts` (48 — the two Phase-6 rules proved **twice**, once per games tree, falsified by dropping `packages/game-logic/src/games` from `GAMES_DIRS` and watching exactly the three new cases go red), `tests/file-size-guard.test.ts` (7), `tests/credentials.test.ts` (25), `tests/firebase-config.test.ts` (8) |
 
 | Not yet enforced | Lands in |
