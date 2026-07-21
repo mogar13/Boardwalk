@@ -18,8 +18,14 @@
  * TIERED CHAINS (P3). Most rows now belong to a `chain` (Bronze→Silver→Gold→Platinum of the
  * same idea) so there is always a next tier just out of reach. A chain is still just four rows
  * with escalating thresholds — no new mechanism, the predicate model already carried it. The
- * top tier of the two mastery chains (chess, blackjack) `grants` an EARN-ONLY cosmetic, which
+ * top tier of every per-game MASTERY chain `grants` an EARN-ONLY cosmetic, which
  * is the whole point of P2's `priceCents: null` items: skill buys prestige money cannot.
+ *
+ * PER-GAME MASTERY, ONE CHAIN PER GAME (V1_FEATURE_GAPS #11). P3 shipped two mastery chains
+ * because two games had a stat worth laddering; six games later that read as "chess and blackjack
+ * are the real ones". Every registered game now has one, and the invariant is checked against the
+ * registry in BOTH directions rather than remembered — which is the only version of "add
+ * achievements when you add a game" that survives contact with the next game.
  *
  * FEATS (P3). A handful of achievements are moment-based, not state-based — "won with a natural
  * 21", "cleared Solitaire without recycling". Those cannot be a question about the profile after
@@ -55,10 +61,11 @@ export interface AchievementView {
   /** payout − wager on the result just settled, in cents. The single-bet win magnitude. */
   readonly lastNetCents: number;
   /**
-   * Wins per game, keyed by `manifest.id`, after this result. The per-game mastery chains
-   * (chess, blackjack) read one entry each — a game never played is absent, so a predicate
-   * reads `?? 0`. Kept as data (a map), not the whole `Stats`, so a predicate still cannot
-   * reach a field nobody projected here.
+   * Wins per game, keyed by `manifest.id`, after this result. Every game's mastery chain reads
+   * one entry — a game never played is absent, so a predicate reads `?? 0`. Kept as data (a map),
+   * not the whole `Stats`, so a predicate still cannot reach a field nobody projected here.
+   * The referee builds this from ALL of its `stats` rows, which is why adding a chain for a game
+   * that already records wins is a catalogue change and not a server one.
    */
   readonly winsByGame: Readonly<Record<string, number>>;
 }
@@ -68,6 +75,22 @@ export const TIER_ORDER = ['bronze', 'silver', 'gold', 'platinum'] as const;
 
 /** Bronze→Platinum. Derived from `TIER_ORDER` so the type and the ordered list cannot drift. */
 export type Tier = (typeof TIER_ORDER)[number];
+
+/**
+ * A chain's identity AND its heading, in one object, because they must arrive together.
+ *
+ * The label used to live in a `Record<chainId, string>` beside the shelf with a `?? chain`
+ * fallback. That is a convention, and this file's own rule is that a convention is only real if
+ * something red happens when it breaks: adding a chain and forgetting the map rendered the raw id
+ * ("liars-dice") as a section heading and nothing failed. Pairing them here makes a chain with no
+ * heading unspellable rather than merely discouraged.
+ */
+export interface ChainRef {
+  /** Chain group id — the four siblings share it, and it prefixes their achievement ids. */
+  readonly id: string;
+  /** The shelf's section heading for this chain. */
+  readonly label: string;
+}
 
 export interface Achievement {
   /** Stable id — the key under `profile.achievements`. Never renamed; a rename orphans a badge. */
@@ -84,8 +107,8 @@ export interface Achievement {
    * `satisfiedAchievements` skips any row without a `test`.
    */
   readonly test?: (view: AchievementView) => boolean;
-  /** Chain group id — siblings share it and are ordered by `tier`. Absent on a standalone badge. */
-  readonly chain?: string;
+  /** The chain this rung belongs to, id + heading. Absent on a standalone badge. */
+  readonly chain?: ChainRef;
   /** Tier within the chain. Drives the medal shown; the top tier (`platinum`) may `grant`. */
   readonly tier?: Tier;
   /**
@@ -145,19 +168,27 @@ function fourTiers<T>(
 
 /**
  * A per-game mastery chain over `view.winsByGame[gameId]`, the top tier granting an earn-only
- * cosmetic. Factored because chess and blackjack are the same ladder with a different game id,
+ * cosmetic. Factored because every game's chain is the same ladder with a different game id,
  * name and reward — the shape that most invites a copy-paste divergence.
+ *
+ * THE CHAIN ID *IS* THE GAME ID, deliberately. It used to be a second parameter that happened to
+ * equal the first at both call sites; collapsing them means a chain cannot name one game and count
+ * another's wins, which is the drift a cross-check test would otherwise have to look for. It also
+ * makes "every registered game has a mastery chain" checkable by set equality against the registry
+ * (`tests/achievements.test.ts`), so game #7 cannot ship without one. Existing ids are unchanged —
+ * `chess_bronze` was already `chess` + tier — which matters, because a renamed id orphans a badge
+ * somebody earned.
  */
 function masteryChain(
   gameId: string,
-  chain: string,
   label: string,
   emoji: string,
   grant: string,
   grantName: string
 ): readonly Achievement[] {
+  const chain: ChainRef = { id: gameId, label: `${label} Mastery` };
   return fourTiers(GAME_MASTERY, (threshold, tier, top) => ({
-    id: `${chain}_${tier}`,
+    id: `${chain.id}_${tier}`,
     name: `${label} ${TIER_NUMERAL[tier]}`,
     description: top
       ? `Win ${String(threshold)} games — grants the “${grantName}” title.`
@@ -182,13 +213,13 @@ interface ThresholdRow {
  * level ladders — same structure, different projection and copy.
  */
 function thresholdChain(
-  chain: string,
+  chain: ChainRef,
   emoji: string,
   read: (v: AchievementView) => number,
   rows: Quad<ThresholdRow>
 ): readonly Achievement[] {
   return fourTiers(rows, (row, tier) => ({
-    id: `${chain}_${tier}`,
+    id: `${chain.id}_${tier}`,
     name: row.name,
     description: row.description,
     emoji,
@@ -240,7 +271,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   },
 
   // ── Wins chain: 10 / 50 / 100 / 500 across every game ──────────────────────────────────────────
-  ...thresholdChain('wins', '🏆', (v) => v.totalWins, [
+  ...thresholdChain({ id: 'wins', label: 'Wins' }, '🏆', (v) => v.totalWins, [
     { at: 10, name: 'Winner', description: 'Win 10 games.' },
     { at: 50, name: 'Contender', description: 'Win 50 games.' },
     { at: 100, name: 'Champion', description: 'Win 100 games.' },
@@ -248,7 +279,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   ]),
 
   // ── Level chain: 5 / 10 / 25 / 50 (reads the same `levelFromXp` the meter does) ────────────────
-  ...thresholdChain('level', '⭐', (v) => levelFromXp(v.xp), [
+  ...thresholdChain({ id: 'level', label: 'Level' }, '⭐', (v) => levelFromXp(v.xp), [
     { at: 5, name: 'Apprentice', description: 'Reach level 5.' },
     { at: 10, name: 'Seasoned', description: 'Reach level 10.' },
     { at: 25, name: 'Veteran', description: 'Reach level 25.' },
@@ -256,18 +287,43 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   ]),
 
   // ── Bankroll chain: $10k / $50k / $250k / $1M ──────────────────────────────────────────────────
-  ...thresholdChain('bankroll', '💎', (v) => v.bankrollCents, [
+  ...thresholdChain({ id: 'bankroll', label: 'Bankroll' }, '💎', (v) => v.bankrollCents, [
     { at: 1_000_000, name: 'Comfortable', description: 'Hold a bankroll of $10,000.' },
     { at: 5_000_000, name: 'Deep Pockets', description: 'Hold a bankroll of $50,000.' },
     { at: 25_000_000, name: 'Loaded', description: 'Hold a bankroll of $250,000.' },
     { at: 100_000_000, name: 'Millionaire', description: 'Hold a bankroll of $1,000,000.' },
   ]),
 
-  // ── Chess mastery → grants the earn-only "Grandmaster" title on Platinum ───────────────────────
-  ...masteryChain('chess', 'chess', 'Chess', '♟️', 'ttl_grandmaster', 'Grandmaster'),
+  // ── Per-game mastery: ONE CHAIN PER SHIPPED GAME, each granting an earn-only title ─────────────
+  //
+  // V1_FEATURE_GAPS #11's "per-game achievements", and the reason it is all six games rather than
+  // the two that had them: chess and blackjack got chains in P3 because they were the two games
+  // that existed with a stat worth laddering, and by the time six games shipped that read as
+  // "these two are the real ones". So the rule is now *every game has a mastery chain*, which is
+  // the shape a test can hold — `tests/achievements.test.ts` checks the chain ids against the
+  // registry in BOTH directions, so game #7 cannot ship without one and a chain cannot outlive
+  // the game it counts.
+  //
+  // ONE LADDER FOR ALL SIX (1 / 10 / 50 / 100 — `GAME_MASTERY`), on purpose. v1's difficulty
+  // vocabulary drifted across 22 games because each was free to invent its own; a mastery tier
+  // that means a different thing per game is that mistake in a different costume. Silver is 10
+  // wins everywhere.
+  //
+  // The `winsByGame` keys are `manifest.id`, the same ids the referee writes into `stats` — and
+  // the server builds this view from ALL its stat rows, so these four new chains needed no server
+  // code at all. They do need the Pi redeployed to FIRE, which is the honest cost of a shared
+  // catalogue: until then the badges render locked and unwinnable, which is precisely the
+  // `big_win` defect this file's header is about. Deploy before believing the shelf.
 
-  // ── Blackjack mastery → grants the earn-only "The House" title on Platinum ─────────────────────
-  ...masteryChain('blackjack', 'blackjack', 'Blackjack', '🃏', 'ttl_thehouse', 'The House'),
+  // Chess — the one game with no AI, so 100 wins means 100 human opponents. Hence a LEGENDARY
+  // title where the rest are epic; the rarity is the difficulty, not favouritism.
+  ...masteryChain('chess', 'Chess', '♟️', 'ttl_grandmaster', 'Grandmaster'),
+  ...masteryChain('blackjack', 'Blackjack', '🃏', 'ttl_thehouse', 'The House'),
+  ...masteryChain('tic-tac-toe', 'Tic-Tac-Toe', '⭕', 'ttl_tactician', 'Tactician'),
+  ...masteryChain('uno', 'UNO', '🌈', 'ttl_wildcard', 'Wildcard'),
+  // Klondike's other name is Patience, which is also what winning 100 of them takes.
+  ...masteryChain('solitaire', 'Solitaire', '⏳', 'ttl_patience', 'Patience'),
+  ...masteryChain('liars-dice', "Liar's Dice", '🤥', 'ttl_silvertongue', 'Silver Tongue'),
 
   // ── Feats: moment-based, reported by the game (see the header). One hidden — a surprise. ────────
   {

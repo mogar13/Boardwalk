@@ -22,7 +22,9 @@ import {
   recordedFeats,
   satisfiedAchievements,
   type AchievementView,
+  type ChainRef,
 } from '@boardwalk/game-logic';
+import { registry } from '@/games/registry';
 import { applyResult } from '@boardwalk/game-logic';
 import { cosmeticById, isEarnOnly } from '@boardwalk/game-logic';
 import { defaultProfile } from '@/system/profile/defaults';
@@ -49,6 +51,37 @@ function view(over: Partial<AchievementView> = {}): AchievementView {
 function wonStat(won: number): GameStat {
   return { played: won, won, lost: 0, pushed: 0 };
 }
+
+/**
+ * The chains that ladder a CROSS-GAME total rather than one game's wins. Named explicitly because
+ * everything else in the catalogue is a per-game mastery chain whose id IS a `manifest.id` — which
+ * is what lets the registry cross-check below be a set equality instead of a hand-kept list.
+ */
+const PROGRESSION_CHAINS: readonly string[] = ['wins', 'level', 'bankroll'];
+
+/** Every chain in the catalogue, de-duplicated, in first-appearance order. */
+function chains(): readonly ChainRef[] {
+  const seen: ChainRef[] = [];
+  for (const a of ACHIEVEMENTS) {
+    if (a.chain !== undefined && !seen.some((c) => c.id === a.chain?.id)) seen.push(a.chain);
+  }
+  return seen;
+}
+
+/** The per-game mastery chains — everything that is not a progression chain. Each id is a game id. */
+function masteryChainIds(): readonly string[] {
+  return chains()
+    .map((c) => c.id)
+    .filter((id) => !PROGRESSION_CHAINS.includes(id));
+}
+
+/** The mastery ladder, as tier ids — the thresholds `GAME_MASTERY` sets, asserted from outside. */
+const MASTERY_LADDER: readonly (readonly [number, string])[] = [
+  [1, 'bronze'],
+  [10, 'silver'],
+  [50, 'gold'],
+  [100, 'platinum'],
+];
 
 describe('tiered chains — exact thresholds', () => {
   it('wins chain fires each tier at its boundary and not one win below', () => {
@@ -130,11 +163,53 @@ describe('per-game mastery chains read the right game', () => {
   it('an unplayed game reads as zero wins, not a crash', () => {
     expect(satisfiedAchievements(view({ winsByGame: {} }))).not.toContain('chess_bronze');
   });
+
+  /**
+   * THE ONE THAT MAKES IT A RULE INSTEAD OF A LIST. P3 gave chess and blackjack mastery chains
+   * because they were the two games that existed; four games later that had become an arbitrary
+   * distinction nobody would notice. A set equality against the REAL registry closes it in both
+   * directions at once: ship a seventh game without a chain and this goes red, and delete a game
+   * whose chain outlives it and it goes red too.
+   *
+   * It works only because a mastery chain's id IS the game id it counts (`masteryChain` takes one
+   * argument for both), so there is no second string to keep in step.
+   */
+  it('every registered game has a mastery chain, and every mastery chain is a registered game', () => {
+    const gameIds = registry.map((g) => g.manifest.id);
+    // Guard the guard: an empty registry would make the equality below vacuously true.
+    expect(gameIds.length).toBeGreaterThan(1);
+    expect(new Set(masteryChainIds())).toEqual(new Set(gameIds));
+  });
+
+  it('EVERY mastery chain fires at 1 / 10 / 50 / 100 wins of its own game and not one below', () => {
+    for (const gameId of masteryChainIds()) {
+      for (const [at, tier] of MASTERY_LADDER) {
+        const id = `${gameId}_${tier}`;
+        expect(satisfiedAchievements(view({ winsByGame: { [gameId]: at } })), id).toContain(id);
+        expect(
+          satisfiedAchievements(view({ winsByGame: { [gameId]: at - 1 } })),
+          `${id} fired at ${String(at - 1)} wins`
+        ).not.toContain(id);
+      }
+    }
+  });
+
+  it('no mastery chain is cross-wired — 100 wins of one game earns nothing on another', () => {
+    const all = masteryChainIds();
+    for (const gameId of all) {
+      const ids = satisfiedAchievements(view({ winsByGame: { [gameId]: 100 } }));
+      const foreign = all
+        .filter((other) => other !== gameId)
+        .flatMap((other) => MASTERY_LADDER.map(([, tier]) => `${other}_${tier}`))
+        .filter((id) => ids.includes(id));
+      expect(foreign, `${gameId} wins leaked onto: ${foreign.join(', ')}`).toEqual([]);
+    }
+  });
 });
 
 describe('the earn-only grant (the P2 → P3 link)', () => {
   /** A profile that has already climbed a chain to just below its top tier. */
-  function nearPlatinum(gameId: 'chess' | 'blackjack', wins: number, earned: string[]): Profile {
+  function nearPlatinum(gameId: string, wins: number, earned: string[]): Profile {
     return {
       ...defaultProfile('t'),
       stats: { [gameId]: wonStat(wins) },
@@ -157,6 +232,23 @@ describe('the earn-only grant (the P2 → P3 link)', () => {
     ]);
     const out = applyResult(p, 'blackjack', { outcome: 'win' }, NOW);
     expect(out.profile.inventory.ttl_thehouse).toBe(true);
+  });
+
+  /**
+   * The same path for a chain added in this slice, driven through `applyResult` rather than the
+   * predicate alone. The predicate tests above prove the chain FIRES; this proves the rest of the
+   * pipeline — the diff, the grant, the inventory write — treats a new chain exactly like the two
+   * that shipped in P3, with nothing keyed to a game id anywhere along it.
+   */
+  it('grants the Patience title when a chain added after P3 completes (Solitaire)', () => {
+    const p = nearPlatinum('solitaire', 99, [
+      'solitaire_bronze',
+      'solitaire_silver',
+      'solitaire_gold',
+    ]);
+    const out = applyResult(p, 'solitaire', { outcome: 'win' }, NOW);
+    expect(out.unlocked.map((a) => a.id)).toContain('solitaire_platinum');
+    expect(out.profile.inventory.ttl_patience).toBe(true);
   });
 
   it('does NOT grant before the top tier — 51 chess wins is Gold, not Grandmaster', () => {
@@ -264,22 +356,42 @@ describe('catalogue integrity', () => {
   });
 
   it('every chain has exactly the four tiers in order, and only Platinum grants', () => {
-    const chains = new Set(
-      ACHIEVEMENTS.map((a) => a.chain).filter((c): c is string => c !== undefined)
+    const ids = chains().map((c) => c.id);
+    expect(new Set(ids)).toEqual(
+      new Set([...PROGRESSION_CHAINS, ...registry.map((g) => g.manifest.id)])
     );
-    expect(chains).toEqual(new Set(['wins', 'level', 'bankroll', 'chess', 'blackjack']));
-    for (const chain of chains) {
-      const rungs = ACHIEVEMENTS.filter((a) => a.chain === chain);
-      expect(rungs.map((r) => r.tier)).toEqual(TIER_ORDER);
+    for (const id of ids) {
+      const rungs = ACHIEVEMENTS.filter((a) => a.chain?.id === id);
+      expect(
+        rungs.map((r) => r.tier),
+        id
+      ).toEqual(TIER_ORDER);
       for (const r of rungs) {
-        if (r.grants !== undefined) expect(r.tier).toBe('platinum');
+        if (r.grants !== undefined) expect(r.tier, r.id).toBe('platinum');
       }
     }
   });
 
-  it('exactly the two mastery chains carry a grant', () => {
-    const granting = ACHIEVEMENTS.filter((a) => a.grants !== undefined).map((a) => a.id);
-    expect(granting).toEqual(['chess_platinum', 'blackjack_platinum']);
+  /**
+   * Was "exactly the two mastery chains carry a grant", pinned to a literal pair. That is the
+   * assertion a sixth game quietly outgrows, so it is now the RULE the pair was an instance of:
+   * a grant belongs to a mastery chain's Platinum, one per game, and no two chains hand out the
+   * same title. `ttl_thehouse` on two chains would typecheck, pass the earn-only check, and make
+   * one of the two titles unreachable-by-its-own-chain forever.
+   */
+  it('every mastery chain grants exactly one distinct title, and only mastery chains grant', () => {
+    const granting = ACHIEVEMENTS.filter((a) => a.grants !== undefined);
+    expect(new Set(granting.map((a) => a.chain?.id))).toEqual(new Set(masteryChainIds()));
+    expect(granting).toHaveLength(masteryChainIds().length);
+    const grants = granting.map((a) => a.grants);
+    expect(new Set(grants).size, `duplicate grants: ${grants.join(', ')}`).toBe(grants.length);
+  });
+
+  it('every chain carries a heading, and no two chains share one', () => {
+    const cs = chains();
+    for (const c of cs) expect(c.label.trim(), c.id).not.toBe('');
+    const labels = cs.map((c) => c.label);
+    expect(new Set(labels).size, `duplicate headings: ${labels.join(', ')}`).toBe(labels.length);
   });
 
   it('every non-feat achievement has a test; every feat has none', () => {

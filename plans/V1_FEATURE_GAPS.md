@@ -49,7 +49,7 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 8 | Hub discovery: search, favorites, recently-played, categories | yes | piers only | Build when the catalogue outgrows a screen |
 | 9 | **Live room browser** ("Active Matches") | yes | **SHIPPED (2026-07-21)** — a global `browse` subscription on the existing socket, `<RoomBrowser>` on the hub and in every lobby, plus a public/private choice at create | Done; the stale-room GC it was bundled with turned out to already exist |
 | 10 | Meta/admin: bug report, dev tools, patch notes, bankrupt refill | yes | **refill CLOSED** — a `refill` intent the referee prices, once a day, topping a broke bankroll up to a floor; the rest still absent | Refill done; the others situational |
-| 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | **CLOSED (P1+P3)** — 27 achievements across 5 Bronze→Platinum chains incl. per-game mastery, plus feats; 4 leaderboard boards as tabs | Done |
+| 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | **CLOSED (P1+P3), and widened 2026-07-21** — 43 achievements across 9 Bronze→Platinum chains, **one mastery chain per shipped game** (guarded against the registry), plus feats; 4 leaderboard boards as tabs | Done; the next game brings its own chain, and a test says so |
 
 ---
 
@@ -245,11 +245,18 @@ color` slots):
 - **Card backs** — 22 (blue/red/green sets + HD "Jumbo").
 - **Dice skins**, and a functional **Jumbo/HD deck**.
 
-**Boardwalk today (updated after P2/P4):** the store carries **31 cosmetics** — 12 avatars, 15 card
-backs, 4 titles — over a rarity ladder, with an `equipped` map on the profile and three packs to
-pull from. Card backs read in Blackjack and Solitaire; titles read on the profile card and the
-leaderboard row. The best titles are **earn-only**, unbuyable at any price. Still missing: chat
-colours, felts (P5), dice, decks.
+**Boardwalk today (corrected 2026-07-21 — this line was stale by two phases):** the store carries
+**46 cosmetics** across **six** kinds — 12 avatars, 15 card backs, 8 titles, 3 felts, 4 frames, 4
+dice sets — over a rarity ladder, with an `equipped` map on the profile and three packs to pull
+from. Card backs read in Blackjack and Solitaire; titles on the profile card and the leaderboard
+row; felts under all six boards; frames around every avatar; dice in Liar's Dice. **Six of the
+eight titles are earn-only**, one per game's mastery chain, unbuyable at any price. Still missing:
+chat colours (gated on #7) and decks — neither has a reader, which is the whole rule below.
+
+Two of the three "still missing" kinds this line listed have since arrived, and both arrived the
+way the rule says they must: `felt` in P5 with `useEquippedFelt`, and `dice` in Phase E with a dice
+game to roll them. `dice` is worth remembering as the rule working — it was withheld for four
+phases with abundant art sitting in the trove, and the cost of waiting was zero.
 
 **Recommendation:** Each cosmetic type should ship **with its consumer**, not as a store dump (the
 same "bring the asset with its reader" rule the audio/card registries hold):
@@ -408,14 +415,65 @@ per-game localStorage** for settings persistence.
 Butterfly" first chat message), each paying XP + chips; a **Trophy Room** viewer with locked/unlocked
 cards; and a leaderboard with **three sort tabs** (Bankroll / Level / Wins) + medal ranks.
 
-**Boardwalk today (updated after P1/P3):** **27 achievements** — 4 standalone, 5 Bronze→Platinum
-chains (wins / level / bankroll / chess mastery / blackjack mastery) and 3 feats, one hidden — with
-an `AchievementShelf`, a completion %, and **4 leaderboard boards** as tabs (Wins / Richest / Level /
-Win Rate). `seasoned` and `deep_pockets` were deleted in P3, being redundant with chain tiers.
-Per-game hooks exist: the mastery chains read `winsByGame`, and feats ride a filtered channel. Since
+**Boardwalk today: 43 achievements** — 4 standalone, **9** Bronze→Platinum chains (wins / level /
+bankroll, plus **one mastery chain per shipped game**) and 3 feats, one hidden — with an
+`AchievementShelf`, a completion %, and **4 leaderboard boards** as tabs (Wins / Richest / Level /
+Win Rate). `seasoned` and `deep_pockets` were deleted in P3, being redundant with chain tiers. Since
 Phase D the referee recomputes all of it server-side — a badge is never reported.
 
-**Recommendation:** Incremental, add as content:
+### The per-game half, built 2026-07-21 (sequencing step 6)
+
+The recommendation below asked for "per-game achievements … a natural companion to each new game",
+and P3 had built exactly two: chess and blackjack. That was right when two games had a stat worth
+laddering and wrong by the time six did — nothing marked tic-tac-toe, UNO, Solitaire or Liar's Dice
+as *lesser*, the chains had simply stopped being added, and **nothing anywhere went red about it.**
+That is the failure mode this repo names in its own meta-rule: a convention is only real if
+something red happens when it breaks.
+
+So the fix is not four more rows. It is **turning "add achievements when you add a game" into a
+rule with teeth**:
+
+- **Every registered game has a mastery chain** — 1 / 10 / 50 / 100 wins of that game, the Platinum
+  granting an earn-only title. Six chains, 24 rungs.
+- **A chain's id IS the game id it counts.** `masteryChain` took the two separately and they
+  happened to be equal at both call sites; collapsing them means a chain cannot name one game and
+  count another's wins, and — the point — it lets the invariant be a SET EQUALITY against the real
+  `registry`. Ship a seventh game with no chain and `tests/achievements.test.ts` goes red; delete a
+  game whose chain outlives it and it goes red too. Falsified by deleting the UNO chain.
+- **One ladder for all six**, deliberately. A mastery tier that means 10 wins in one game and 40 in
+  another is #1's difficulty-vocabulary drift wearing a different costume. Silver is 10 wins
+  everywhere.
+- **One distinct title per chain**, guarded. Two chains granting `ttl_thehouse` typechecks, passes
+  the existing "every grant is a real earn-only cosmetic" check, and quietly makes one title
+  unreachable by its own chain forever. Rarity tracks difficulty rather than sentiment: Chess stays
+  **legendary** because it is the one game with no AI driver, so 100 wins means 100 human opponents;
+  the other five can be ground against the house, so they are epic.
+
+**What it cost, and the pattern from steps 2–5 holding a fifth time.** No server code: the referee
+already builds `winsByGame` from *all* of its `stats` rows, so four new chains are a catalogue
+change. No rules change, no migration, no new wire field. The cheap feature is again the one whose
+state already exists — every one of these games has been recording per-game wins since it shipped.
+
+**What it DID cost was a seam this file did not predict.** The shelf kept the chain headings in a
+`Record<chainId, string>` beside the component with a `?? chain` fallback, so four new chains would
+have rendered `liars-dice` as a section heading and passed every test. The label now rides on the
+chain itself (`ChainRef = { id, label }`), which makes a chain with no heading unspellable rather
+than merely discouraged — the same move as collapsing gameId and chain id, one level up.
+
+**The one honest cost, named rather than papered over: this needs the Pi redeployed to FIRE.** The
+catalogue is shared, so the browser renders the new badges the moment the frontend deploys, while
+the referee only grants what *its* copy of `@boardwalk/game-logic` knows. Between those two deploys
+the four new chains are badges you can see and cannot win — which is `big_win`'s defect exactly,
+the one this whole achievement module's header is about. It is temporary where v1's was permanent,
+and it is still the reason the Pi goes first.
+
+**Deliberately NOT done: new feats.** A feat is a moment only the game can see, so each one is a
+report site in game code, and Liar's Dice's would be a *server* change (the referee deals it, and no
+client is in a position to report). Three feats cover blackjack, solitaire and chess; adding more is
+content, not capability, and nobody has asked for a specific one. Per-game *predicates* were the gap
+this row named, and predicates are what shipped.
+
+**Recommendation as it stood:** Incremental, add as content:
 
 - More achievements, including **per-game** ones — the achievement engine already fires on events; it
   just needs game-specific predicates registered (a natural companion to each new game).
@@ -471,7 +529,26 @@ If/when this work is picked up, a sane order that keeps every step with a live c
    `visibility` had to be invented in the same commit, or the browser would have quietly published
    every table anyone had ever shared with a friend.
 6. Cosmetics (#5), hub discovery (#8), social (#7), progression breadth (#11) — as content/product
-   calls, each with its consumer.
+   calls, each with its consumer. **STARTED 2026-07-21 with progression breadth (#11)**, which was
+   the only one of the four with a consumer already standing: six shipped games, four of them with
+   no per-game achievement at all. The other three are still correctly *waiting*, and it is worth
+   writing down why, because "start with step 6" could reasonably have meant any of them:
+
+   - **Cosmetics (#5)** — what remains is chat colours and decks. Chat colours are gated on #7
+     existing at all; a deck has no reader. Both would be `loadout.color`, which is the one mistake
+     this doc is least willing to repeat.
+   - **Hub discovery (#8)** — this doc's own call is "explicitly *not needed at 5 games*", and six
+     is not a different answer. Piers remain the better IA until the catalogue outgrows a
+     screenful. Building it now would be overruling a written decision with nothing new to say.
+   - **Social (#7)** — a product call, not a parity obligation, and the only item here that needs a
+     `database.rules.json` change and a hand-run deploy. It should be *wanted* before it is built.
+
+   The step-2-to-5 pattern held a fifth time (the cheap feature is the one whose state already
+   exists — `winsByGame` had been recording every game's wins all along), and the new thing it
+   taught is about **guards rather than features**: the reason four games silently lacked chains was
+   not that anyone decided against them, it was that "add a chain with each game" was a convention
+   and conventions rot in silence. The chain set is now checked against the registry, so the seventh
+   game's chain is not a thing to remember.
 
 Nothing here is committed work — it's the honest list of what v1 could do that v2 can't, so the drops
 are chosen and the eventual builds have a spec.

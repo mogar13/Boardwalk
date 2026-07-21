@@ -12,11 +12,13 @@
  *   • `felt`     → the table surface under all five boards (`useEquippedFelt` → `feltSrc`) — P5.
  *   • `frame`    → the ring around your avatar in the top bar and profile card
  *                  (`useEquippedFrame` → `frameRingClass`) — P5.
+ *   • `dice`     → the faces Liar's Dice rolls (`useEquippedDice` → `diceSrc`) — Phase E.
  *
- * THE TWO KINDS THAT ARE STILL ABSENT, and why. `dice` and a chip skin both have abundant art in
- * the trove and NO reader — no dice game exists, and chips are betting UI rather than something
- * you equip. They are deliberately not here. Staging art for them "while the union is open" is
- * precisely the `loadout.color` mistake in its most tempting form: the cost looks like one line.
+ * THE KIND THAT IS STILL ABSENT, and why. A chip skin has abundant art in the trove and NO reader:
+ * chips are betting UI rather than something you equip. It is deliberately not here. Staging art
+ * for it "while the union is open" is precisely the `loadout.color` mistake in its most tempting
+ * form — the cost looks like one line. `dice` was the other half of this paragraph for four
+ * phases and left it the way a withheld kind is supposed to: a dice game turned up.
  *
  * WHY OWNING AND EQUIPPING ARE SEPARATE. `inventory` is the set you may equip; `avatar` /
  * `equipped` is the one you did. Collapsing them (equip-on-buy, no inventory) means re-buying to
@@ -38,8 +40,8 @@ import type { Profile } from '../profile/types';
 
 /**
  * The cosmetic families, each with a reader (see the header). `title` and `cardback` landed in P2;
- * `felt` and `frame` in P5. There is no `dice` and no `chip` — see the header for why absence is
- * the correct state for a kind whose art exists but whose reader does not.
+ * `felt` and `frame` in P5, `dice` in Phase E. There is no `chip` — see the header for why absence
+ * is the correct state for a kind whose art exists but whose reader does not.
  */
 export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame' | 'dice';
 
@@ -70,7 +72,7 @@ export interface Cosmetic {
 
 /**
  * The catalogue. Avatars first (as Phase 4 shipped them), then the card backs (P2's flagship
- * reader) climbing the rarity ladder, then the titles — two buyable, two earn-only. The default
+ * reader) climbing the rarity ladder, then the titles — two buyable, six earn-only. The default
  * avatar and the default card back are both free starters, so a fresh account already owns what
  * it is wearing.
  */
@@ -188,9 +190,18 @@ export const CATALOG: readonly Cosmetic[] = [
   },
 
   // ── Titles ───────────────────────────────────────────────────────────────────────────────────
-  // Two buyable (chips buy flair), two EARN-ONLY (skill buys prestige — `priceCents: null`, granted
-  // by an achievement chain in P3, shown locked until then). The earn-only pair is the whole point
+  // Two buyable (chips buy flair), SIX EARN-ONLY (skill buys prestige — `priceCents: null`, granted
+  // by a mastery chain's Platinum, shown locked until then). The earn-only set is the whole point
   // of the split: no amount of chips wears "Grandmaster".
+  //
+  // ONE PER GAME (V1_FEATURE_GAPS #11). P3 shipped two because two games had mastery chains; every
+  // game has one now, so every game has a title behind it. Rarity tracks how hard the chain is,
+  // not sentiment: Chess is LEGENDARY because it is the one game with no AI driver, so 100 wins
+  // means 100 human opponents. The other five can be ground against the house, so they are epic.
+  //
+  // These are unbuyable at any balance server-side (`checkPurchase`) and excluded from every pack
+  // pool by `isPackable`, both already generic over `priceCents: null` — so four new rows cost no
+  // new exclusion anywhere. `tests/packs.test.ts` re-proves it exhaustively over the catalogue.
   { id: 'ttl_regular', name: 'Regular', kind: 'title', rarity: 'common', priceCents: 150_000 },
   {
     id: 'ttl_highroller',
@@ -214,6 +225,38 @@ export const CATALOG: readonly Cosmetic[] = [
     rarity: 'legendary',
     priceCents: null,
     unlock: 'Win 100 games of Chess',
+  },
+  {
+    id: 'ttl_tactician',
+    name: 'Tactician',
+    kind: 'title',
+    rarity: 'epic',
+    priceCents: null,
+    unlock: 'Win 100 games of Tic-Tac-Toe',
+  },
+  {
+    id: 'ttl_wildcard',
+    name: 'Wildcard',
+    kind: 'title',
+    rarity: 'epic',
+    priceCents: null,
+    unlock: 'Win 100 games of UNO',
+  },
+  {
+    id: 'ttl_patience',
+    name: 'Patience',
+    kind: 'title',
+    rarity: 'epic',
+    priceCents: null,
+    unlock: 'Win 100 games of Solitaire',
+  },
+  {
+    id: 'ttl_silvertongue',
+    name: 'Silver Tongue',
+    kind: 'title',
+    rarity: 'epic',
+    priceCents: null,
+    unlock: "Win 100 games of Liar's Dice",
   },
 
   // ── Felts (P5: the table surface, read by all five boards) ───────────────────────────────────
