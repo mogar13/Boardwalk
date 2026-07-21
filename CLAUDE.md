@@ -454,6 +454,26 @@ lint rule that matches nothing reports success.
   `seq`. Ordering is the OS's job now, not each game's.
 - **AI is an occupant kind, not a mode.** ✅ Live — a leaving human's seat can be handed *back* to an
   AI (`releaseSeat(…, 'ai')`) so the table stays alive, v1's best drop-in/drop-out idea.
+- **A rematch is asked for by everyone, and the OS owns the asking.** ✅ Live —
+  `<Rematch restart={…}>` over the pure `rematchTally`/`castVotes`/`haveVoted` in
+  `src/system/room/rematch.ts`. A game renders one component and passes ONE thing (how to start the
+  next round); it never draws a play-again button, never decides who agrees, and never resets the
+  board on its own click. **Every human seat must ask; an AI seat agrees by construction** — a bot
+  never sulks, which is also what stops the handshake becoming a stall, because a player who leaves
+  is handed to a bot and their vote requirement leaves with them. The tally recomputes `needed` from
+  the CURRENT seats every time, so a departed player's ghost vote can never satisfy it, and an
+  all-bot table never agrees (`every` over an empty list is `true` — the trap that would restart an
+  empty room on a loop). `restart` fires on the HOST only, once per round, which is de-duplication
+  rather than privilege: every client sees the same agreed tally at the same `seq`. This is
+  V1_FEATURE_GAPS #4's first shared in-game service, and it replaced three different answers to one
+  question — Tic-Tac-Toe and Chess let ANY seated player wipe the result out from under the winner
+  still reading it, while UNO gave the guests no say at all, only a line telling them to wait for
+  the host. **The votes ride in the game's own state under one reserved key** (`rematch`, beside the
+  `round` every room game already carries), so they go through `patchState` — already seq-ordered,
+  transactional and authorised — and cost **no rules change, no gateway change and no Pi deploy**.
+  A `rematch` node on `RoomSnapshot` was the more obvious design and would have cost all three.
+  Clearing the votes is by construction, not a cleanup step: the next round is a fresh state object
+  from the game's own `initialState`/`toPublic`, which has never heard of `rematch`.
 - **A crashed tab is cleaned up by someone who is not the crashed tab, and one plan decides what.**
   ✅ Live, and **verified in production 2026-07-18** — a real socket carrying a real Firebase token
   through the Funnel, the guest a separate OS process SIGKILL'd, every assertion read off the wire
@@ -717,6 +737,7 @@ builds the thing it guards.
 | The profile the server hands back is the one it stores | `boardwalk-api/tests/profile.test.ts` (9) |
 | A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
+| A rematch needs everyone, and cannot be satisfied by a ghost | `tests/rematch.test.ts` (13) — `castVotes` (idempotent, additive, votes every local seat at once for a hot-seat screen, input untouched), and the tally: only HUMAN seats are asked, one human at a table of bots restarts on a single click, a departed player's stale vote is ignored because `needed` is recomputed from the current seats, and **an all-bot/empty table never agrees** (the `every`-over-an-empty-list trap that would restart a dead room forever). Falsified by dropping the `needed.length > 0` clause and by counting raw vote keys instead of the needed subset — one test each |
 | Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file. Covers P5's `unlock`/`fanfare` by construction (the test walks the registry, so a role added without its file is red) |

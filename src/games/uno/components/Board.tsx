@@ -3,6 +3,7 @@ import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useAudio } from '@/system/audio/useAudio';
+import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
@@ -304,14 +305,10 @@ export function Board() {
         </div>
       )}
 
-      {finished && isHost && (
-        <Button variant="primary" onClick={dealAgain}>
-          Deal again
-        </Button>
-      )}
-      {finished && !isHost && (
-        <p className="text-bw-muted text-sm">Waiting for the host to deal again…</p>
-      )}
+      {/* Every human at the table has to ask for the next deal — the guests used to have no say
+          at all here, only the host's button and a line telling them to wait for it. The dealer is
+          still the host (`dealAgain` no-ops for anyone else); what changed is who gets asked. */}
+      {finished && <Rematch restart={dealAgain} label="Deal again" />}
     </Card>
   );
 }
