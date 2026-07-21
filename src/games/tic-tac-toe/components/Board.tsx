@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Button, Card, cx } from '@/ui';
+import { Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGameOptions } from '@/system/options/useGameOptions';
+import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { aiSeatsToDrive } from '@/system/room/seats';
@@ -149,15 +150,12 @@ export function Board() {
         })}
       </div>
 
-      {outcome.kind !== 'playing' && mySeatIndex >= 0 && (
-        <Button
-          variant="primary"
-          onClick={() => {
-            void patch((s) => initialState((s?.round ?? 0) + 1));
+      {outcome.kind !== 'playing' && (
+        <Rematch
+          restart={(round) => {
+            void patch(() => initialState(round));
           }}
-        >
-          Play again
-        </Button>
+        />
       )}
     </Card>
   );

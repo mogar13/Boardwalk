@@ -3,6 +3,7 @@ import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useAudio } from '@/system/audio/useAudio';
+import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import {
@@ -215,15 +216,12 @@ export function Board() {
         </div>
       )}
 
-      {!playing && mySeatIndex >= 0 && (
-        <Button
-          variant="primary"
-          onClick={() => {
-            void patch((s) => initialChessState((s?.round ?? 0) + 1));
+      {!playing && (
+        <Rematch
+          restart={(round) => {
+            void patch(() => initialChessState(round));
           }}
-        >
-          Play again
-        </Button>
+        />
       )}
     </Card>
   );

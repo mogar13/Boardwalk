@@ -42,7 +42,7 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 1 | **AI difficulty tiers** | 22/31 games | **SHIPPED (2026-07-21)** — a `select` on `manifest.options`, the level read by the game's own pure `chooseAiMove`; Tic-Tac-Toe casual/sharp/perfect, UNO casual/sharp; Chess still has no AI at all | Done for the two AI games; a third brings its own vocabulary |
 | 2 | **Declarative game options / variants / house rules** | most games | **SHIPPED** — `manifest.options` + `<GameOptions>` + `useGameOptions()`, `select` only; Solitaire's draw-1/draw-3 is the caller | Done for `select`; widen only with a caller |
 | 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam (now built) |
-| 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | none as OS services | **Opt-in shared services**, build the one a game needs first |
+| 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | **rematch SHIPPED** — `<Rematch>` + a pure tally in `src/system/room/rematch.ts`, three callers on day one; timers/undo/hint/resign still absent | Rematch done; build the next one when a game needs it |
 | 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **partly shipped (P2)** — `CosmeticKind = 'avatar' \| 'cardback' \| 'title'`, 31 items, each with a reader; chat colours, felts and dice still absent (felts are P5) | Build alongside their consumer — the rule held: card backs shipped *with* `cardBackSrc`, dice still wait for a dice game |
 | 6 | Level **titles** (rank names) | yes | **CLOSED** — `rankForLevel` over a 7-rung ladder, rendered on the profile card, every leaderboard row and the top bar's tooltip | Done |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
@@ -189,10 +189,46 @@ reimplemented them:
 | Move history | ~0 shared | no common pattern |
 | Spectator | ~1 | never a real cross-game feature even in v1 |
 
-**Boardwalk today:** None of these exist as OS services. A game that wanted a turn clock or a rematch
-button would hand-roll it.
+**Boardwalk today: REMATCH SHIPPED (2026-07-21); the rest still absent.** `<Rematch restart={…}>`
+(`src/system/room/Rematch.tsx`) over a pure, unit-tested tally (`src/system/room/rematch.ts`,
+`tests/rematch.test.ts`). A game renders one component and passes one thing — how to start the next
+round — and stops owning the button, the agreement rule and the reset.
 
-**Recommendation:** These are the strongest *consolidation* candidates — the fact that v1 rebuilt
+The survey line above said a game "would hand-roll it," and that was already stale when written:
+three games had, and had arrived at three different answers. Tic-Tac-Toe and Chess let **any** seated
+player reset the board unilaterally — a sore loser could wipe the result out from under the winner
+still reading it — while UNO let only the host deal again and rendered the guests a line telling
+them to wait. That spread is exactly what v1's nine hand-rolled "play again" implementations looked
+like, caught at three rather than nine.
+
+What shipped, and the three decisions worth keeping if it is ever retuned:
+
+- **Every human seat must ask; an AI seat agrees by construction.** A bot never sulks. That is also
+  what keeps a handshake from becoming a stall — a player who leaves mid-game has their seat handed
+  to a bot (`releaseSeat(…, 'ai')`), so their vote requirement leaves with them. The tally
+  recomputes who is asked from the CURRENT seats, so a departed player's stale vote cannot satisfy
+  it, and an all-bot table never agrees (`every` over an empty list is `true` — the trap that would
+  restart an empty room in a loop).
+- **The votes ride in the game's own state, under one reserved key** (`rematch`, beside the `round`
+  counter every room game already carries for the same reason). So a vote is a `patchState` —
+  already seq-ordered, already transactional, already authorised — and the whole feature cost **no
+  `database.rules.json` change, no gateway change and no Pi deploy**. A `rematch` node on
+  `RoomSnapshot` was the more obvious design and would have cost all three manual steps for a fact
+  the room already has a transport for. The votes are a `Record<seatIndex, true>` set, not an array,
+  because RTDB drops null children.
+- **`restart` fires on the host only, once per round** — de-duplication, not privilege: every client
+  sees the same agreed tally at the same `seq`, and all of them writing the next round would be a
+  race the counter would happily serialise into several deals. Clearing the votes needs no code: the
+  next round is a fresh state object from the game's own `initialState`/`toPublic`, which has never
+  heard of `rematch`.
+
+Solo games are deliberately untouched — Blackjack's "Play again" and Solitaire's "New game" have
+nobody to shake hands with, and wrapping a one-player reset in a two-player protocol would be
+ceremony. Liar's Dice has no rematch at all: its match is server-dealt and its money is the
+referee's, so a re-deal is a `ldStart` and not a state patch. That one is a real gap and it is named
+here rather than papered over.
+
+**Recommendation as it stood:** These are the strongest *consolidation* candidates — the fact that v1 rebuilt
 them 4–11 times each is the argument for an OS home. But build **one at a time, when a game needs it**,
 and only lift to `system/` on the second caller (the extract-on-repeat rule). Likely order by value:
 **rematch** (every multiplayer game wants it and it's a room-state handshake the room layer already
@@ -375,7 +411,13 @@ If/when this work is picked up, a sane order that keeps every step with a live c
    The lesson matches step 2's — the cheap features here are the ones whose machinery already
    exists. What it *did* cost was a real bug (a tier that made UNO unwinnable for bots), which is
    the argument for guarding a bot by playing games to a WINNER rather than to a legal move.
-4. **Rematch (#4)** as the first shared in-game service.
+4. ~~**Rematch (#4)** as the first shared in-game service.~~ **DONE 2026-07-21.** The pattern held a
+   third time — the cheap feature is the one whose state already exists. A vote is a key in the game
+   state the room already transports, so a service the doc sized as new multiplayer plumbing needed
+   no wire field, no rules deploy and no Pi deploy. The thing that made it worth *consolidating* was
+   not duplication but **divergence**: three games had three different answers, and two of them were
+   wrong in opposite directions (anyone could reset; nobody but the host could). Note what it did
+   NOT cover — Liar's Dice, whose re-deal is the referee's and not a patch.
 5. **Room browser (#9)** once there's an online population to fill tables.
 6. Cosmetics (#5), hub discovery (#8), social (#7), progression breadth (#11) — as content/product
    calls, each with its consumer.
