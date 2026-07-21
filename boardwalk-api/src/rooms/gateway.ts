@@ -34,7 +34,7 @@ import { RoomStore } from './store';
 import { seatsHeldBy } from './seats';
 import type { ClientMsg, ServerMsg } from './protocol';
 import { decodeFrame } from './protocol';
-import type { RoomStatus, SeatOccupant } from './types';
+import type { RoomListing, RoomStatus, RoomVisibility, SeatOccupant } from './types';
 import type { Db } from '../db/db';
 import { LiarsDiceDealer } from './liarsDiceDealer';
 
@@ -46,6 +46,8 @@ interface Conn {
   readonly privates: Set<string>; // 'gameId/roomId/index' → subscribed to a private hand
   readonly chats: Map<string, number>; // roomKey → chat limit
   readonly presence: Set<string>; // roomKey → declared present
+  /** Watching the public open-table index (V1_FEATURE_GAPS #9). One flag — the index is global. */
+  browsing: boolean;
 }
 
 const roomKey = (gameId: string, roomId: string): string => `${gameId}/${roomId}`;
@@ -63,6 +65,11 @@ const asOccupant = (v: unknown): SeatOccupant | null =>
     : null;
 const asStatus = (v: unknown): RoomStatus | null =>
   v === 'waiting' || v === 'playing' || v === 'finished' ? v : null;
+// A missing field means a client that predates the browser, and `'public'` is what it would have
+// meant then. Anything ELSE — a typo, a hostile value — reads as `'private'`, because the failure
+// modes are not symmetric: guessing `public` publishes a table nobody chose to publish.
+const asVisibility = (v: unknown): RoomVisibility =>
+  v === undefined || v === 'public' ? 'public' : 'private';
 
 /**
  * How long a dropped socket keeps its seats before the house takes over. Long enough to ride out a
@@ -168,6 +175,7 @@ export class RoomGateway {
       privates: new Set(),
       chats: new Map(),
       presence: new Set(),
+      browsing: false,
     };
     this.conns.add(conn);
 
@@ -213,7 +221,14 @@ export class RoomGateway {
       case 'hello':
         return; // already authed; a second hello is a no-op
       case 'create':
-        return this.onCreate(conn, msg.id, asStr(msg.gameId), asOccupant(msg.host), msg.seatCount);
+        return this.onCreate(
+          conn,
+          msg.id,
+          asStr(msg.gameId),
+          asOccupant(msg.host),
+          msg.seatCount,
+          asVisibility(msg.visibility)
+        );
       case 'subscribe':
         return this.onSubscribe(conn, asStr(msg.gameId), asStr(msg.roomId));
       case 'unsubscribe':
@@ -235,6 +250,13 @@ export class RoomGateway {
         return this.onSubPrivate(conn, asStr(msg.gameId), asStr(msg.roomId), asIndex(msg.index));
       case 'unsubPrivate':
         conn.privates.delete(privKey(asStr(msg.gameId), asStr(msg.roomId), asIndex(msg.index)));
+        return;
+      case 'browse':
+        conn.browsing = true;
+        this.send(conn, { t: 'open', rooms: this.store.listOpen() });
+        return;
+      case 'unbrowse':
+        conn.browsing = false;
         return;
       case 'presence':
         return this.onPresence(conn, asStr(msg.gameId), asStr(msg.roomId));
@@ -262,12 +284,24 @@ export class RoomGateway {
 
   // ── requests ───────────────────────────────────────────────────────────────────────────────
 
-  private onCreate(conn: Conn, id: number, gameId: string, host: SeatOccupant | null, seatCount: unknown): void {
+  private onCreate(
+    conn: Conn,
+    id: number,
+    gameId: string,
+    host: SeatOccupant | null,
+    seatCount: unknown,
+    visibility: RoomVisibility
+  ): void {
     if (host === null) return this.reply(conn, id, { ok: false, error: 'Bad host.' });
     if (host.uid !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Forbidden.' });
     const count = typeof seatCount === 'number' && Number.isInteger(seatCount) ? seatCount : 0;
-    const res = this.store.create(gameId, host, count);
+    const res = this.store.create(gameId, host, count, visibility);
     this.reply(conn, id, res.ok ? { ok: true, value: res.roomId } : { ok: false, error: res.error });
+    // A fresh table is not listed until somebody is AT it (`listOpen` requires presence), so this
+    // publishes nothing today — the host's `presence` frame, a beat later, is what puts it on the
+    // board. It is here anyway because the alternative is a rule about which mutations may skip
+    // the fan-out, and that rule is exactly how a browser goes stale.
+    this.broadcastOpen();
   }
 
   private onSubscribe(conn: Conn, gameId: string, roomId: string): void {
@@ -288,6 +322,7 @@ export class RoomGateway {
     this.broadcastRoom(gameId, roomId);
     this.broadcastRoomPrivates(gameId, roomId);
     this.notifyDealerOfSeats(gameId, roomId);
+    this.broadcastOpen();
   }
 
   private onReleaseSeat(conn: Conn, id: number, gameId: string, roomId: string, index: number, fallback: 'ai' | 'open'): void {
@@ -301,6 +336,7 @@ export class RoomGateway {
     this.broadcastRoom(gameId, roomId);
     this.broadcastRoomPrivates(gameId, roomId);
     this.notifyDealerOfSeats(gameId, roomId);
+    this.broadcastOpen();
   }
 
   private onSetAi(conn: Conn, id: number, gameId: string, roomId: string, index: number, name: string | null): void {
@@ -309,6 +345,7 @@ export class RoomGateway {
     this.store.setAi(gameId, roomId, index, name);
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
+    this.broadcastOpen();
   }
 
   private onPatchState(conn: Conn, id: number, gameId: string, roomId: string, data: unknown): void {
@@ -339,6 +376,9 @@ export class RoomGateway {
     this.store.setStatus(gameId, roomId, status);
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
+    // A started table leaves the index — the single most important of these fan-outs, because a
+    // listing that outlives the deal sends joiners at a game already in progress.
+    this.broadcastOpen();
   }
 
   private onWritePrivate(conn: Conn, id: number, gameId: string, roomId: string, index: number, data: unknown): void {
@@ -367,6 +407,9 @@ export class RoomGateway {
     // release here is what lets a blipped player keep the seat a bot was about to inherit.
     this.cancelRelease(roomKey(gameId, roomId), conn.uid);
     this.broadcastRoom(gameId, roomId);
+    // Presence is what makes a table LISTABLE (see `listOpen`), so arriving and leaving both move
+    // the index — this is the frame that actually puts a freshly created table on the board.
+    this.broadcastOpen();
   }
 
   private onUnpresence(conn: Conn, gameId: string, roomId: string): void {
@@ -375,6 +418,7 @@ export class RoomGateway {
     const empty = this.store.removePresence(gameId, roomId, conn.uid);
     if (empty) this.scheduleReap(gameId, roomId);
     else this.broadcastRoom(gameId, roomId);
+    this.broadcastOpen();
   }
 
   private onRemove(conn: Conn, id: number, gameId: string, roomId: string): void {
@@ -427,6 +471,23 @@ export class RoomGateway {
   }
 
   // ── fan-out ────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Push the whole open-table index to every browsing socket. Called after ANY mutation that could
+   * change what is joinable — seats, status, presence, creation, collection. Cheap by construction:
+   * the list is capped, only sockets that asked are written to, and a hub with nobody browsing
+   * costs one empty loop.
+   */
+  private broadcastOpen(): void {
+    let rooms: readonly RoomListing[] | null = null;
+    for (const conn of this.conns)
+      if (conn.browsing) {
+        // Computed lazily and once — a server with no browsers must not walk its room map on every
+        // seat click, and a server with fifty must not walk it fifty times.
+        rooms ??= this.store.listOpen();
+        this.send(conn, { t: 'open', rooms });
+      }
+  }
 
   private broadcastRoom(gameId: string, roomId: string): void {
     const key = roomKey(gameId, roomId);
@@ -506,6 +567,7 @@ export class RoomGateway {
     this.cancelRoomReleases(roomKey(gameId, roomId));
     this.store.remove(gameId, roomId);
     this.broadcastRoom(gameId, roomId);
+    this.broadcastOpen();
   }
 
   /** Split a `gameId/roomId` key back apart. `roomId` never contains a slash; `gameId` never does. */
@@ -556,6 +618,7 @@ export class RoomGateway {
       this.broadcastRoom(gameId, roomId);
       this.broadcastRoomPrivates(gameId, roomId);
       this.notifyDealerOfSeats(gameId, roomId);
+      this.broadcastOpen();
     }, this.graceMs);
     timer.unref(); // a pending grace window must never hold the process open
     this.pending.set(pk, timer);
@@ -596,5 +659,6 @@ export class RoomGateway {
       this.broadcastRoomPrivates(gameId, roomId);
       this.notifyDealerOfSeats(gameId, roomId);
     }
+    this.broadcastOpen();
   }
 }

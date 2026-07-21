@@ -47,7 +47,7 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 6 | Level **titles** (rank names) | yes | **CLOSED** — `rankForLevel` over a 7-rung ladder, rendered on the profile card, every leaderboard row and the top bar's tooltip | Done |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
 | 8 | Hub discovery: search, favorites, recently-played, categories | yes | piers only | Build when the catalogue outgrows a screen |
-| 9 | **Live room browser** ("Active Matches") | yes | share-a-code only | Real multiplayer-UX gap; medium lift |
+| 9 | **Live room browser** ("Active Matches") | yes | **SHIPPED (2026-07-21)** — a global `browse` subscription on the existing socket, `<RoomBrowser>` on the hub and in every lobby, plus a public/private choice at create | Done; the stale-room GC it was bundled with turned out to already exist |
 | 10 | Meta/admin: bug report, dev tools, patch notes, bankrupt refill | yes | **refill CLOSED** — a `refill` intent the referee prices, once a day, topping a broke bankroll up to a floor; the rest still absent | Refill done; the others situational |
 | 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | **CLOSED (P1+P3)** — 27 achievements across 5 Bronze→Platinum chains incl. per-game mastery, plus feats; 4 leaderboard boards as tabs | Done |
 
@@ -321,14 +321,57 @@ already covered by the manifest `modes` driving the lobby.
 chips (host name, seat counts) with one-click JOIN → launched pre-joined. Plus a **stale-room GC**
 (30-min idle / 6-hr hard sweeps) and orphan cleanup.
 
-**Boardwalk today:** Multiplayer is **share-a-join-code** only — you can't discover an in-progress
-open table, only be handed its code. (Room lifecycle teardown exists — `lifecycle.ts` — but there's
-the known crash-recovery gap: abrupt tab-close only reaps presence.)
+**Boardwalk today: BUILT (2026-07-21), and the surprise is how little of it was new.** The
+recommendation (kept below) asked for two things — a public open-rooms index and a stale-room GC — and
+only the first needed building: crash recovery had already shipped an empty-room reaper and a
+disconnect grace, so the "mitigates the crash-recovery gap" half of the argument was collected in
+advance. What shipped:
 
-**Recommendation:** This is the most substantive *missing multiplayer UX*, and a real reason casual
-online tables filled in v1. Medium lift: a public "open rooms" index the hub subscribes to, plus the
-stale-room GC (which also mitigates the crash-recovery gap). Worth it once there's an online player
-base to fill tables for; premature before that. Design it against `RoomRepo` so games stay unaware.
+- **A `browse` subscription on the socket that already exists** (`protocol.ts`: two client frames,
+  one server frame), not a poll and not a request. v1's hub polled, and a table list that is a few
+  seconds stale sends people at seats already taken. The server re-sends the whole capped index on
+  any change to seats, status, presence or existence; a diff protocol for a 60-row list is
+  machinery with nothing to buy.
+- **Global on the wire, filtered by the reader.** `useOpenTables(gameId?)` filters at render, so
+  the hub's all-games list and a lobby's one-game list are the same frames — a per-game
+  subscription would have a player at the hub holding five.
+- **`visibility`, chosen at create.** This is the part the survey line did not anticipate and the
+  part most worth keeping. Before the browser, a four-character code was the whole of who could
+  join, so "share the code with a friend" was private by obscurity; an index of every waiting table
+  would have opened all of those to strangers without anyone choosing it. So the host picks
+  Listed/Code-only before the table exists (not after — a table that is briefly public IS public),
+  a private table is ABSENT from the index rather than filtered out of it, and an unrecognised
+  value reads as private, because guessing `public` publishes a table nobody chose to publish while
+  guessing `private` merely hides one.
+- **Presence is what makes a table listable.** v1 listed rooms by existence and swept the wreckage
+  afterwards (30-minute idle and 6-hour hard passes). Here a room with nobody in it is never
+  advertised, which makes the ghost-room class of bug unreachable rather than garbage-collected.
+- **A listing is a poster, not a window** — `OpenTable` carries no uid, no seat roster and no game
+  state. A browsing stranger is not a participant, and the way to keep them from receiving a
+  table's contents is to leave the contents out of the frame.
+- **Joining from the hub is a NAVIGATION** (`/play/<gameId>?table=<code>`), read back by `<Lobby>`,
+  which is OS code and may read the URL. So the play route still hands a game `{ onExit }` and
+  nothing else, a game gets join-by-link for free by rendering `<Lobby>`, and a pasted link and a
+  click in the hub are one code path.
+
+**Not carried, and named rather than papered over:** the RTDB fallback has no browser. That is a
+rules fact, not an effort one — `.read` sits on `rooms/$gameId/$roomId`, so a signed-in player may
+read a table whose code they hold and may NOT enumerate the parent, which is the deliberate posture
+("a stranger cannot enumerate tables") and precisely what an index has to do. Closing it means
+either widening that read for everyone or a second denormalised public index with its own
+`.validate` and its own way to drift, both hand-deployed, for a path that exists to be flipped on
+during a Pi outage. So it answers an empty list, the browser renders nothing, and join-by-code
+still works.
+
+Guards: `boardwalk-api/tests/rooms.test.ts` (28, the exclusions), `gateway.test.ts` (22, over a
+real socket), `tests/socket.test.ts` (10, one shared subscription + replay on reconnect).
+
+**Recommendation as it stood:** This is the most substantive *missing multiplayer UX*, and a real
+reason casual online tables filled in v1. Medium lift: a public "open rooms" index the hub
+subscribes to, plus the stale-room GC (which also mitigates the crash-recovery gap). Worth it once
+there's an online player base to fill tables for; premature before that. Design it against
+`RoomRepo` so games stay unaware. (It was: `RoomRepo.subscribeOpenTables` is the seam, and no game
+was touched.)
 
 ## 10. Meta / admin surfaces
 
@@ -418,7 +461,15 @@ If/when this work is picked up, a sane order that keeps every step with a live c
    not duplication but **divergence**: three games had three different answers, and two of them were
    wrong in opposite directions (anyone could reset; nobody but the host could). Note what it did
    NOT cover — Liar's Dice, whose re-deal is the referee's and not a patch.
-5. **Room browser (#9)** once there's an online population to fill tables.
+5. ~~**Room browser (#9)** once there's an online population to fill tables.~~ **DONE 2026-07-21.**
+   Built before the population rather than after, on the argument the row itself makes: a browser
+   is *how* a population fills tables, and share-a-code means you can only play with people you
+   already know. The pattern from steps 2–4 held a fourth time — the expensive-sounding half (the
+   stale-room GC this was bundled with) already existed, built for crash recovery, and the new
+   half rode a socket and a subscription registry that were both already there. What it did cost
+   was a decision nobody had had to make yet: a code stopped being the whole of who can join, so
+   `visibility` had to be invented in the same commit, or the browser would have quietly published
+   every table anyone had ever shared with a friend.
 6. Cosmetics (#5), hub discovery (#8), social (#7), progression breadth (#11) — as content/product
    calls, each with its consumer.
 

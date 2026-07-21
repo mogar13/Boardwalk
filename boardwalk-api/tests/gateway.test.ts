@@ -48,7 +48,8 @@ class Client {
         this.waiters.delete(msg.id);
         return;
       }
-      if (msg.t === 'room' || msg.t === 'private' || msg.t === 'chat') this.pushes.push(msg);
+      if (msg.t === 'room' || msg.t === 'private' || msg.t === 'chat' || msg.t === 'open')
+        this.pushes.push(msg);
       for (let i = this.onceMatchers.length - 1; i >= 0; i -= 1) {
         const w = this.onceMatchers[i];
         if (w !== undefined && w.pred(msg)) {
@@ -88,6 +89,21 @@ class Client {
   /** Resolve when a matching frame arrives (or the next `ready`/`denied`). */
   waitFor(pred: (m: ServerMsg) => boolean): Promise<ServerMsg> {
     return new Promise((resolve) => this.onceMatchers.push({ pred, resolve }));
+  }
+
+  /**
+   * `waitFor`, but satisfied by a frame that has ALREADY arrived.
+   *
+   * The plain version races: a reply and the push it triggers can land in one TCP read, so both
+   * `message` events run before the `await request(...)` continuation gets to register a matcher,
+   * and the wait then hangs on a frame that came and went. Anything asserting "the push that
+   * follows this request" has to scan the log first.
+   */
+  waitForPush(pred: (m: ServerMsg) => boolean): Promise<ServerMsg> {
+    const seen = this.pushes.filter(pred);
+    const last = seen[seen.length - 1];
+    if (last !== undefined) return Promise.resolve(last);
+    return this.waitFor(pred);
   }
 
   close(): void {
@@ -500,4 +516,107 @@ describe('RoomGateway — over a real socket', () => {
       expect(gateway.store.chatMessages('chess', roomId, 50)).toEqual([]);
     });
   });
+
+  /**
+   * THE ROOM BROWSER (V1_FEATURE_GAPS #9), over the wire. The store test proves WHAT is listable;
+   * this proves the index reaches a socket that asked, changes when the table does, and stops when
+   * it says stop — the three ways a browser goes stale instead of wrong.
+   */
+  describe('the open-table index', () => {
+    /** The rooms in the newest `open` frame this client received. */
+    const latestOpen = (c: Client): readonly { roomId: string; gameId: string }[] => {
+      const frames = c.pushes.filter((m): m is Extract<ServerMsg, { t: 'open' }> => m.t === 'open');
+      return frames[frames.length - 1]?.rooms ?? [];
+    };
+
+    it('pushes the index on browse, and a table appears only once somebody is at it', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'uno', host: { uid: 'ada', name: 'Ada' }, seatCount: 4 });
+      const roomId = okValue(created) as string;
+
+      const bob = await Client.open(url, 'bob');
+      bob.fire({ t: 'browse' });
+      // The immediate answer: the table exists but nobody has declared presence, so it is not
+      // advertised — the ghost-room case, enforced end to end rather than only in the store.
+      const first = (await bob.waitFor((m) => m.t === 'open')) as Extract<ServerMsg, { t: 'open' }>;
+      expect(first.rooms).toEqual([]);
+
+      ada.fire({ t: 'presence', gameId: 'uno', roomId });
+      await bob.waitForPush((m) => m.t === 'open' && m.rooms.length === 1);
+      expect(latestOpen(bob)[0]).toMatchObject({ gameId: 'uno', roomId, hostName: 'Ada', openSeats: 3 });
+      ada.close();
+      bob.close();
+    });
+
+    it('a seat claim and a start both reach a browser without it asking', async () => {
+      const ada = await Client.open(url, 'ada');
+      const created = await ada.request({ t: 'create', gameId: 'uno', host: { uid: 'ada', name: 'Ada' }, seatCount: 4 });
+      const roomId = okValue(created) as string;
+      ada.fire({ t: 'presence', gameId: 'uno', roomId });
+
+      const cara = await Client.open(url, 'cara');
+      cara.fire({ t: 'browse' });
+      await cara.waitForPush((m) => m.t === 'open' && m.rooms.length === 1);
+
+      await cara.request({ t: 'claimSeat', gameId: 'uno', roomId, index: 1, who: { uid: 'cara', name: 'Cara' } });
+      const filled = (await cara.waitForPush(
+        (m) => m.t === 'open' && (m.rooms[0]?.players ?? 0) === 2
+      )) as Extract<ServerMsg, { t: 'open' }>;
+      expect(filled.rooms[0]).toMatchObject({ players: 2, openSeats: 2 });
+
+      // The one that matters most: a started table must leave the index, or the browser sends
+      // joiners at a game already in progress.
+      await ada.request({ t: 'setStatus', gameId: 'uno', roomId, status: 'playing' });
+      await cara.waitForPush((m) => m.t === 'open' && m.rooms.length === 0);
+      expect(latestOpen(cara)).toEqual([]);
+      ada.close();
+      cara.close();
+    });
+
+    it('never lists a private table, and reads an unknown visibility as private', async () => {
+      const ada = await Client.open(url, 'ada');
+      const priv = okValue(
+        await ada.request({ t: 'create', gameId: 'uno', host: { uid: 'ada', name: 'Ada' }, seatCount: 4, visibility: 'private' })
+      ) as string;
+      // A hostile/garbled value must not fall through to `public`: the two failure modes are not
+      // symmetric, and guessing `public` publishes a table nobody chose to publish.
+      const junk = okValue(
+        await ada.request({
+          t: 'create',
+          gameId: 'uno',
+          host: { uid: 'ada', name: 'Ada' },
+          seatCount: 4,
+          visibility: 'PUBLIC' as unknown as 'public',
+        })
+      ) as string;
+      ada.fire({ t: 'presence', gameId: 'uno', roomId: priv });
+      ada.fire({ t: 'presence', gameId: 'uno', roomId: junk });
+
+      const bob = await Client.open(url, 'bob');
+      bob.fire({ t: 'browse' });
+      await bob.waitFor((m) => m.t === 'open');
+      // Give both presence frames time to fan out before asserting an ABSENCE.
+      await sleep(50);
+      expect(latestOpen(bob)).toEqual([]);
+      ada.close();
+      bob.close();
+    });
+
+    it('stops pushing after unbrowse', async () => {
+      const ada = await Client.open(url, 'ada');
+      const bob = await Client.open(url, 'bob');
+      bob.fire({ t: 'browse' });
+      await bob.waitFor((m) => m.t === 'open');
+      bob.fire({ t: 'unbrowse' });
+
+      const before = bob.pushes.filter((m) => m.t === 'open').length;
+      const created = await ada.request({ t: 'create', gameId: 'uno', host: { uid: 'ada', name: 'Ada' }, seatCount: 4 });
+      ada.fire({ t: 'presence', gameId: 'uno', roomId: okValue(created) as string });
+      await sleep(50);
+      expect(bob.pushes.filter((m) => m.t === 'open').length).toBe(before);
+      ada.close();
+      bob.close();
+    });
+  });
+
 });

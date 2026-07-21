@@ -15,13 +15,30 @@
  */
 
 import { claimSeat as claimSeatPure, emptyTable, releaseSeat as releaseSeatPure } from './seats';
-import type { ChatMessage, RoomSnapshot, RoomStatus, Seat, SeatOccupant } from './types';
+import type {
+  ChatMessage,
+  RoomListing,
+  RoomSnapshot,
+  RoomStatus,
+  RoomVisibility,
+  Seat,
+  SeatOccupant,
+} from './types';
 
 /** The full record the server holds — the public snapshot plus the hidden and transient parts. */
 interface RoomRecord {
   gameId: string;
   roomId: string;
   host: string;
+  /**
+   * The host's display name, stamped at create. It is a COPY of what `seats[0].name` said at the
+   * time, deliberately: the listing must still name a host whose seat has been handed to a bot
+   * during a disconnect grace window, and reading the name back out of the seat array would make
+   * a table's label flicker to "CPU" on every blip.
+   */
+  hostName: string;
+  /** Public tables appear in the browser; private ones are reachable only by their code. */
+  visibility: RoomVisibility;
   status: RoomStatus;
   createdAt: number;
   seq: number;
@@ -42,6 +59,12 @@ export type ClaimOutcome =
 
 /** Keep chat bounded — a room is ephemeral, and nobody scrolls a thousand messages back. */
 const CHAT_CAP = 200;
+/**
+ * Bound the public index. The browser is a discovery surface, not a directory: past a screenful
+ * nobody reads further, and an unbounded list is a frame whose size a stranger's room-creation
+ * loop gets to choose.
+ */
+const LISTING_CAP = 60;
 /** The unambiguous code alphabet — no O/0, I/1 — because a join code gets dictated aloud. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -105,11 +128,17 @@ export class RoomStore {
    * Create a room, seat the host at index 0, mint a unique code. Fails only if the server cannot
    * find a free code in a handful of tries (contention the lobby renders), or the host cannot be
    * seated (a non-positive seat count) — both returned as values, never thrown.
+   *
+   * `visibility` defaults to `'public'` for wire tolerance, not as a preference: a client that
+   * predates the browser sends no such field, and the honest reading of a table created before
+   * anyone could choose is the behaviour v1 had — listed. The frontend repo makes it a REQUIRED
+   * argument, so nothing in this app creates a table without a decision.
    */
   create(
     gameId: string,
     host: SeatOccupant,
-    seatCount: number
+    seatCount: number,
+    visibility: RoomVisibility = 'public'
   ): { ok: true; roomId: string } | { ok: false; error: string } {
     const claimed = claimSeatPure(emptyTable(seatCount), 0, host);
     if (!claimed.ok) return { ok: false, error: 'Could not seat the host.' };
@@ -121,6 +150,8 @@ export class RoomStore {
         gameId,
         roomId,
         host: host.uid,
+        hostName: host.name,
+        visibility,
         status: 'waiting',
         createdAt: this.now(),
         seq: 0,
@@ -133,6 +164,44 @@ export class RoomStore {
       return { ok: true, roomId };
     }
     return { ok: false, error: 'The tables are busy — try again.' };
+  }
+
+  /**
+   * THE PUBLIC INDEX (V1_FEATURE_GAPS #9) — every table a stranger could walk up to and join.
+   *
+   * Four conditions, and each one is a table you would otherwise show somebody they cannot sit at:
+   *   • `waiting` — a game in progress has no room for a newcomer, and joining one is not a thing
+   *     this OS supports (there is no spectator; see the same doc).
+   *   • `public` — the host chose to be listed. See `RoomVisibility`.
+   *   • a claimable chair — `open` or `ai`; a full human table is a table you can only watch.
+   *   • somebody actually PRESENT. A room whose last player closed the tab lives on for
+   *     `EMPTY_ROOM_GRACE_MS` before the reaper takes it, and advertising a table nobody is at is
+   *     the "ghost room" v1's hub was full of — its scanner listed rooms by existence, and its
+   *     stale-room GC was the (partial) apology for that. Here the liveness test is presence, so
+   *     a ghost is never listed in the first place rather than swept up later.
+   *
+   * Newest first, so a table someone just opened is the first one seen; `roomId` breaks ties, which
+   * keeps the frame byte-stable between two calls that changed nothing.
+   */
+  listOpen(): RoomListing[] {
+    const out: RoomListing[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.status !== 'waiting' || room.visibility !== 'public') continue;
+      if (room.presence.size === 0) continue;
+      const openSeats = room.seats.filter((s) => s.kind === 'open' || s.kind === 'ai').length;
+      if (openSeats === 0) continue;
+      out.push({
+        gameId: room.gameId,
+        roomId: room.roomId,
+        hostName: room.hostName,
+        players: room.seats.filter((s) => s.kind === 'human').length,
+        openSeats,
+        seatCount: room.seats.length,
+        createdAt: room.createdAt,
+      });
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt || a.roomId.localeCompare(b.roomId));
+    return out.slice(0, LISTING_CAP);
   }
 
   /** The public projection a subscriber receives — never a private hand. `null` if the room is gone. */

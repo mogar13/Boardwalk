@@ -92,6 +92,37 @@ export interface RoomMeta {
  * never RECEIVES it — folding it into this snapshot would send every hand to every client and
  * make the privacy a UI trick instead of a data-layout (and now rule-enforced) guarantee.
  */
+/**
+ * Whether a table is listed in the public browser, chosen by the host at create
+ * (V1_FEATURE_GAPS #9). The mirror of the server's `RoomVisibility`.
+ *
+ * It exists so the browser is not a silent change of meaning: before it, a four-character code was
+ * the whole of who could join, so "share the code with a friend" was private by obscurity. An index
+ * of every waiting table would have opened all of those to strangers without anyone choosing it.
+ */
+export type RoomVisibility = 'public' | 'private';
+
+/**
+ * ONE ROW OF THE PUBLIC "ACTIVE TABLES" INDEX — the poster, not the window.
+ *
+ * The smallest answer that lets somebody decide to sit down: which game, which code, whose table,
+ * how full. NO uids, NO seat roster, NO game state, NO chat — a browsing stranger is not a
+ * participant, and the way to keep them from receiving a table's contents is to never put the
+ * contents in the frame (the same reasoning as the private hand channel, one level out).
+ */
+export interface OpenTable {
+  readonly gameId: string;
+  /** The join code — this IS the room id, and handing it out is the point of a public table. */
+  readonly roomId: string;
+  readonly hostName: string;
+  /** Humans currently seated. */
+  readonly players: number;
+  /** Chairs a joiner may take — `open` or `ai`, since a person displaces the house. */
+  readonly openSeats: number;
+  readonly seatCount: number;
+  readonly createdAt: number;
+}
+
 export interface RoomSnapshot<TPublic> {
   readonly meta: RoomMeta;
   readonly seats: readonly Seat[];

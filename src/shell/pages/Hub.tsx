@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '@/ui';
 import { PIERS, gameIconSrc, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
 import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
 import { RefillCard } from '@/system/economy/RefillCard';
+import { RoomBrowser } from '@/system/room/RoomBrowser';
 
 /**
  * The hub — the boardwalk seen from the entrance. It renders the piers in order, and each
@@ -61,6 +62,7 @@ function EmptyPier() {
 }
 
 export function Hub() {
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-12">
       <header className="flex flex-col gap-2">
@@ -79,6 +81,22 @@ export function Hub() {
           unchanged. It sits under the daily claim because when both are showing, the claim is
           the better of the two moves. */}
       <RefillCard />
+
+      {/*
+        ACTIVE TABLES (V1_FEATURE_GAPS #9) — the hub's half of the room browser, and the reason it
+        is a hub surface at all: v1's scanner is what filled casual online tables, because a player
+        who has to be HANDED a code can only play with people they already know. Renders nothing
+        when no table is open, so on a quiet day the hub is exactly what it was.
+
+        Joining is a NAVIGATION, not a room action: the hub sends the player to the game's own
+        route carrying the code, and `<Lobby>` reads it back off the URL. So the hub never touches
+        a room, and a shared link works identically to a click here.
+      */}
+      <RoomBrowser
+        onJoin={(gameId, roomId) => {
+          void navigate(`/play/${gameId}?table=${roomId}`);
+        }}
+      />
 
       {PIERS.map((pier) => {
         const games = gamesOnPier(pier.id);

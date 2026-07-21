@@ -1,6 +1,6 @@
 import type { ApiClientConfig } from '@/system/repo/api/client';
 import type { ChatMessage } from '@/system/chat/types';
-import type { RoomSnapshot } from '@/system/room/types';
+import type { OpenTable, RoomSnapshot } from '@/system/room/types';
 import type { SeatOccupant } from '@/system/repo/types';
 
 /**
@@ -37,7 +37,8 @@ type ServerFrame =
   | { t: 'res'; id: number; ok: false; error: string }
   | { t: 'room'; gameId: string; roomId: string; snapshot: RoomSnapshot<unknown> | null }
   | { t: 'private'; gameId: string; roomId: string; index: number; data: unknown }
-  | { t: 'chat'; gameId: string; roomId: string; messages: readonly ChatMessage[] };
+  | { t: 'chat'; gameId: string; roomId: string; messages: readonly ChatMessage[] }
+  | { t: 'open'; rooms: readonly OpenTable[] };
 
 /** A reply, as the repo layer consumes it — `RepoResult`-shaped. */
 export type Reply = { ok: true; value?: unknown } | { ok: false; error: string };
@@ -72,6 +73,12 @@ interface ChatReg {
   last: readonly ChatMessage[] | undefined;
 }
 
+/** The open-table index has no key — there is exactly one, global. See `protocol.ts`. */
+interface OpenReg {
+  readonly listeners: Set<(tables: readonly OpenTable[]) => void>;
+  last: readonly OpenTable[] | undefined;
+}
+
 const roomKey = (gameId: string, roomId: string): string => `${gameId}/${roomId}`;
 const privKey = (gameId: string, roomId: string, index: number): string =>
   `${gameId}/${roomId}/${String(index)}`;
@@ -101,6 +108,8 @@ export class RoomSocket {
   private readonly chats = new Map<string, ChatReg>();
   /** Refcounted presence — several mounts in one tab share one server-side presence mark. */
   private readonly presence = new Map<string, number>();
+  /** The one open-table subscription, shared by every browser mounted in this tab. */
+  private open: OpenReg | null = null;
 
   /** Frames waiting for a live, handshaken socket. Flushed on `ready`, capped for backpressure. */
   private outbox: string[] = [];
@@ -205,6 +214,14 @@ export class RoomSocket {
         }
         return;
       }
+      case 'open': {
+        const reg = this.open;
+        if (reg !== null) {
+          reg.last = frame.rooms;
+          for (const l of reg.listeners) l(frame.rooms);
+        }
+        return;
+      }
       default:
         return;
     }
@@ -230,6 +247,9 @@ export class RoomSocket {
       const [gameId, roomId] = splitRoomKey(key);
       this.raw({ t: 'presence', gameId, roomId });
     }
+    // The browser is a subscription like any other, so it is replayed like any other — a hub left
+    // open across a reconnect must not sit on a frozen list of tables that have since filled.
+    if (this.open !== null) this.raw({ t: 'browse' });
     this.flushOutbox();
   }
 
@@ -265,6 +285,7 @@ export class RoomSocket {
       this.privates.size > 0 ||
       this.chats.size > 0 ||
       this.presence.size > 0 ||
+      this.open !== null ||
       this.outbox.length > 0
     );
   }
@@ -416,6 +437,33 @@ export class RoomSocket {
       if (r.listeners.size === 0) {
         this.chats.delete(key);
         this.raw({ t: 'chatUnsub', gameId, roomId });
+      }
+    };
+  }
+
+  /**
+   * Subscribe to the public open-table index. Refcounted onto ONE server-side subscription, and a
+   * late subscriber gets the cached list at once — the same immediate-fire contract every other
+   * subscribe here honours, so a hub that mounts a second browser does not blink through empty.
+   */
+  subscribeOpen(listener: (tables: readonly OpenTable[]) => void): Unsubscribe {
+    let reg = this.open;
+    if (reg === null) {
+      reg = { listeners: new Set(), last: undefined };
+      this.open = reg;
+      this.ensureOpen();
+      this.raw({ t: 'browse' });
+    } else if (reg.last !== undefined) {
+      listener(reg.last);
+    }
+    reg.listeners.add(listener);
+    return () => {
+      const r = this.open;
+      if (r === null) return;
+      r.listeners.delete(listener);
+      if (r.listeners.size === 0) {
+        this.open = null;
+        this.raw({ t: 'unbrowse' });
       }
     };
   }

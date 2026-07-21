@@ -223,12 +223,38 @@ export const firebaseRoomRepo: RoomRepo = {
         updates[`${ROOM(gameId, roomId)}/seats/${String(i)}`] =
           s.uid !== null ? { kind: s.kind, name: s.name, uid: s.uid } : { kind: s.kind };
       });
+      // `init.visibility` is deliberately DROPPED, not stored. Nothing on this path reads it —
+      // `subscribeOpenTables` below is an empty list by construction — and `meta` carries
+      // `$other: false` in the rules, so writing an unknown field would have the create refused
+      // outright. A field with no reader and a rules deploy in front of it is not worth having.
       // No `state` (game not started) and no `presence` — trackPresence is the single writer of
       // presence, armed when the hook mounts, so it also gets the onDisconnect cleanup.
       await update(ref(db), updates);
       return { ok: true, value: roomId };
     }
     return { ok: false, error: 'The tables are busy — try again.' };
+  },
+
+  /**
+   * THE ROOM BROWSER IS NOT AVAILABLE ON THIS PATH, and the degradation is named rather than
+   * papered over — the same way the RTDB fallback's missing disconnect grace is.
+   *
+   * It is a RULES fact, not an effort one. `database.rules.json` puts `.read` on
+   * `rooms/$gameId/$roomId`, one node deep, so a signed-in player may read a table they have the
+   * code for and may NOT enumerate the parent — which is the deliberate posture ("a stranger
+   * cannot enumerate tables"), and exactly what an index has to do. Listing here would mean either
+   * a rules change that widens that read to every room for everyone, or a second, denormalised
+   * public index node with its own `.validate` and its own way to drift from the rooms it
+   * describes — both hand-deployed, for a fallback that exists to be flipped on during a Pi
+   * outage. So: an empty list, immediately, forever. The browser renders nothing and the
+   * join-by-code form beside it — which is all this path ever had — still works.
+   */
+  subscribeOpenTables(listener): Unsubscribe {
+    listener([]);
+    return () => {
+      // Nothing was ever subscribed, so there is nothing to tear down. Returning a no-op keeps the
+      // caller's `useEffect` cleanup identical on both paths.
+    };
   },
 
   subscribe<TPublic>(

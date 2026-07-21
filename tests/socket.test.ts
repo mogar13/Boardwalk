@@ -151,6 +151,42 @@ describe('RoomSocket — subscriptions', () => {
     expect(ws.types()).toContain('unsubscribe');
   });
 
+  it('shares one open-table subscription and replays the cached index to a late browser', async () => {
+    socket = createRoomSocket(cfg);
+    const seenA: unknown[] = [];
+    const offA = socket.subscribeOpen((t) => seenA.push(t));
+    const ws = await handshake();
+    expect(ws.types()).toContain('browse');
+    // The queued-then-replayed pair the handshake produces for every subscription; count from here.
+    const browsesAfterHandshake = ws.types().filter((t) => t === 'browse').length;
+
+    const tables = [
+      {
+        gameId: 'uno',
+        roomId: 'ABCD',
+        hostName: 'Ada',
+        players: 1,
+        openSeats: 3,
+        seatCount: 4,
+        createdAt: 1,
+      },
+    ];
+    ws._msg({ t: 'open', rooms: tables });
+    expect(seenA).toEqual([tables]);
+
+    // A second browser (the hub and a lobby, both mounted) rides the SAME server subscription and
+    // gets the cached list at once rather than blinking through empty.
+    const seenB: unknown[] = [];
+    const offB = socket.subscribeOpen((t) => seenB.push(t));
+    expect(seenB).toEqual([tables]);
+    expect(ws.types().filter((t) => t === 'browse')).toHaveLength(browsesAfterHandshake);
+
+    offA();
+    expect(ws.types()).not.toContain('unbrowse');
+    offB();
+    expect(ws.types()).toContain('unbrowse');
+  });
+
   it('caches the latest state so patchState can read prev', async () => {
     socket = createRoomSocket(cfg);
     socket.subscribeRoom('chess', 'ABCD', () => undefined);
@@ -178,9 +214,10 @@ describe('RoomSocket — reconnect', () => {
     socket.subscribePrivate('chess', 'ABCD', 1, () => undefined);
     socket.subscribeChat('chess', 'ABCD', () => undefined, 20);
     socket.trackPresence('chess', 'ABCD');
+    socket.subscribeOpen(() => undefined);
     const first = await handshake();
     expect(first.types()).toEqual(
-      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence'])
+      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence', 'browse'])
     );
 
     // The link drops. A backoff timer is armed; advancing it opens a brand-new socket.
@@ -195,9 +232,33 @@ describe('RoomSocket — reconnect', () => {
     await tick();
     second._msg({ t: 'ready' });
     // Every subscription the client was holding is re-established on the new connection.
+    // The browser is replayed like every other subscription — a hub left open across a reconnect
+    // must not sit on a frozen list of tables that have since filled.
     expect(second.types()).toEqual(
-      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence'])
+      expect.arrayContaining(['hello', 'subscribe', 'subPrivate', 'chatSub', 'presence', 'browse'])
     );
+  });
+
+  it('stays connected for a browser alone, and stops once it leaves', async () => {
+    socket = createRoomSocket(cfg);
+    const off = socket.subscribeOpen(() => undefined);
+    const ws = await handshake();
+    // A hub with no room open still has work: the index is the only thing it is watching.
+    ws.close();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(1);
+    // Bring the fresh socket up, then close the browser: with nothing left to watch, a drop must
+    // not spin the backoff forever.
+    const before = FakeWebSocket.instances.length;
+    const second = FakeWebSocket.instances[before - 1];
+    if (second === undefined) throw new Error('no reconnect socket');
+    second._open();
+    await tick();
+    second._msg({ t: 'ready' });
+    off();
+    second.close();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(before);
   });
 
   it('does not reconnect once nothing is subscribed', async () => {
