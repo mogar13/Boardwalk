@@ -3,7 +3,7 @@ import { Button, Card, Input, Modal } from '@/ui';
 import { useAuth, useIsAdmin } from '@/system/auth/useAuth';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
 import { useProfileEditor } from '@/system/profile/useProfileEditor';
-import { xpProgress } from '@boardwalk/game-logic';
+import { nextRankAfterLevel, rankForLevel, xpProgress } from '@boardwalk/game-logic';
 import { equippedTitle } from '@boardwalk/game-logic';
 import { Avatar } from '@/system/profile/Avatar';
 import { useEquippedFrame } from '@/system/frame/useEquippedFrame';
@@ -35,6 +35,10 @@ export function ProfileCard() {
 
   const { level, into, needed, pct } = xpProgress(profile.xp);
   const title = equippedTitle(profile);
+  // The rank is what the level MEANS, and it is derived from the same `level` the meter draws —
+  // one `xpProgress` call feeds the badge, the bar and the name, so none of the three can disagree.
+  const rank = rankForLevel(level);
+  const nextRank = nextRankAfterLevel(level);
 
   const openEditor = () => {
     setDraft(profile.name);
@@ -68,6 +72,13 @@ export function ProfileCard() {
               </div>
               <span className="text-bw-muted text-xs">
                 Level {level}
+                {/* The RANK — what the level is called. Not a colour of its own: it reads in the
+                  muted body tone, because it is a description of the number beside it rather than
+                  a third status signal. A rank is NOT the equipped title below — one is reached,
+                  the other is bought or earned — and they sit next to each other precisely so a
+                  reader can tell which is which. */}
+                {' · '}
+                <span className="text-base-content font-semibold">{rank.name}</span>
                 {/* The equipped title — the reader that keeps a `title` cosmetic from being
                   loadout.color. Cyan (= here / you), never gold, so it reads as identity, not
                   money. Absent when nothing is equipped, which is most accounts. */}
@@ -119,12 +130,21 @@ export function ProfileCard() {
         <div className="flex flex-col gap-1.5">
           <div className="text-bw-muted flex items-center justify-between text-xs">
             <span className="font-display font-semibold tracking-[0.2em] uppercase">
-              Level {level}
+              {rank.name}
             </span>
             <span data-money>
               {into.toLocaleString('en-US')} / {needed.toLocaleString('en-US')} XP
             </span>
           </div>
+          {/* What the bar is FOR. A rank with no next rung is a sticker; naming the one being
+            climbed towards is what makes the meter a goal. Absent at Casino Legend, because
+            `nextRankAfterLevel` returns null there and inventing a rung above the last one would
+            be a promise the ladder does not keep. */}
+          {nextRank !== null && (
+            <span className="text-bw-muted text-[0.7rem]">
+              {nextRank.name} at level {nextRank.minLevel}
+            </span>
+          )}
           <div
             className="bg-base-300 border-bw-line inset-shadow-well h-2 w-full overflow-hidden rounded-full border"
             role="progressbar"

@@ -26,6 +26,7 @@ const PATHS: Readonly<Record<EconomyIntent['kind'], string>> = {
   settle: '/settle',
   purchase: '/purchase',
   daily: '/daily',
+  refill: '/refill',
   pack: '/pack',
 };
 

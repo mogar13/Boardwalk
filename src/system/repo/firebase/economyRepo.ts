@@ -15,6 +15,16 @@ import type { EconomyIntent, EconomyOutcome, EconomyRepo, RepoResult } from '@/s
  *
  * Keeping this alive is the same call Phase C made about the Firebase room/chat repos: a cutover
  * you cannot reverse in one rebuild is a cutover you have to be brave about at 2am.
+ *
+ * THE `refill` INTENT IS DEGRADED HERE, AND THE DEGRADATION IS NAMED RATHER THAN HIDDEN. The
+ * bankrupt top-up's once-a-day limit is counted off the referee's LEDGER (`refillsToday` in
+ * `boardwalk-api`), and there is no ledger on this path — so on the fallback the limit is not
+ * enforced, and a player could top up to the floor as often as they go broke. That is not a new
+ * hole: this repo persists whatever arithmetic the client computed for a bet, a payout, a purchase
+ * and a daily claim already, so an unenforced top-up is strictly less than what a devtools console
+ * could do here anyway. What it is NOT is a reason to add a `lastRefillDay` field to the profile:
+ * that would be a second, client-writable copy of a fact the ledger already knows, deployed
+ * through a rules change, to half-enforce a limit against an attacker who owns the writer.
  */
 export const firebaseEconomyRepo: EconomyRepo = {
   async apply(

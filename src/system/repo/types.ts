@@ -209,6 +209,20 @@ export type EconomyIntent =
   /** Claim the daily reward. Carries no timestamp — the server's clock is the only one. */
   | (IntentBase & { readonly kind: 'daily' })
   /**
+   * TOP UP A BANKROLL THAT HAS RUN OUT (V1_FEATURE_GAPS.md #10). Carries a nonce and NOTHING else —
+   * body-for-body identical to `daily`, and for the same two reasons doubled.
+   *
+   * No amount, because the grant is not a number anyone asks for: it is whatever it takes to reach
+   * `REFILL_FLOOR_CENTS` from the balance the LEDGER says you have, which makes "top up twice and
+   * keep the difference" unspellable rather than refused. No timestamp, because the once-a-day
+   * limit is counted off the server's own ledger rows against the server's own clock.
+   *
+   * v1's version of this was a `↺ REFILL` button calling `setMoney(1000)` in the browser. The
+   * difference between that and this is the entire Phase-B thesis in one intent: the button is the
+   * same, the request has nothing in it, and the money is the referee's to move.
+   */
+  | (IntentBase & { readonly kind: 'refill' })
+  /**
    * Open a pack. Names the PACK and nothing else — and the omissions are the design, the same way
    * they are on `purchase` and `daily`.
    *

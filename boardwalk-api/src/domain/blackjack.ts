@@ -46,7 +46,7 @@ import {
 } from '@boardwalk/game-logic/games/blackjack';
 import type { Db } from '../db/db';
 import { checkBet, type Decision } from './economy';
-import { appendLedger, claimNonce, recordOutcome } from './mutations';
+import { appendLedger, claimNonce, recordOutcome, releaseNonce } from './mutations';
 import { balanceOf, loadProfile } from './profile';
 import type { Profile } from './types';
 
@@ -218,20 +218,6 @@ function commitStake(db: Db, uid: string, handId: number, amountCents: number, n
   db.prepare(
     'INSERT INTO wagers (uid, game_id, wager_cents, created_at, settled_at, hand_id) VALUES (?, ?, ?, ?, NULL, ?)'
   ).run(uid, GAME_ID, amountCents, now, handId);
-}
-
-/**
- * Give a nonce back on a refusal.
- *
- * A refused request did nothing, so it must not have consumed anything either — including the
- * client's nonce. Without this, a player who tries to double $5,000 they cannot afford has burned
- * that nonce: their next attempt with it would take the replay branch and find no hand pinned to
- * it, turning an honest "insufficient funds" into a baffling one-off error the client cannot
- * retry out of. Same reasoning as the `return`-commits note above — the rollback has to be written
- * down, because the transaction will not do it for a value return.
- */
-function releaseNonce(db: Db, uid: string, nonce: string): void {
-  db.prepare('DELETE FROM mutations WHERE uid = ? AND nonce = ?').run(uid, nonce);
 }
 
 /* ------------------------------------------------------------------ deal */

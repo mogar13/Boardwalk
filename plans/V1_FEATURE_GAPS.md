@@ -44,11 +44,11 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam (now built) |
 | 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | none as OS services | **Opt-in shared services**, build the one a game needs first |
 | 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **partly shipped (P2)** — `CosmeticKind = 'avatar' \| 'cardback' \| 'title'`, 31 items, each with a reader; chat colours, felts and dice still absent (felts are P5) | Build alongside their consumer — the rule held: card backs shipped *with* `cardBackSrc`, dice still wait for a dice game |
-| 6 | Level **titles** (rank names) | yes | `level` number only | Cheap, pure — good early add |
+| 6 | Level **titles** (rank names) | yes | **CLOSED** — `rankForLevel` over a 7-rung ladder, rendered on the profile card, every leaderboard row and the top bar's tooltip | Done |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
 | 8 | Hub discovery: search, favorites, recently-played, categories | yes | piers only | Build when the catalogue outgrows a screen |
 | 9 | **Live room browser** ("Active Matches") | yes | share-a-code only | Real multiplayer-UX gap; medium lift |
-| 10 | Meta/admin: bug report, dev tools, patch notes, bankrupt refill | yes | none | Situational; refill is the most missed |
+| 10 | Meta/admin: bug report, dev tools, patch notes, bankrupt refill | yes | **refill CLOSED** — a `refill` intent the referee prices, once a day, topping a broke bankroll up to a floor; the rest still absent | Refill done; the others situational |
 | 11 | Progression breadth: more achievements, leaderboard sort tabs | 6 + game-specific / 3 tabs | **CLOSED (P1+P3)** — 27 achievements across 5 Bronze→Platinum chains incl. per-game mastery, plus feats; 4 leaderboard boards as tabs | Done |
 
 ---
@@ -200,12 +200,24 @@ same "bring the asset with its reader" rule the audio/card registries hold):
 **v1:** Levels carried titles — Newcomer → Bronze → Silver → Gold → High Roller → VIP Gambler →
 "Casino Legend".
 
-**Boardwalk today:** `level` is a derived number (`levelFromXp`) with no name.
+**Boardwalk today: SHIPPED.** `rankForLevel(level)` in `packages/game-logic/src/profile/ranks.ts` —
+its own module beside `xp.ts`, because `xp.ts` owns the *curve* and this owns the *vocabulary*, and
+they change for different reasons. Seven rungs carrying v1's names (Newcomer → Bronze → Silver →
+Gold → High Roller → VIP Gambler → Casino Legend) at thresholds retuned to *this* xp curve rather
+than v1's: Bronze is ~15 wins away so a new player is promoted inside a session, and Casino Legend
+sits at level 50, where the Platinum achievement tiers already are. `nextRankAfterLevel` came with
+it and is what turns a rank from a sticker into a goal ("High Roller at level 15" under the meter);
+it is `null` at the top rather than inventing a rung. Guarded by `tests/ranks.test.ts` (11).
 
-**Recommendation:** Cheap, pure, and self-contained — a `titleFromLevel(level)` next to
-`levelFromXp` in `packages/game-logic/src/profile/xp.ts`, rendered on the profile/top-bar. Good early morale win;
-no new data, no store dependency. (If titles also become *purchasable* cosmetics, that's #5, kept
-separate.)
+Three readers, per the standing rule that a cosmetic-shaped thing needs one: the profile card
+(next to the level, and as the XP meter's heading), every leaderboard row, and the top bar's
+tooltip. The leaderboard one is free — a rank is a function of `xp`, which is already in the public
+projection, where a *stored* rank would have needed a fifth `$other: false` field and a hand-run
+rules deploy. That is the derive-don't-store rule paying for itself.
+
+**The rank is deliberately NOT the `title` cosmetic** (#5). One is reached and cannot be equipped,
+unequipped or bought; the other is bought or earned and is chosen. They render side by side on the
+profile card precisely so the difference is legible.
 
 ## 7. Chat & social breadth
 
@@ -262,9 +274,18 @@ per-game localStorage** for settings persistence.
 
 **Recommendation, in rough value order:**
 
-- **Bankrupt refill** — the most-missed; a player at $0 with no path back is a dead end. Cheap: a
-  guarded top-up (rate-limited / daily-linked) through the existing `mutateProfile` writer. Design so
-  it can't be a money faucet.
+- **Bankrupt refill — SHIPPED.** A `refill` intent (`{nonce}`, and nothing else) through
+  `applyEconomy`, priced by the referee. Three things made it not-a-faucet, and they are worth
+  keeping if it is ever retuned: (1) it is a **top-up TO a floor**, not a grant of an amount, so the
+  balance afterwards is always exactly `REFILL_FLOOR_CENTS` and no sequence of them compounds —
+  a flat `+$200` would net $199 across a $1 bet; (2) **once per UTC day**, because a top-up that
+  cannot enrich you directly is still an unlimited supply of lottery tickets if you can take one
+  after every loss; (3) the **limit is derived** — a `COUNT` of this feature's own ledger rows,
+  not a `lastRefillDay` field, so there is no rules change, no SQLite column, and no second record
+  to drift from the money. The window is `>= startOfToday` with no upper bound on purpose, so a
+  rewound clock makes the check stricter rather than looser. Note the recommendation above said
+  "through the existing `mutateProfile` writer" and that was already stale when written: since
+  Phase B `mutateProfile` holds only the non-money writes, and money moves as an intent.
 - **Namespaced per-game settings persistence** — a small OS convenience so games don't hand-roll
   `localStorage` keys (v1 had `blackjack_diff`, `chess_mode`, …). Pairs with the options seam (#2).
 - **Bug report** — nice-to-have; a modal → a `reports/` node with rules.
@@ -312,7 +333,11 @@ If/when this work is picked up, a sane order that keeps every step with a live c
 
 1. ~~**Options seam (#2)** with **Solitaire draw-1/draw-3** as its first caller — unlocks #1 and #3.~~
    **DONE 2026-07-21.**
-2. **Level titles (#6)** and **bankrupt refill (#10)** — cheap, self-contained morale/UX wins.
+2. ~~**Level titles (#6)** and **bankrupt refill (#10)** — cheap, self-contained morale/UX wins.~~
+   **DONE 2026-07-21.** Both shipped together. Neither needed a new profile field, which was not luck: a rank
+   is derived from `xp` and the refill's daily limit is derived from the ledger, so between them
+   they cost zero rules changes and zero migrations. That is worth remembering when sizing #1 and
+   #4 — the cheap features here are the ones whose state already exists somewhere.
 3. **AI difficulty (#1)** the moment a *second* AI game exists to justify the abstraction.
 4. **Rematch (#4)** as the first shared in-game service.
 5. **Room browser (#9)** once there's an online population to fill tables.

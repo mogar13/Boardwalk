@@ -3,7 +3,7 @@ import { Button, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { useAudio } from '@/system/audio/useAudio';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
-import { xpProgress } from '@boardwalk/game-logic';
+import { rankForLevel, xpProgress } from '@boardwalk/game-logic';
 import { Wordmark } from '@/shell/Wordmark';
 import { Avatar } from '@/system/profile/Avatar';
 import { useEquippedFrame } from '@/system/frame/useEquippedFrame';
@@ -56,11 +56,21 @@ function MuteToggle() {
   );
 }
 
-/** The compact level badge + XP sliver. The profile page draws the full meter; this is the glance. */
+/**
+ * The compact level badge + XP sliver. The profile page draws the full meter; this is the glance.
+ *
+ * The RANK rides in the tooltip rather than the bar, and that is a space decision, not a shrug:
+ * "Casino Legend" is 13 characters next to a bankroll, a name and four nav links, and the bar's
+ * job here is to say "you are making progress" in one glance. The profile card is where the rank
+ * is spelled out — it has the room, and it is where somebody goes to look at themselves.
+ */
 function LevelPip({ xp }: { xp: number }) {
   const { level, pct } = xpProgress(xp);
   return (
-    <div className="flex items-center gap-2" title={`Level ${String(level)}`}>
+    <div
+      className="flex items-center gap-2"
+      title={`${rankForLevel(level).name} — level ${String(level)}`}
+    >
       <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.14em] uppercase">
         Lv {level}
       </span>

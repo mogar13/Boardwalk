@@ -3,6 +3,7 @@ import { Card } from '@/ui';
 import { PIERS, gameIconSrc, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
 import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
+import { RefillCard } from '@/system/economy/RefillCard';
 
 /**
  * The hub — the boardwalk seen from the entrance. It renders the piers in order, and each
@@ -73,6 +74,11 @@ export function Hub() {
       </header>
 
       <DailyRewardCard />
+
+      {/* Renders nothing unless the bankroll has run out, so on an ordinary day the hub is
+          unchanged. It sits under the daily claim because when both are showing, the claim is
+          the better of the two moves. */}
+      <RefillCard />
 
       {PIERS.map((pier) => {
         const games = gamesOnPier(pier.id);
