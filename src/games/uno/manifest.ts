@@ -1,4 +1,6 @@
 import type { GameManifest } from '@/games/registry';
+import type { OptionValues } from '@/system/options/options';
+import type { UnoLevel } from '@boardwalk/game-logic/games/uno';
 
 /**
  * UNO — the SDK's proof of the hard multiplayer half: HIDDEN HANDS (each player sees only their own
@@ -31,4 +33,33 @@ export const unoManifest = {
   pier: 'tables',
   seats: { min: 2, max: 7 },
   modes: ['ai', 'online'],
+  /**
+   * The SECOND caller of AI difficulty, and the reason it was built at all: V1_FEATURE_GAPS #1 says
+   * not to abstract a tier system until a second AI game exists, because one driver is not enough
+   * evidence — the same rule that kept us from a generic board engine. UNO is that second driver,
+   * and the evidence it produced is that there was nothing to abstract: a tier is a `select`
+   * option, and its meaning is a level argument to the game's own pure `chooseAiMove`. Note the
+   * vocabulary differs from Tic-Tac-Toe's on purpose — `perfect` is meaningless in a game of
+   * hidden hands, and a shared enum would have had to lie about one of the two.
+   *
+   * `sharp` is the default: it is what the bots have always played, and the host drives every AI
+   * seat, so a default change would silently retune every existing table.
+   */
+  options: [
+    {
+      id: 'bots',
+      label: 'Bots',
+      type: 'select',
+      default: 'sharp',
+      choices: [
+        { value: 'casual', label: 'Casual' },
+        { value: 'sharp', label: 'Sharp' },
+      ],
+    },
+  ],
 } as const satisfies GameManifest;
+
+/** The chosen `bots` option as the level the pure chooser takes. See `ticTacToeHouseLevel`. */
+export function unoBotLevel(values: OptionValues): UnoLevel {
+  return values.bots === 'casual' ? 'casual' : 'sharp';
+}

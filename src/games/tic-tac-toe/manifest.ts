@@ -1,4 +1,6 @@
 import type { GameManifest } from '@/games/registry';
+import type { OptionValues } from '@/system/options/options';
+import type { TicTacToeLevel } from '@boardwalk/game-logic/games/tic-tac-toe';
 
 /**
  * Tic-Tac-Toe — the SDK's smoke test. ARCHITECTURE.md: "If this isn't ~150 lines, the SDK is
@@ -29,4 +31,40 @@ export const ticTacToeManifest = {
   pier: 'tables',
   seats: { min: 1, max: 2 },
   modes: ['ai', 'online'],
+  /**
+   * AI difficulty (V1_FEATURE_GAPS #1) as what it always was: an OPTION, not a second mechanism.
+   * The seam is the one Solitaire's draw count already uses — declared data the OS renders, read
+   * back with `useGameOptions()` — and the only thing this file adds is the vocabulary. What each
+   * level MEANS is in the pure rulebook next to the reducer it drives
+   * (`chooseAiMove` in `@boardwalk/game-logic/games/tic-tac-toe`), so the house's difficulty is a
+   * value a unit test can pin rather than engine code in a component. That is the half v1 got
+   * wrong: its depth→tier maps were the right instinct, wired into a HUD dropdown where nothing
+   * could test them.
+   *
+   * `perfect` is the default because it is what this table has always dealt — an unbeatable house
+   * is Tic-Tac-Toe's whole character, and a new option must not quietly change a shipped game.
+   */
+  options: [
+    {
+      id: 'house',
+      label: 'House',
+      type: 'select',
+      default: 'perfect',
+      choices: [
+        { value: 'casual', label: 'Casual' },
+        { value: 'sharp', label: 'Sharp' },
+        { value: 'perfect', label: 'Perfect' },
+      ],
+    },
+  ],
 } as const satisfies GameManifest;
+
+/**
+ * The chosen `house` option as the level the pure chooser takes — the same shape as Solitaire's
+ * `solitaireDrawCount`, and for the same reason: an option's meaning belongs to the game. `values`
+ * is complete and valid by construction (`resolveOptionValues`), so the fallback is unreachable and
+ * lands on the manifest's own default rather than inventing a fourth answer.
+ */
+export function ticTacToeHouseLevel(values: OptionValues): TicTacToeLevel {
+  return values.house === 'casual' ? 'casual' : values.house === 'sharp' ? 'sharp' : 'perfect';
+}

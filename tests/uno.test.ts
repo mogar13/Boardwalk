@@ -307,6 +307,95 @@ describe('chooseAiMove', () => {
   });
 });
 
+describe('chooseAiMove — the difficulty tiers', () => {
+  /** A fixed cycling sequence, so `casual`'s randomness is a value here. */
+  const fixed = (...xs: number[]) => {
+    let i = 0;
+    return () => xs[i++ % xs.length] as number;
+  };
+
+  it('defaults to sharp — the bots that shipped are the bots you get', () => {
+    const g = game(
+      [[c('red', 'number', 3), c('wild', 'wild')], [c('blue', 'number', 1)]],
+      c('red', 'number', 9)
+    );
+    expect(chooseAiMove(g, 0)).toEqual(chooseAiMove(g, 0, 'sharp'));
+  });
+
+  it('casual reaches every playable card, and never an unplayable one', () => {
+    const hand = [
+      c('red', 'number', 3),
+      c('blue', 'number', 8), // not playable on a red 9
+      c('red', 'skip'),
+      c('wild', 'wild'),
+    ];
+    const g = game([hand, [c('blue', 'number', 1)]], c('red', 'number', 9));
+    const playableIds = new Set([hand[0]!.id, hand[2]!.id, hand[3]!.id]);
+    const seen = new Set<string>();
+    for (const r of [0.0, 0.4, 0.9]) {
+      const move = chooseAiMove(g, 0, 'casual', fixed(r));
+      expect(move.type).toBe('play');
+      if (move.type === 'play') {
+        expect(playableIds).toContain(move.cardId);
+        seen.add(move.cardId);
+      }
+    }
+    expect(seen.size).toBe(3);
+  });
+
+  it('casual DOES call UNO — a bot that does not can never win', () => {
+    // The finding this tier cost, kept as a test because it is invisible to every other guard: a
+    // hand only reaches zero through one, and going to one undeclared is exactly what the +2
+    // punishes — so an undeclaring bot bounces off one card back to three forever. A four-casual
+    // table ran 3,000 turns with no winner before this. `applyMove` refuses nothing here; the
+    // table is simply unwinnable, which is v1's `[5,5,5,5]` Liar's Dice bug in another costume.
+    const g = game(
+      [[c('red', 'number', 3), c('red', 'number', 4)], [c('blue', 'number', 1)]],
+      c('red', 'number', 9)
+    );
+    for (const level of ['casual', 'sharp'] as const) {
+      const move = chooseAiMove(g, 0, level, fixed(0));
+      expect(move.type === 'play' && move.declareUno).toBe(true);
+      expect(applyMove(g, 0, move, seeded(3)).hands[0]).toHaveLength(1); // one card, not penalised
+    }
+  });
+
+  it('casual still names a colour for a wild — a wild with none is refused by the reducer', () => {
+    const g = game([[c('wild', 'wild4')], [c('blue', 'number', 1)]], c('red', 'number', 9));
+    for (const r of [0, 0.3, 0.6, 0.99, NaN, 1, -1]) {
+      const move = chooseAiMove(g, 0, 'casual', fixed(r));
+      expect(move.type === 'play' && move.chosenColor).toBeDefined();
+      expect(applyMove(g, 0, move, seeded(1))).not.toBe(g); // accepted, not a no-op
+    }
+  });
+
+  it('draws when nothing is playable, at either level', () => {
+    const g = game([[c('blue', 'number', 8), c('green', 'number', 2)]], c('red', 'number', 9));
+    expect(chooseAiMove(g, 0, 'casual', fixed(0)).type).toBe('draw');
+    expect(chooseAiMove(g, 0, 'sharp').type).toBe('draw');
+  });
+
+  it('every level only ever returns a move the reducer ACCEPTS, over whole dealt games', () => {
+    // The stall guard, and the reason this matters more than any tuning: a bot move `applyMove`
+    // refuses is a no-op on that bot's turn, and the table never moves again.
+    for (const level of ['casual', 'sharp'] as const) {
+      for (const seed of [1, 7, 99]) {
+        const rng = seeded(seed);
+        let g = deal(4, rng);
+        let guard = 0;
+        while (g.winner === -1 && guard < 5000) {
+          const before = g;
+          const next = applyMove(g, g.turn, chooseAiMove(g, g.turn, level, rng), rng);
+          expect(next).not.toBe(before); // a refusal returns the SAME object — the stall
+          g = next;
+          guard += 1;
+        }
+        expect(g.winner).toBeGreaterThanOrEqual(0); // a table that finishes, at either level
+      }
+    }
+  });
+});
+
 describe('the public projection', () => {
   it('exposes counts and the top but never a hidden card, and uses sentinels', () => {
     const g = deal(3, seeded(2));

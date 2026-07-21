@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Button, Card, Input, useToast } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
+import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
 import { repos } from '@/system/repo';
 import { RoomProvider } from '@/system/room/RoomProvider';
@@ -243,7 +244,28 @@ function LobbyRoom({
               </Card>
             ))
           ) : (
-            <SeatList allowAi={manifest.modes.includes('ai')} />
+            <>
+              {/*
+                The options seam's other half, and the gap it shipped with: `<GameOptions>` was
+                rendered only by solo games, because every option-declaring game was solo. AI
+                difficulty (V1_FEATURE_GAPS #1) is the room game that closes it — the tier is
+                chosen here, at the table, before the deal.
+
+                HOST ONLY, and the reason is worth stating rather than hiding: the values live in
+                `<GameShell>`, which is per-CLIENT, and the only option any room game declares today
+                is an AI tier — read exclusively by the host, since `aiSeatsToDrive` is host-only.
+                So a guest's copy would be a control that changes nothing, which is worse than no
+                control. The moment a room game declares an option a GUEST must also read, this is
+                the wrong home for it: it belongs in room state, written at start. That is a real
+                change, named here, not a nuance papered over.
+
+                It renders in the WAITING branch only — the panel is gone once the board is up — so
+                a tier cannot be retuned mid-game. v1's Chess reached the same place by queueing a
+                difficulty change to the next game; here the shape of the lobby says it instead.
+              */}
+              {isHost && <GameOptions className="justify-end" />}
+              <SeatList allowAi={manifest.modes.includes('ai')} />
+            </>
           )}
           {meta !== null && (
             <p className="text-bw-muted text-xs">Hosted by {isHost ? 'you' : 'another player'}.</p>

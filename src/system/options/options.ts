@@ -20,9 +20,12 @@
  *   member so that adding the second is a decision with a caller attached.
  * - **No persistence.** Values live for the mounted game. A namespaced per-game `localStorage`
  *   (v1's `blackjack_diff`, `chess_mode`) is V1_FEATURE_GAPS #10 and lands when someone misses it.
- * - **No difficulty type.** AI tiers (#1) are *an option*, not a second mechanism — when a second
- *   AI game exists, its levels are choices in this same spec and their meaning lives in that
- *   game's pure `logic/`. There is nothing to add here for it.
+ * - **No difficulty type**, and this is now PROVEN rather than predicted. AI tiers (#1) are *an
+ *   option*, not a second mechanism: UNO became the second AI game on 2026-07-21, and both it and
+ *   Tic-Tac-Toe declare their difficulty as ordinary `select` choices here, with the meaning of a
+ *   level living in that game's pure `logic/` (`chooseAiMove(state, seat, level, rng)`). Not one
+ *   line of this module changed for it. The two games' vocabularies differ on purpose — see their
+ *   manifests — which is exactly why no tier enum lives here.
  * - **No numbers, booleans or free text.** Every value is a `string` on purpose: it is what a
  *   control round-trips, and the *meaning* of `'3'` is the game's to read (Solitaire's
  *   `solitaireDrawCount`), which keeps the interpretation next to the reducer it feeds and pure.

@@ -13,6 +13,8 @@
  *    walk the real registry.
  */
 import { describe, it, expect } from 'vitest';
+import { ticTacToeHouseLevel, ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
+import { unoBotLevel, unoManifest } from '@/games/uno/manifest';
 import {
   defaultOptionValues,
   resolveOptionValues,
@@ -123,5 +125,52 @@ describe('solitaire reads its own option', () => {
     // Unreachable through the seam (values are resolved before a game sees them), but the reducer
     // must still be handed a number it accepts rather than an undefined draw.
     expect(solitaireDrawCount({})).toBe(1);
+  });
+});
+
+/**
+ * AI difficulty (V1_FEATURE_GAPS #1) declares no new mechanism — a tier is a `select` whose value a
+ * game maps to a level its pure chooser takes. What that buys is one new way to be wrong, and it is
+ * the frames-tone-vs-rarity shape: add a fourth choice to a manifest and the mapper keeps returning
+ * the level it always did, silently, with the control still rendering perfectly. So the guard is a
+ * BIJECTION — every declared choice reaches its own level, and every level is declared.
+ */
+describe('the AI difficulty declarations', () => {
+  const tiers = [
+    {
+      what: 'tic-tac-toe/house',
+      option: ticTacToeManifest.options[0],
+      read: ticTacToeHouseLevel as (values: Record<string, string>) => string,
+      shipped: 'perfect',
+    },
+    {
+      what: 'uno/bots',
+      option: unoManifest.options[0],
+      read: unoBotLevel as (values: Record<string, string>) => string,
+      shipped: 'sharp',
+    },
+  ];
+
+  it('maps every declared choice to a level of its own — none collapses into another', () => {
+    for (const { what, option, read } of tiers) {
+      const levels = option.choices.map((choice) => read({ [option.id]: choice.value }));
+      expect(new Set(levels).size, `${what}: two choices mean the same thing`).toBe(levels.length);
+    }
+  });
+
+  it('leaves the shipped house as the default — a new option must not retune a live game', () => {
+    for (const { what, option, read, shipped } of tiers) {
+      expect(read(defaultOptionValues([option])), `${what}: default moved`).toBe(shipped);
+      expect(option.default, `${what}: default is not the shipped level`).toBe(shipped);
+    }
+  });
+
+  it('falls back to the shipped level rather than an undefined one', () => {
+    // Unreachable through the seam (`resolveOptionValues` runs first), but a game must never hand
+    // its chooser a level it has no branch for — that is a bot that stalls its own table.
+    for (const { what, read, shipped } of tiers) {
+      expect(read({}), `${what}: empty values`).toBe(shipped);
+      expect(read({ house: 'brutal', bots: 'brutal' }), `${what}: unoffered value`).toBe(shipped);
+    }
   });
 });

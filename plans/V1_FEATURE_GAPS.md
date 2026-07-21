@@ -39,7 +39,7 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 
 | # | Gap | v1 reach | Boardwalk today | Call |
 |---|---|---|---|---|
-| 1 | **AI difficulty tiers** | 22/31 games | binary `modes:['ai']`, no tier; Chess has no AI at all | **Build when the 2nd AI game wants it** — design the seam now |
+| 1 | **AI difficulty tiers** | 22/31 games | **SHIPPED (2026-07-21)** — a `select` on `manifest.options`, the level read by the game's own pure `chooseAiMove`; Tic-Tac-Toe casual/sharp/perfect, UNO casual/sharp; Chess still has no AI at all | Done for the two AI games; a third brings its own vocabulary |
 | 2 | **Declarative game options / variants / house rules** | most games | **SHIPPED** — `manifest.options` + `<GameOptions>` + `useGameOptions()`, `select` only; Solitaire's draw-1/draw-3 is the caller | Done for `select`; widen only with a caller |
 | 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam (now built) |
 | 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | none as OS services | **Opt-in shared services**, build the one a game needs first |
@@ -67,26 +67,57 @@ and the tier **mapped to real engine behaviour**, not flavour text:
 Tier vocabulary was inconsistent (easy/normal/hard, easy/medium/hard, normal/hard), so **the SDK
 must not hard-code a fixed enum.**
 
-**Boardwalk today:** `GameManifest.modes` carries `'ai'` as a *binary* — a game either offers a bot
-or doesn't. There is no difficulty concept anywhere, and the launch set deliberately leans on this:
-Tic-Tac-Toe ships a perfect (unbeatable) house with no tier, and **Chess ships no AI at all**
-(CLAUDE.md: "a chess engine is a whole other thing"). So there is currently exactly one AI driver in
-the whole SDK.
+**Boardwalk today: BUILT (2026-07-21), and the headline is that it needed no mechanism.** The
+precondition this doc set — *don't build it until a second AI game exists* — was met by UNO, and
+what the second driver proved is that there was nothing to abstract. A tier is:
 
-**Recommendation:** Don't build this until a *second* AI-driven game exists — one driver is not
-enough evidence for the abstraction (the same rule that kept us from a generic board engine). But
-when it lands, the shape is known and worth pre-agreeing:
+1. a `select` on `manifest.options`, the seam #2 already shipped — **not one line was added to
+   `src/system/options/`**; and
+2. a level argument to the game's own pure chooser —
+   `chooseAiMove(state, seat, level, rng)` in `packages/game-logic/src/games/<game>/logic/`.
 
-- Difficulty is **per-game data on the manifest**, not a mode string a game branches on — the same
-  discipline as `localSeatIds`. Something like an optional
-  `ai?: { levels: readonly { id: string; label: string }[] }` the lobby renders as a picker, with
-  the *meaning* of each level living in the game's pure `logic/` (a `chooseAiMove(state, level)`
-  signature — UNO already has `chooseAiMove`, just with no level arg).
-- Keep the mapping **in `logic/`** so it stays pure/unit-testable (v1's depth→tier maps were the
-  correct instinct; they just weren't tested). A difficulty tier is then "which search depth /
-  which stand value the pure reducer is asked for," never engine code in the component.
-- Note the deferred-change subtlety v1 got right: Chess **queued** a difficulty change to the next
-  game and toasted it, rather than mutating a game in flight.
+The `rng` is injected rather than reaching for `Math.random`, which is what turns "plays randomly"
+into a value a test can pin. The two callers:
+
+| Game | Levels | What a level MEANS (all in `logic/`) |
+|---|---|---|
+| Tic-Tac-Toe | `casual` / `sharp` / **`perfect`** (default) | random legal cell / one-ply win-then-block-then-random / full minimax, unchanged |
+| UNO | `casual` / **`sharp`** (default) | random playable card + random wild colour / save wilds, most-held colour |
+
+Three decisions worth keeping if this is ever extended:
+
+- **No shared tier enum, deliberately** — the two games do not share a vocabulary, because
+  `perfect` is meaningless in a game of hidden hands and a shuffled deck. v1's own drift across 22
+  games is the evidence that a fixed SDK-wide enum either lies about a game or forces one.
+- **Each default is the level the game already shipped** (`perfect`, `sharp`), guarded in
+  `tests/game-options.test.ts`, so adding the option retuned nothing that was live. A new option
+  must never quietly change a shipped game.
+- **The lobby renders the control for the HOST only, and only before the deal.** The values live in
+  `<GameShell>`, which is per-client, and the only room-game option today is read exclusively by
+  the host (`aiSeatsToDrive` is host-only), so a guest's copy would be a control that changes
+  nothing. The day a room game declares an option a guest must also read, it belongs in room state
+  written at start — a real change, named rather than papered over. Rendering only in the waiting
+  branch is also what makes a mid-game retune unspellable, which is where v1's Chess ended up by
+  queueing a difficulty change to the next game.
+
+**The bug the build produced, because it is the interesting part.** UNO's `casual` first shipped
+never calling UNO — a difficulty made of the game's *own rules* rather than a handicap invented for
+the bot, which is exactly the kind of tier this doc argues for. It makes the bot **unwinnable**: a
+hand reaches zero only through one, and going to one undeclared is precisely what the +2 penalty
+punishes, so the bot bounces off one card back to three forever. Four casual bots ran 3,000 turns
+with hands at 3–4 and no winner. That is Liar's Dice's `[5,5,5,5]` literal in another costume, and
+the only guard that sees it is one that plays whole dealt games **to a winner** — a test that
+merely asserts every bot move is legal passes happily. Both games now have that test, alongside the
+one that matters for the table: every move at every tier is asserted to CHANGE the state, because a
+move the reducer refuses is a silent no-op on a turn only the bot can take.
+
+Guards: `tests/ticTacToe.test.ts` (27), `tests/uno.test.ts` (30), `tests/game-options.test.ts` (11
+— including the bijection: every declared choice must map to a level of its own, falsified by
+adding a fourth `brutal` choice the mapper collapses into `perfect`).
+
+**Not carried:** Liar's Dice's house is unchanged. Its bot runs on the REFEREE (the gateway deals
+that game), so a tier there is not a client-side option at all — it would need a field on `ldStart`
+and a rule about who may set it, which is a server change with no player asking for it yet.
 
 ## 2. Declarative game options / variants / house rules
 
@@ -338,7 +369,12 @@ If/when this work is picked up, a sane order that keeps every step with a live c
    is derived from `xp` and the refill's daily limit is derived from the ledger, so between them
    they cost zero rules changes and zero migrations. That is worth remembering when sizing #1 and
    #4 — the cheap features here are the ones whose state already exists somewhere.
-3. **AI difficulty (#1)** the moment a *second* AI game exists to justify the abstraction.
+3. ~~**AI difficulty (#1)** the moment a *second* AI game exists to justify the abstraction.~~
+   **DONE 2026-07-21.** UNO was the second AI game, and the abstraction it justified turned out to
+   be nothing: a tier is a `select` on the options seam plus a level the game's pure chooser takes.
+   The lesson matches step 2's — the cheap features here are the ones whose machinery already
+   exists. What it *did* cost was a real bug (a tier that made UNO unwinnable for bots), which is
+   the argument for guarding a bot by playing games to a WINNER rather than to a legal move.
 4. **Rematch (#4)** as the first shared in-game service.
 5. **Room browser (#9)** once there's an online population to fill tables.
 6. Cosmetics (#5), hub discovery (#8), social (#7), progression breadth (#11) — as content/product

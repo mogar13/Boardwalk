@@ -15,6 +15,8 @@ import {
 } from '@boardwalk/game-logic/games/uno';
 import { unoBackSrc, unoCardSrc } from '@/games/uno/art';
 import { useUnoHost } from '@/games/uno/components/useUnoHost';
+import { useGameOptions } from '@/system/options/useGameOptions';
+import { unoBotLevel } from '@/games/uno/manifest';
 
 /**
  * The board — the only part of UNO that is neither the OS nor the tested pure `logic/`. It reads
@@ -45,12 +47,24 @@ const RING: Record<UnoColor, string> = {
 
 export function Board() {
   const { state, patch, seats, status, isHost, writeHand } = useRoom<UnoState>();
+  // The table's difficulty, chosen in the lobby before the deal. The OS holds the value
+  // (`<GameShell>`) and draws the control; turning it into a level the rulebook understands is the
+  // game's job, and `unoBotLevel` is where that meaning lives.
+  const botLevel = unoBotLevel(useGameOptions().values);
   const { mySeatIndex, isMyTurn } = useSeats();
   const { reportResult } = useGame();
   const felt = useEquippedFelt();
   const audio = useAudio();
 
-  const { dealAgain } = useUnoHost({ isHost, status, state, seats, patch, writeHand });
+  const { dealAgain } = useUnoHost({
+    isHost,
+    status,
+    state,
+    seats,
+    patch,
+    writeHand,
+    level: botLevel,
+  });
   const myHand = useHand<UnoCard[]>(mySeatIndex) ?? [];
 
   const [pendingWild, setPendingWild] = useState<string | null>(null);
