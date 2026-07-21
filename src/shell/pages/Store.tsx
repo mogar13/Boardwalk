@@ -49,6 +49,11 @@ const SECTIONS: readonly { kind: CosmeticKind; title: string; blurb: string }[] 
     title: 'Felts',
     blurb: 'The table itself. Every game you sit down to is played on the one you equip.',
   },
+  {
+    kind: 'dice',
+    title: 'Dice',
+    blurb: 'The five you roll in Liar\u2019s Dice, and stare at all game. Ivory is yours already.',
+  },
   { kind: 'avatar', title: 'Avatars', blurb: 'Your face in the top bar and on your profile.' },
   {
     kind: 'frame',

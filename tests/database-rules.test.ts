@@ -361,14 +361,53 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     );
   });
 
-  it('still refuses a stray key in equipped — $other is false, so a SIXTH kind is a rules change', async () => {
-    // The pin survives P5 with its teeth in. `dice` is the honest example: PROGRESSION_PLAN.md
-    // keeps that kind out until a dice game exists to read it, and this is the enforcement half of
-    // that decision — the field cannot appear ahead of its reader even by accident.
+  it('accepts dice in equipped (Phase E, the fifth kind)', async () => {
+    // The kind arrives WITH its reader — `@/system/dice/useEquippedDice`, and a game that rolls
+    // them — which is the whole rule this pin has been enforcing on its behalf until now.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: {
+          cardback: 'cb_red3',
+          title: 'ttl_rookie',
+          felt: 'ft_green',
+          frame: 'fr_gold',
+          dice: 'dc_ember',
+        },
+      })
+    );
+    // And alone, since every key is optional.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { dice: 'dc_ivory' },
+      })
+    );
+  });
+
+  it('refuses a wrong-typed or over-long dice id, like every other slot', async () => {
+    // Written per key on purpose: "dice is bounded because felt is" is exactly the reasoning that
+    // leaves one slot unbounded.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { dice: 42 } })
+    );
     await assertFails(
       set(ref(asUser(ME), `users/${ME}/profile`), {
         ...validProfile,
-        equipped: { cardback: 'cb_red3', dice: 'dc_ivory' },
+        equipped: { dice: 'x'.repeat(65) },
+      })
+    );
+  });
+
+  it('still refuses a stray key in equipped — $other is false, so a SIXTH kind is a rules change', async () => {
+    // The pin keeps its teeth through Phase E. `chip` is the honest example now that `dice` has
+    // landed: a chip skin is the remaining kind `catalog.ts` deliberately withholds for want of a
+    // reader, and this is the enforcement half of that decision — the field cannot appear ahead of
+    // its reader even by accident.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { cardback: 'cb_red3', chip: 'ch_ivory' },
       })
     );
     // `avatar` is also a stray — it lives top-level, not in this map — so a writer folding it in

@@ -154,8 +154,13 @@ export interface SettleRequest {
  *
  * A game earns a place on this list the moment the referee can deal it — not before, or a live
  * client is refused mid-hand with nowhere to go.
+ *
+ * PHASE E adds `liars-dice`, and the argument is the same one a second time: the referee holds
+ * every cup and pays the pot, so a `/settle` naming this game is by definition a claim about a
+ * match the server already settled itself. Leaving it open would let a client bet a chip and then
+ * claim the 3× default ceiling on a match it never played.
  */
-export const SERVER_DEALT_GAMES: ReadonlySet<string> = new Set(['blackjack']);
+export const SERVER_DEALT_GAMES: ReadonlySet<string> = new Set(['blackjack', 'liars-dice']);
 
 export function checkSettle(req: SettleRequest): Decision<{ readonly payoutCents: number }> {
   if (SERVER_DEALT_GAMES.has(req.gameId)) {

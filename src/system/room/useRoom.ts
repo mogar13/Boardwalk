@@ -22,6 +22,14 @@ export interface RoomApi<TPublic> {
   readonly status: RoomMeta['status'] | 'gone';
   readonly presence: Readonly<Record<string, true>>;
   readonly myId: string;
+  /**
+   * Which table this is. Added in Phase E, because a game whose moves go to the REFEREE (rather
+   * than into shared state through `patch`) has to name the room it is acting on — every other
+   * caller had the ids closed over inside this hook. Read-only, and derived from the route, so a
+   * game can address the table but not move itself to another one.
+   */
+  readonly gameId: string;
+  readonly roomId: string;
   /** Whether THIS client created the room — the only one allowed to start it or clear its chat. */
   readonly isHost: boolean;
 
@@ -103,6 +111,8 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     status: snapshot === null || snapshot.meta.host === '' ? 'gone' : snapshot.meta.status,
     presence: snapshot?.presence ?? {},
     myId: myUid,
+    gameId,
+    roomId,
     isHost: snapshot?.meta.host === myUid,
     patch,
     setStatus,

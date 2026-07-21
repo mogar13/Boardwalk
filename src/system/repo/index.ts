@@ -157,6 +157,13 @@ export const repos: Repos = {
   leaderboard,
   room: wsRooms ? wsRooms.room : firebaseRoomRepo,
   chat: wsRooms ? wsRooms.chat : firebaseChatRepo,
+  /**
+   * PHASE E. Null on the Firebase path, and that is not a degradation to paper over — there is no
+   * RTDB version of "the server holds the dice", and building one would mean a client dealing a
+   * game whose whole point is that no client deals it. The game's own screen reads this and says
+   * so; `modes` cannot include a fallback that does not exist.
+   */
+  liarsDice: wsRooms ? wsRooms.liarsDice : null,
 };
 
 /**

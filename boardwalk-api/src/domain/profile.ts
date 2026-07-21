@@ -30,6 +30,7 @@ interface ProfileRow {
   equipped_title: string | null;
   equipped_felt: string | null;
   equipped_frame: string | null;
+  equipped_dice: string | null;
 }
 interface StatRow {
   game_id: string;
@@ -70,7 +71,7 @@ export function loadProfile(db: Db, uid: string): Profile | null {
   const p = db
     .prepare(
       `SELECT name, avatar, xp, daily_last_claim_day, daily_streak,
-              equipped_cardback, equipped_title, equipped_felt, equipped_frame
+              equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice
        FROM profiles WHERE uid = ?`
     )
     .get(uid) as ProfileRow | undefined;
@@ -113,6 +114,7 @@ export function loadProfile(db: Db, uid: string): Profile | null {
     ...(p.equipped_title ? { title: p.equipped_title } : {}),
     ...(p.equipped_felt ? { felt: p.equipped_felt } : {}),
     ...(p.equipped_frame ? { frame: p.equipped_frame } : {}),
+    ...(p.equipped_dice ? { dice: p.equipped_dice } : {}),
   };
 
   return {
@@ -178,9 +180,9 @@ export function upsertProfile(
 
     db.prepare(
       `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak,
-                             equipped_cardback, equipped_title, equipped_felt, equipped_frame,
+                             equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice,
                              updated_at)
-       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @felt, @frame, @now)
+       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @felt, @frame, @dice, @now)
        ON CONFLICT(uid) DO UPDATE SET
          name = excluded.name,
          avatar = excluded.avatar,
@@ -188,6 +190,7 @@ export function upsertProfile(
          equipped_title = excluded.equipped_title,
          equipped_felt = excluded.equipped_felt,
          equipped_frame = excluded.equipped_frame,
+         equipped_dice = excluded.equipped_dice,
          updated_at = excluded.updated_at`
     ).run({
       uid,
@@ -197,6 +200,7 @@ export function upsertProfile(
       title: input.equipped.title ?? null,
       felt: input.equipped.felt ?? null,
       frame: input.equipped.frame ?? null,
+      dice: input.equipped.dice ?? null,
       now,
     });
 

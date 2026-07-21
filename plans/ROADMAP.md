@@ -25,7 +25,7 @@ Ordered by **what goes wrong if you never do it**, not by effort:
 | 1 | ~~Offline replay-hardening~~ — **DONE, deployed + enforcing 2026-07-18** | ~~A reconnect can pay a win twice.~~ Closed. See [OFFLINE_HARDENING.md](done/OFFLINE_HARDENING.md). |
 | 2 | ~~Crash-recovery for rooms~~ — **DONE 2026-07-18** | ~~A crashed host strands a table permanently.~~ Closed. See [CRASH_RECOVERY.md](done/CRASH_RECOVERY.md). |
 | 3 | Close Phase C (delete RTDB rooms) — **DECIDED 2026-07-18: not yet** | Nothing breaks. Two systems stay alive instead of one. Decision + the trigger that reopens it are in [item 3](#3-close-phase-c--decided-2026-07-18-not-yet-and-here-is-the-trigger). |
-| 4 | A sixth game | Nothing. This is the point. |
+| 4 | ~~A sixth game~~ — **BUILT 2026-07-19: Liar's Dice** | ~~Nothing. This is the point.~~ Built because it sounded fun, which is the only sanctioned reason. It closed both side-notes below. |
 
 Two smaller items ride along with whatever you touch next; they are at the bottom under
 [Ride-alongs](#ride-alongs).
@@ -226,7 +226,24 @@ a fallback nobody keeps working is worse than no fallback, because it reads like
 
 ---
 
-## 4. A sixth game — only if one sounds fun
+## 4. A sixth game — BUILT, and it was Liar's Dice
+
+> **Built 2026-07-19** — [LIARS_DICE.md](LIARS_DICE.md) is the design, the decisions and the
+> evidence. It exists because the owner wanted to play it; the two OS notes below were tie-breakers
+> between candidates, not the reason. Both are now closed:
+>
+> - **The `dice` cosmetic has its reader.** Four sets, a free starter, and `useEquippedDice` landing
+>   in the same commit as the catalogue rows — which is the rule that kept it out for two phases.
+> - **A betting game that is not Blackjack forced the question, and it was answered.** This section
+>   called that "a much bigger job than projecting one hand: the server holding the match." That was
+>   right, and it is what got built: the gateway deals, the match lives in SQLite, and
+>   `liars-dice` joined `SERVER_DEALT_GAMES`. Note what is NOT closed — Chess, UNO, Solitaire and
+>   Tic-Tac-Toe still self-report, and still cannot move a chip while doing it.
+>
+> **A seventh game needs no justification and has no claim on anyone's time.** The rule below is
+> unchanged.
+
+### The original framing, kept
 
 There is **no game checklist and there will never be one.** The launch five were chosen for OS
 coverage, and that coverage is complete: solo, hot-seat, online, betting, hidden hands, room-less,

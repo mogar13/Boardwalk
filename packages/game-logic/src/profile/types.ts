@@ -151,6 +151,8 @@ export interface Equipped {
   readonly felt?: string;
   /** The ring around your avatar in the top bar and profile card — `@/system/frame/useEquippedFrame`. */
   readonly frame?: string;
+  /** The dice Liar's Dice rolls — `@/system/dice/useEquippedDice`. Phase E's reader. */
+  readonly dice?: string;
 }
 
 /** The daily-reward clock. See the `daily` note and `@/system/rewards/daily`. */

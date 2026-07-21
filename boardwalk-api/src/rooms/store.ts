@@ -211,6 +211,14 @@ export class RoomStore {
     return room.presence.size === 0;
   }
 
+  /**
+   * How many uids are present. Read by the empty-room reaper at FIRE time — an armed timer is not
+   * the authority on whether a room is still empty, this is.
+   */
+  presenceCount(gameId: string, roomId: string): number {
+    return this.get(gameId, roomId)?.presence.size ?? 0;
+  }
+
   /** Stamp, append (capped), and return a chat message. The server's single clock orders it. */
   chatSend(
     gameId: string,

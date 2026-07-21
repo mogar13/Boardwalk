@@ -353,6 +353,8 @@ export type BlackjackMove = 'hit' | 'stand' | 'double';
  */
 import type { HandView } from '@boardwalk/game-logic/games/blackjack';
 export type { HandView };
+import type { Action as LiarsDiceAction } from '@boardwalk/game-logic/games/liars-dice';
+export type { LiarsDiceAction };
 
 export interface BlackjackDealInput {
   readonly nonce: string;
@@ -380,6 +382,52 @@ export interface BlackjackRepo {
   deal(uid: string, input: BlackjackDealInput): Promise<RepoResult<BlackjackTurn>>;
   /** Hit, stand or double against a live hand. A double commits its second stake behind the seam. */
   move(uid: string, input: BlackjackMoveInput): Promise<RepoResult<BlackjackTurn>>;
+}
+
+/**
+ * THE DEALT-MATCH SEAM (Phase E) — Liar's Dice, the second game the referee deals and the first
+ * multiplayer one.
+ *
+ * It is its own interface and NOT a pair of methods on `RoomRepo`, for a concrete reason: every
+ * `RoomRepo` method obligates the Firebase implementation too, and there is no Firebase version of
+ * "the server holds the dice". A dealt game exists only on the WS path by construction — which is
+ * also why `modes` for this game cannot include a fallback.
+ *
+ * `types.ts` says a generic `GameSessionRepo<TState>` was deliberately not invented when blackjack
+ * was the only caller: "when a second game is dealt server-side, THAT is when the shape of the
+ * general one is knowable." This IS the second caller, and the two turn out to rhyme in the half
+ * that matters: both answer with the AUTHORITATIVE PROFILE. They differ only in the game state —
+ * blackjack returns the hand, because a solo table has no other channel, while a Liar's Dice table
+ * gets its state over the room subscription every seat is already holding.
+ *
+ * ANSWERING `void` WAS THE FIRST DRAFT AND IT WAS WRONG. The reasoning ("state arrives on the
+ * subscription anyway") is true of the state and false of the profile: `start` takes every human's
+ * ante and a settling action pays the pot, and neither of those travels over a room subscription.
+ * Two accounts anted a dollar each in a real browser, the ledger recorded both, and both top bars
+ * went on saying $5,000. So the profile comes back, exactly as blackjack's does.
+ *
+ * NEITHER INPUT HAS A FIELD FOR A DIE, AN OUTCOME OR A PAYOUT. Absent, not validated.
+ */
+export interface LiarsDiceStartInput {
+  readonly nonce: string;
+  readonly anteCents: number;
+}
+
+export interface LiarsDiceActionInput {
+  readonly nonce: string;
+  readonly action: LiarsDiceAction;
+}
+
+export interface LiarsDiceRepo {
+  /** Roll, deal and take every human's ante. Host only. Answers this caller's profile. */
+  start(gameId: string, roomId: string, input: LiarsDiceStartInput): Promise<RepoResult<Profile>>;
+  /**
+   * Bid, challenge or call spot-on. The resulting GAME STATE reaches this client through the room
+   * subscription and its own private node, exactly as it reaches everyone else at the table — so
+   * there is one code path for "the match moved". What comes back here is the PROFILE, because a
+   * settling action pays the pot and no subscription carries that.
+   */
+  act(gameId: string, roomId: string, input: LiarsDiceActionInput): Promise<RepoResult<Profile>>;
 }
 
 /**
@@ -616,6 +664,12 @@ export interface Repos {
   readonly leaderboard: LeaderboardRepo;
   readonly room: RoomRepo;
   readonly chat: ChatRepo;
+  /**
+   * Phase E: the one MULTIPLAYER game whose dice are not any client's. NULL on the Firebase
+   * fallback, where no such referee exists — a nullable repo rather than a local twin, because a
+   * local twin would be one player's browser holding everyone's dice.
+   */
+  readonly liarsDice: LiarsDiceRepo | null;
 }
 
 /** Re-exported so a consumer never needs a second import to type an error branch. */

@@ -163,7 +163,7 @@ describe('profile routes', () => {
     expect(profileOf(res).equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
   });
 
-  it('stores a felt and a frame too — all four equipped slots round-trip (P5)', async () => {
+  it('stores a felt, a frame and dice too — all five equipped slots round-trip', async () => {
     // The P5 kinds get their own case rather than riding on the one above, because the failure
     // this guards is PER-COLUMN and silent: an `Equipped` field with no column is dropped on write
     // and reads back absent, so the cosmetic appears to equip and is gone on reload. Nothing about
@@ -174,6 +174,7 @@ describe('profile routes', () => {
       title: 'ttl_regular',
       felt: 'ft_blue',
       frame: 'fr_ember',
+      dice: 'dc_crimson',
     };
     const res = await request(server)
       .put('/profile')

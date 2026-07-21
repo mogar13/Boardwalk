@@ -51,12 +51,12 @@ describe('profile persistence', () => {
 
   it('round-trips name, avatar and the equipped cosmetics', () => {
     const db = openDb(':memory:');
-    upsertProfile(db, 'u1', cosmetics({ equipped: { cardback: 'cb_red3', title: 'ttl_regular' } }), {
+    upsertProfile(db, 'u1', cosmetics({ equipped: { cardback: 'cb_red3', title: 'ttl_regular', dice: 'dc_ember' } }), {
       now: 1,
     });
     const loaded = loadProfile(db, 'u1');
     expect(loaded?.name).toBe('Ada');
-    expect(loaded?.equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
+    expect(loaded?.equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular', dice: 'dc_ember' });
   });
 
   it('an unequipped slot comes back ABSENT, not null — the frontend reads absence', () => {
@@ -69,7 +69,7 @@ describe('profile persistence', () => {
 
   it('equipping one cosmetic does not drop the other', () => {
     const db = openDb(':memory:');
-    upsertProfile(db, 'u1', cosmetics({ equipped: { cardback: 'cb_red3', title: 'ttl_regular' } }), {
+    upsertProfile(db, 'u1', cosmetics({ equipped: { cardback: 'cb_red3', title: 'ttl_regular', dice: 'dc_ember' } }), {
       now: 1,
     });
     upsertProfile(

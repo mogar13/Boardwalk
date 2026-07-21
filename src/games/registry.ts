@@ -4,6 +4,7 @@ import { blackjackManifest } from '@/games/blackjack/manifest';
 import { chessManifest } from '@/games/chess/manifest';
 import { unoManifest } from '@/games/uno/manifest';
 import { solitaireManifest } from '@/games/solitaire/manifest';
+import { liarsDiceManifest } from '@/games/liars-dice/manifest';
 
 /**
  * The registry — what `games.json` was in v1, made typed, and the place `gameId` is
@@ -208,6 +209,10 @@ export const registry: readonly RegisteredGame[] = [
   {
     manifest: solitaireManifest,
     Component: lazy(() => import('@/games/solitaire/SolitaireGame')),
+  },
+  {
+    manifest: liarsDiceManifest,
+    Component: lazy(() => import('@/games/liars-dice/LiarsDiceGame')),
   },
 ];
 

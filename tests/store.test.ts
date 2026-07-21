@@ -13,6 +13,7 @@ import {
   CATALOG,
   cosmeticById,
   cosmeticsOfKind,
+  type CosmeticKind,
   equippedTitle,
   isEarnOnly,
   isEquipped,
@@ -53,10 +54,26 @@ describe('the catalogue', () => {
     expect(new Set(emoji).size).toBe(emoji.length);
   });
 
-  it('carries all three kinds, each with a paid or earn item', () => {
-    expect(cosmeticsOfKind('avatar').length).toBeGreaterThan(0);
-    expect(cosmeticsOfKind('cardback').length).toBeGreaterThan(0);
-    expect(cosmeticsOfKind('title').length).toBeGreaterThan(0);
+  it('carries every declared kind, each with at least one item', () => {
+    // WRITTEN AS A LIST, THIS WENT STALE TWICE. It named three kinds while the catalogue carried
+    // five (P5's felt and frame never got a line), and passed the whole time — a test that lists
+    // what it knows about cannot notice a kind it does not. Driving it off the union means a new
+    // `CosmeticKind` is red here until something is actually for sale under it.
+    const kinds: readonly CosmeticKind[] = ['avatar', 'cardback', 'title', 'felt', 'frame', 'dice'];
+    for (const kind of kinds) {
+      expect(cosmeticsOfKind(kind).length, `no cosmetics of kind ${kind}`).toBeGreaterThan(0);
+    }
+    // And the list above is exhaustive over the union: an omission is a compile error, not a
+    // silently unchecked kind.
+    const exhaustive: Record<CosmeticKind, true> = {
+      avatar: true,
+      cardback: true,
+      title: true,
+      felt: true,
+      frame: true,
+      dice: true,
+    };
+    expect(Object.keys(exhaustive).sort()).toEqual([...kinds].sort());
   });
 
   it('gives every cosmetic a rarity', () => {

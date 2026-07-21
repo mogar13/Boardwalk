@@ -35,6 +35,8 @@ import { seatsHeldBy } from './seats';
 import type { ClientMsg, ServerMsg } from './protocol';
 import { decodeFrame } from './protocol';
 import type { RoomStatus, SeatOccupant } from './types';
+import type { Db } from '../db/db';
+import { LiarsDiceDealer } from './liarsDiceDealer';
 
 /** Per-connection state — its identity and everything it is currently subscribed to. */
 interface Conn {
@@ -69,18 +71,74 @@ const asStatus = (v: unknown): RoomStatus | null =>
  */
 export const DEFAULT_GRACE_MS = 20_000;
 
+/**
+ * How long an EMPTY room is kept before it is collected.
+ *
+ * The room used to be destroyed the instant its presence set emptied, which is right for "everyone
+ * went home" and wrong for every transient unmount. React StrictMode double-invokes effects in
+ * development, so `<RoomProvider>` mounts, declares presence, unmounts and re-declares — and the
+ * unmount sends a REAL `unpresence`. The room was collected between the two, so on this path a
+ * table died the moment it was created and no WS room game could be developed locally at all. It
+ * also meant a player navigating away and straight back lost the table.
+ *
+ * The answer is the one crash-recovery already established for seats: do not act on a
+ * disconnection, SCHEDULE the action and let a reconnection cancel it. Short, because an empty room
+ * is genuinely garbage and holding it costs memory; long enough to survive a remount.
+ *
+ * IT APPLIES TO `unpresence` AND NOT TO A SOCKET CLOSE, and the split is deliberate. An explicit
+ * `unpresence` is a client saying "I am stepping away from this table" over a connection that is
+ * still up — which is exactly what a remount sends, and what a player navigating away sends. A
+ * CLOSE is the tab going down, and crash-recovery already decided that case: an empty room goes at
+ * once, because there is nobody left to be gracious to. Gracing both would delay collecting rooms
+ * from genuinely departed players for no benefit; gracing neither is the bug above.
+ */
+export const EMPTY_ROOM_GRACE_MS = 5_000;
+
 export class RoomGateway {
   private readonly conns = new Set<Conn>();
   /** `roomKey::uid` → the armed seat-release. Cancelled by a reconnect, by GC, or by firing. */
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
+  /** `roomKey` → the armed collection of an empty room. Cancelled by anyone declaring presence. */
+  private readonly reaping = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * The referee for the one game the server DEALS over this socket. Null when no database was
+   * handed in — every test that predates Phase E builds a gateway without one, and a room-only
+   * gateway is a perfectly coherent thing to be. The `ld*` frames simply refuse when it is absent,
+   * rather than the constructor demanding a database that most callers have no use for.
+   */
+  private readonly dealer: LiarsDiceDealer | null;
 
   constructor(
     private readonly verifier: TokenVerifier,
     /** Injectable so a test can hold the same store the assertions read. */
     readonly store: RoomStore = new RoomStore(),
     /** Injectable so a test can drive the grace window in milliseconds instead of waiting one out. */
-    private readonly graceMs: number = DEFAULT_GRACE_MS
-  ) {}
+    private readonly graceMs: number = DEFAULT_GRACE_MS,
+    /**
+     * The ledger. Rooms are ephemeral and `types.ts` says a room never touches the durable tables
+     * — still true of ROOMS. A dealt game is not a room: its match is durable, its stakes are real
+     * ledger rows, and it lives here because the gateway is the only thing that knows when a
+     * player acted. One process, one better-sqlite3 handle, already shared with the HTTP routes.
+     */
+    db: Db | null = null,
+    /** Injectable so a test can drive the empty-room window instead of waiting one out. */
+    private readonly emptyGraceMs: number = EMPTY_ROOM_GRACE_MS
+  ) {
+    this.dealer = db === null ? null : new LiarsDiceDealer(db, {
+      seatsOf: (g, r) => this.store.seatsOf(g, r),
+      hostOf: (g, r) => this.store.hostOf(g, r),
+      statusOf: (g, r) => this.store.statusOf(g, r),
+      publish: (g, r, state) => {
+        this.store.patchState(g, r, state);
+        this.broadcastRoom(g, r);
+      },
+      deal: (g, r, index, data) => {
+        this.store.writePrivate(g, r, index, data);
+        this.broadcastPrivate(g, r, index);
+      },
+    });
+  }
 
   /** Wire this gateway to an existing HTTP server (shares the Express port and the tunnel). */
   attach(server: Server, path = '/rooms'): WebSocketServer {
@@ -193,6 +251,10 @@ export class RoomGateway {
         return;
       case 'chatClear':
         return this.onChatClear(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId));
+      case 'ldStart':
+        return this.onLdStart(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.anteCents);
+      case 'ldAction':
+        return this.onLdAction(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.action);
       default:
         return;
     }
@@ -225,6 +287,7 @@ export class RoomGateway {
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
     this.broadcastRoomPrivates(gameId, roomId);
+    this.notifyDealerOfSeats(gameId, roomId);
   }
 
   private onReleaseSeat(conn: Conn, id: number, gameId: string, roomId: string, index: number, fallback: 'ai' | 'open'): void {
@@ -237,6 +300,7 @@ export class RoomGateway {
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
     this.broadcastRoomPrivates(gameId, roomId);
+    this.notifyDealerOfSeats(gameId, roomId);
   }
 
   private onSetAi(conn: Conn, id: number, gameId: string, roomId: string, index: number, name: string | null): void {
@@ -250,7 +314,20 @@ export class RoomGateway {
   private onPatchState(conn: Conn, id: number, gameId: string, roomId: string, data: unknown): void {
     // Any seated participant may advance state (the turn-owner, or the host-as-dealer). The server
     // owns the seq bump, so a client cannot rewind or skip ordering.
+    //
+    // THAT COMMENT USED TO DESCRIBE AN AUTHORISATION THIS FUNCTION DID NOT PERFORM. It checked that
+    // the room existed and nothing else, so any authenticated socket that knew a room code — they are
+    // four characters — could overwrite any room's entire state. For UNO/Chess/Tic-Tac-Toe that was
+    // griefing rather than theft, because none of them bet; it became load-bearing the moment a game
+    // on this path could win money, and it is the room-state twin of leaving `POST /settle` open for
+    // a game the dealer settles. The check is membership, not turn: whose turn it is lives in a
+    // game's own state, which this layer deliberately cannot read. Liar's Dice does not come through
+    // here at all — a dealt game's actions carry their own turn-checked frames.
     if (!this.store.has(gameId, roomId)) return this.reply(conn, id, { ok: true });
+    const seats = this.store.seatsOf(gameId, roomId);
+    const seated = conn.uid !== null && seatsHeldBy(seats, conn.uid).length > 0;
+    const isHost = this.store.hostOf(gameId, roomId) === conn.uid;
+    if (!seated && !isHost) return this.reply(conn, id, { ok: false, error: 'Forbidden.' });
     this.store.patchState(gameId, roomId, data);
     this.reply(conn, id, { ok: true });
     this.broadcastRoom(gameId, roomId);
@@ -283,6 +360,9 @@ export class RoomGateway {
     if (conn.uid === null) return;
     conn.presence.add(roomKey(gameId, roomId));
     this.store.addPresence(gameId, roomId, conn.uid);
+    // Somebody is here, so an armed collection is wrong — the same cancel-on-return the seat
+    // release does one line below, for the room itself.
+    this.cancelReap(roomKey(gameId, roomId));
     // THE RESUME. A reconnect replays presence, which is this frame — so cancelling the armed
     // release here is what lets a blipped player keep the seat a bot was about to inherit.
     this.cancelRelease(roomKey(gameId, roomId), conn.uid);
@@ -293,7 +373,7 @@ export class RoomGateway {
     if (conn.uid === null) return;
     conn.presence.delete(roomKey(gameId, roomId));
     const empty = this.store.removePresence(gameId, roomId, conn.uid);
-    if (empty) this.gcRoom(gameId, roomId);
+    if (empty) this.scheduleReap(gameId, roomId);
     else this.broadcastRoom(gameId, roomId);
   }
 
@@ -301,6 +381,24 @@ export class RoomGateway {
     if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: true }); // idempotent
     this.reply(conn, id, { ok: true });
     this.gcRoom(gameId, roomId); // removes, cancels armed releases, and broadcasts null
+  }
+
+  // ── the dealt game (Phase E) ───────────────────────────────────────────────────────────────
+
+  private onLdStart(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, ante: unknown): void {
+    if (this.dealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    // Host-only, matching who runs the lobby and who presses Start — and the dealer checks that
+    // the host is actually SEATED, because a spectator cannot ante.
+    if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Host only.' });
+    const anteCents = typeof ante === 'number' && Number.isFinite(ante) ? Math.floor(ante) : 0;
+    const res = this.dealer.start(conn.uid, gameId, roomId, nonce, anteCents);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
+  }
+
+  private onLdAction(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, action: unknown): void {
+    if (this.dealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    const res = this.dealer.act(conn.uid, gameId, roomId, nonce, action);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
   }
 
   private onChatSend(conn: Conn, id: number, gameId: string, roomId: string, message: unknown): void {
@@ -349,6 +447,16 @@ export class RoomGateway {
   }
 
   /** Re-evaluate every private subscription for a room — used when seats (and thus owners) change. */
+  /**
+   * A seat changed hands, so a dealt table may now be waiting on a chair whose occupant left. The
+   * dealer re-reads and reschedules — the crash-recovery rule one layer up: a table that stalls
+   * forever on a departed player is the bug that whole phase existed to close, and a game the
+   * SERVER drives has no host to fall back on.
+   */
+  private notifyDealerOfSeats(gameId: string, roomId: string): void {
+    this.dealer?.onSeatsChanged(gameId, roomId);
+  }
+
   private broadcastRoomPrivates(gameId: string, roomId: string): void {
     const prefix = `${roomKey(gameId, roomId)}/`;
     for (const conn of this.conns)
@@ -371,7 +479,30 @@ export class RoomGateway {
   // ── lifecycle ──────────────────────────────────────────────────────────────────────────────
 
   /** GC a room nobody is present in, and tell any lingering subscribers it is gone. */
+  /** Arm the collection of a room nobody is in. Cancelled if anyone declares presence in time. */
+  private scheduleReap(gameId: string, roomId: string): void {
+    const key = roomKey(gameId, roomId);
+    if (this.reaping.has(key)) return;
+    const timer = setTimeout(() => {
+      this.reaping.delete(key);
+      // Re-check at FIRE time, not arm time: someone may have come back, and this timer is not
+      // the authority on whether the room is empty — the store is.
+      if (this.store.presenceCount(gameId, roomId) === 0) this.gcRoom(gameId, roomId);
+    }, this.emptyGraceMs);
+    timer.unref();
+    this.reaping.set(key, timer);
+  }
+
+  private cancelReap(key: string): void {
+    const timer = this.reaping.get(key);
+    if (timer !== undefined) clearTimeout(timer);
+    this.reaping.delete(key);
+  }
+
   private gcRoom(gameId: string, roomId: string): void {
+    this.cancelReap(roomKey(gameId, roomId));
+    // A dead room must not leave a timer that would publish into it.
+    this.dealer?.cancel(gameId, roomId);
     this.cancelRoomReleases(roomKey(gameId, roomId));
     this.store.remove(gameId, roomId);
     this.broadcastRoom(gameId, roomId);
@@ -424,6 +555,7 @@ export class RoomGateway {
         this.store.releaseSeat(gameId, roomId, index, playing ? 'ai' : 'open');
       this.broadcastRoom(gameId, roomId);
       this.broadcastRoomPrivates(gameId, roomId);
+      this.notifyDealerOfSeats(gameId, roomId);
     }, this.graceMs);
     timer.unref(); // a pending grace window must never hold the process open
     this.pending.set(pk, timer);
@@ -462,6 +594,7 @@ export class RoomGateway {
         this.scheduleRelease(gameId, roomId, uid);
       this.broadcastRoom(gameId, roomId);
       this.broadcastRoomPrivates(gameId, roomId);
+      this.notifyDealerOfSeats(gameId, roomId);
     }
   }
 }
