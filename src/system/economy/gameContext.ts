@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { GameManifest } from '@/games/registry';
+import type { OptionValues } from '@/system/options/options';
 
 /**
  * The context `<GameShell>` provides and `useGame`/`useBet` read. This is the ONE thing a game
@@ -19,6 +20,17 @@ import type { GameManifest } from '@/games/registry';
  */
 export interface GameContextValue {
   readonly manifest: GameManifest;
+  /**
+   * The chosen pre-game options — complete and valid against `manifest.options` (see
+   * `resolveOptionValues`), `{}` for the four games that declare none. It lives HERE, in the
+   * context the shell already sets, rather than in a second provider: a game is wrapped in exactly
+   * one boundary, and a `<GameOptionsProvider>` nested inside `<GameShell>` would be two places to
+   * mount and one more way to render a game outside its context. Read it through
+   * `useGameOptions()`, never from here — that hook is where a game's window on this is named.
+   */
+  readonly optionValues: OptionValues;
+  /** Write one option. Unknown ids and unoffered values change nothing (`setOptionValue`). */
+  readonly setOption: (id: string, value: string) => void;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);

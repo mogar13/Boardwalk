@@ -1,6 +1,12 @@
-import type { ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { GameManifest } from '@/games/registry';
 import { GameContextProvider } from '@/system/economy/gameContext';
+import {
+  defaultOptionValues,
+  NO_OPTIONS,
+  setOptionValue,
+  type OptionValues,
+} from '@/system/options/options';
 
 /**
  * `<GameShell>` — the boundary the play route wraps a game in, so `useGame`/`useBet` have a
@@ -25,5 +31,23 @@ export interface GameShellProps {
 }
 
 export function GameShell({ manifest, children }: GameShellProps) {
-  return <GameContextProvider value={{ manifest }}>{children}</GameContextProvider>;
+  // PRE-GAME OPTIONS live here because this is the boundary that already exists — one provider per
+  // game, mounted by the play route, torn down on exit. The state is the shell's rather than the
+  // game's for the same reason the manifest is: a game that owned it would draw its own control
+  // (Solitaire did, and that is the hand-rolled shape this seam replaces).
+  const spec = manifest.options ?? NO_OPTIONS;
+  const [optionValues, setOptionValues] = useState<OptionValues>(() => defaultOptionValues(spec));
+  const setOption = useCallback(
+    (id: string, value: string) => {
+      setOptionValues((current) => setOptionValue(spec, current, id, value));
+    },
+    [spec]
+  );
+
+  const value = useMemo(
+    () => ({ manifest, optionValues, setOption }),
+    [manifest, optionValues, setOption]
+  );
+
+  return <GameContextProvider value={value}>{children}</GameContextProvider>;
 }

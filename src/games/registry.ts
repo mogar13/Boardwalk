@@ -1,4 +1,5 @@
 import { lazy, type ComponentType } from 'react';
+import type { GameOptionsSpec } from '@/system/options/options';
 import { ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
 import { blackjackManifest } from '@/games/blackjack/manifest';
 import { chessManifest } from '@/games/chess/manifest';
@@ -169,6 +170,17 @@ export interface GameManifest {
    * zero" are different facts and only one of them is true here.
    */
   readonly betting?: { readonly min: number; readonly max: number };
+
+  /**
+   * How this game can be played DIFFERENTLY — draw-1 vs draw-3, a house rule, later an AI tier.
+   * Data, rendered by the OS's `<GameOptions>` and read back by the game through
+   * `useGameOptions()`; the shell never learns what a value means and the game never draws a
+   * control. Absent on a game with nothing to configure, which is four of the five.
+   *
+   * This is v1's `settingsConfig` idea kept and its delivery mechanism thrown away — see
+   * `src/system/options/options.ts` for what was deliberately not carried over.
+   */
+  readonly options?: GameOptionsSpec;
 }
 
 /**
