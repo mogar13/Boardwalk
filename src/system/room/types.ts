@@ -78,21 +78,6 @@ export interface RoomMeta {
 }
 
 /**
- * The whole public room, as a hook sees it. Generic over `TPublic` — the game's shared state,
- * whose shape is the game's business and not the OS's. `state` is `null` before the host
- * starts (there is no game yet), which is why it is nullable rather than a defaulted `{}`:
- * "not started" and "started with empty state" are different facts.
- *
- * `presence` is a set of uids currently connected, maintained by `onDisconnect` in the repo —
- * the value is a truthy marker, not data, so the type is `Record<uid, true>` for the same
- * reason `inventory` is (a set that round-trips through RTDB).
- *
- * PRIVATE STATE IS DELIBERATELY NOT HERE. Hidden information (`rooms/.../private/<seatIdx>`)
- * is subscribed to separately, by its owner only, because the whole point is that a bystander
- * never RECEIVES it — folding it into this snapshot would send every hand to every client and
- * make the privacy a UI trick instead of a data-layout (and now rule-enforced) guarantee.
- */
-/**
  * Whether a table is listed in the public browser, chosen by the host at create
  * (V1_FEATURE_GAPS #9). The mirror of the server's `RoomVisibility`.
  *
@@ -123,6 +108,21 @@ export interface OpenTable {
   readonly createdAt: number;
 }
 
+/**
+ * The whole public room, as a hook sees it. Generic over `TPublic` — the game's shared state,
+ * whose shape is the game's business and not the OS's. `state` is `null` before the host
+ * starts (there is no game yet), which is why it is nullable rather than a defaulted `{}`:
+ * "not started" and "started with empty state" are different facts.
+ *
+ * `presence` is a set of uids currently connected, maintained by `onDisconnect` in the repo —
+ * the value is a truthy marker, not data, so the type is `Record<uid, true>` for the same
+ * reason `inventory` is (a set that round-trips through RTDB).
+ *
+ * PRIVATE STATE IS DELIBERATELY NOT HERE. Hidden information (`rooms/.../private/<seatIdx>`)
+ * is subscribed to separately, by its owner only, because the whole point is that a bystander
+ * never RECEIVES it — folding it into this snapshot would send every hand to every client and
+ * make the privacy a UI trick instead of a data-layout (and now rule-enforced) guarantee.
+ */
 export interface RoomSnapshot<TPublic> {
   readonly meta: RoomMeta;
   readonly seats: readonly Seat[];
