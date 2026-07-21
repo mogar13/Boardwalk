@@ -1,5 +1,5 @@
 import type { RoomSocket, Reply } from '@/system/repo/api/socket';
-import type { RoomSnapshot } from '@/system/room/types';
+import type { OpenTable, RoomSnapshot } from '@/system/room/types';
 import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
 
 /**
@@ -36,6 +36,7 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
         gameId,
         host: init.host,
         seatCount: init.seatCount,
+        visibility: init.visibility,
       });
       return asResult<string>(reply);
     },
@@ -48,6 +49,10 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
       return socket.subscribeRoom(gameId, roomId, (snap) =>
         listener(snap as RoomSnapshot<TPublic> | null)
       );
+    },
+
+    subscribeOpenTables(listener: (tables: readonly OpenTable[]) => void): Unsubscribe {
+      return socket.subscribeOpen(listener);
     },
 
     async claimSeat(gameId, roomId, index, who): Promise<RepoResult<void>> {

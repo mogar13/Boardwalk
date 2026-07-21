@@ -16,7 +16,13 @@ import type { Session } from '@/system/auth/session';
 // type from here, this imports the `BoardId` type from there, and both erase at compile — there
 // is no runtime import cycle, only a compile-time one the type checker resolves.
 import type { BoardId } from '@/system/progress/boards';
-import type { RoomSnapshot, Seat, SeatOccupant } from '@/system/room/types';
+import type {
+  OpenTable,
+  RoomSnapshot,
+  RoomVisibility,
+  Seat,
+  SeatOccupant,
+} from '@/system/room/types';
 
 /**
  * The seam. Everything above this line talks to these interfaces; exactly one
@@ -499,14 +505,31 @@ export interface LeaderboardRepo {
 export interface RoomRepo {
   /**
    * Create a room and return its short join code. The repo mints the code (a room id a human can
-   * read aloud), seats the host, and stamps `createdAt`/`seq`. `RepoResult` because a code
+   * read aloud), seats the host, and stamps `createdAt`/`seq`. `visibility` is REQUIRED rather
+   * than defaulted: whether a table is advertised to strangers is a decision, and a default is how
+   * a caller makes it without noticing. `RepoResult` because a code
    * collision — two rooms minted the same instant — is contention the lobby renders ("try
    * again"), not a crash; a broken database still throws.
    */
   create(
     gameId: string,
-    init: { seatCount: number; host: SeatOccupant }
+    init: { seatCount: number; host: SeatOccupant; visibility: RoomVisibility }
   ): Promise<RepoResult<string>>;
+
+  /**
+   * THE ROOM BROWSER (V1_FEATURE_GAPS #9). Subscribe to every joinable public table, across every
+   * game, firing immediately and on every change. Returns the teardown, like every subscription
+   * here.
+   *
+   * A SUBSCRIPTION AND NOT A `listOpen()` PROMISE, because a list of joinable tables that is a few
+   * seconds stale sends people at seats already taken — v1's hub polled and had exactly that. The
+   * server already fans out on every seat/status/presence change; this rides that.
+   *
+   * GLOBAL, NOT PER-GAME, and the filtering is the reader's business: the hub wants all of them,
+   * a lobby wants one game's, and one subscription serves both — a per-game method would have a
+   * player watching the hub holding five.
+   */
+  subscribeOpenTables(listener: (tables: readonly OpenTable[]) => void): Unsubscribe;
 
   /**
    * Subscribe to the PUBLIC room — meta, seats, state, presence — firing immediately with the

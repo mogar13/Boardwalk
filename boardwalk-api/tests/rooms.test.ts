@@ -194,3 +194,111 @@ describe('RoomStore — remove', () => {
     expect(store.has('chess', roomId)).toBe(false);
   });
 });
+
+/**
+ * THE PUBLIC INDEX (V1_FEATURE_GAPS #9). Every case here is a table that must NOT be advertised,
+ * because every one of them is a "Join" button that leads somewhere the player cannot sit — which
+ * is precisely what v1's hub scanner did, listing rooms by existence and apologising with a
+ * stale-room GC afterwards.
+ */
+describe('RoomStore — the open-table index', () => {
+  /** Create a room AND declare presence, which is what makes it listable at all. */
+  function live(store: RoomStore, gameId: string, visibility: 'public' | 'private' = 'public'): string {
+    const res = store.create(gameId, ada, 4, visibility);
+    if (!res.ok) throw new Error(res.error);
+    store.addPresence(gameId, res.roomId, ada.uid);
+    return res.roomId;
+  }
+
+  it('lists a waiting public table somebody is at, with the counts a joiner needs', () => {
+    const store = fixedStore();
+    const roomId = live(store, 'uno');
+    store.claimSeat('uno', roomId, 1, bob);
+    expect(store.listOpen()).toEqual([
+      {
+        gameId: 'uno',
+        roomId,
+        hostName: 'Ada',
+        players: 2,
+        openSeats: 2,
+        seatCount: 4,
+        createdAt: 1_000,
+      },
+    ]);
+  });
+
+  it('drops a table the moment it starts — a listing that outlives the deal sends joiners at a game in progress', () => {
+    const store = fixedStore();
+    const roomId = live(store, 'uno');
+    store.setStatus('uno', roomId, 'playing');
+    expect(store.listOpen()).toEqual([]);
+    store.setStatus('uno', roomId, 'finished');
+    expect(store.listOpen()).toEqual([]);
+  });
+
+  it('never lists a private table — the code is the only way in', () => {
+    const store = fixedStore();
+    live(store, 'uno', 'private');
+    expect(store.listOpen()).toEqual([]);
+  });
+
+  it('never lists a table nobody is present at (the ghost room v1 advertised)', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4);
+    if (!res.ok) throw new Error(res.error);
+    // Created but nobody has declared presence yet, and the same shape a room takes in the window
+    // between its last player leaving and the reaper collecting it.
+    expect(store.listOpen()).toEqual([]);
+    store.addPresence('uno', res.roomId, ada.uid);
+    expect(store.listOpen()).toHaveLength(1);
+    store.removePresence('uno', res.roomId, ada.uid);
+    expect(store.listOpen()).toEqual([]);
+  });
+
+  it('counts an AI chair as joinable, because a person displaces the house', () => {
+    const store = fixedStore();
+    const roomId = live(store, 'uno');
+    store.setAi('uno', roomId, 1, 'CPU 2');
+    store.setAi('uno', roomId, 2, 'CPU 3');
+    store.setAi('uno', roomId, 3, 'CPU 4');
+    // A table padded with bots is exactly the table a browser exists to fill; counting only empty
+    // chairs would hide it.
+    expect(store.listOpen()[0]).toMatchObject({ players: 1, openSeats: 3, seatCount: 4 });
+  });
+
+  it('drops a table with no claimable chair left', () => {
+    const store = fixedStore();
+    const res = store.create('chess', ada, 2);
+    if (!res.ok) throw new Error(res.error);
+    store.addPresence('chess', res.roomId, ada.uid);
+    store.claimSeat('chess', res.roomId, 1, bob);
+    expect(store.listOpen()).toEqual([]);
+  });
+
+  it('keeps naming the host after their seat is handed to a bot mid-grace', () => {
+    // `hostName` is stamped at create rather than read out of seats[0], so a disconnect blip does
+    // not relabel somebody's table "CPU".
+    const store = fixedStore();
+    const roomId = live(store, 'uno');
+    store.releaseSeat('uno', roomId, 0, 'ai');
+    expect(store.listOpen()[0]?.hostName).toBe('Ada');
+  });
+
+  it('orders newest first, breaking ties by code so an unchanged index is byte-stable', () => {
+    let now = 1_000;
+    const store = new RoomStore(() => now);
+    const first = live(store, 'uno');
+    now = 2_000;
+    const second = live(store, 'chess');
+    const list = store.listOpen();
+    expect(list.map((r) => r.roomId)).toEqual([second, first]);
+    expect(store.listOpen()).toEqual(list);
+  });
+
+  it('spans games — the index is global, and filtering to one is the reader’s business', () => {
+    const store = fixedStore();
+    live(store, 'uno');
+    live(store, 'chess');
+    expect(new Set(store.listOpen().map((r) => r.gameId))).toEqual(new Set(['uno', 'chess']));
+  });
+});

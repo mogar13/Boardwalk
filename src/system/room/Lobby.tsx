@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, useToast } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
@@ -6,10 +7,12 @@ import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
 import { repos } from '@/system/repo';
 import { RoomProvider } from '@/system/room/RoomProvider';
+import { RoomBrowser } from '@/system/room/RoomBrowser';
 import { SeatList } from '@/system/room/SeatList';
 import { humanCount, tableIsFull } from '@/system/room/seats';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
+import type { RoomVisibility } from '@/system/room/types';
 
 /**
  * The lobby — create a table, join one by code, take a seat, chat, start. Built entirely from
@@ -47,6 +50,13 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const [mode, setMode] = useState<RoomIdentity['mode']>(roomModes[0] ?? 'online');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const [visibility, setVisibility] = useState<RoomVisibility>('public');
+  // THE DEEP LINK the hub's room browser produces (`/play/uno?table=ABCD`). It is read HERE and
+  // not in the play route, because the play route hands a game `{ onExit }` and nothing else —
+  // that rule is what stops a `system` prop growing back. The lobby is OS code, so it may read the
+  // URL itself, and a game passing `<Lobby>` gets join-by-link for free without learning it exists.
+  const [params, setParams] = useSearchParams();
+  const linkedTable = params.get('table');
 
   if (session === null) {
     return (
@@ -57,17 +67,25 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   }
   const myUid = session.uid;
 
-  if (roomId !== null) {
-    const identity: RoomIdentity = { gameId: manifest.id, roomId, myUid, mode };
+  // A link's table wins over local state until it is left — entering the room by URL and by click
+  // land in exactly the same place, so there is one in-room code path.
+  const activeRoomId = roomId ?? (linkedTable === null || linkedTable === '' ? null : linkedTable);
+
+  /** Leave the table AND the link that put us there, or a "leave" would immediately re-enter it. */
+  const leaveTable = () => {
+    setRoomId(null);
+    if (linkedTable !== null) {
+      const next = new URLSearchParams(params);
+      next.delete('table');
+      setParams(next, { replace: true });
+    }
+  };
+
+  if (activeRoomId !== null) {
+    const identity: RoomIdentity = { gameId: manifest.id, roomId: activeRoomId, myUid, mode };
     return (
       <RoomProvider identity={identity}>
-        <LobbyRoom
-          manifest={manifest}
-          onLeave={() => {
-            setRoomId(null);
-          }}
-          onExit={onExit}
-        >
+        <LobbyRoom manifest={manifest} onLeave={leaveTable} onExit={onExit}>
           {children}
         </LobbyRoom>
       </RoomProvider>
@@ -80,6 +98,13 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
       const result = await repos.room.create(manifest.id, {
         seatCount: manifest.seats.max,
         host: { uid: myUid, name: session.username || 'Player' },
+        // AN 'AI' TABLE IS NEVER LISTED, whatever the toggle last said. The mode is otherwise a
+        // client-side matter (it decides which seats are LOCAL, nothing about the room), but a
+        // player who picked "vs the house" is not asking for company, and a stranger arriving in
+        // their game is a surprise the browser has no business creating. The control is hidden in
+        // that mode for the same reason — a visible toggle that cannot change the outcome is
+        // worse than none.
+        visibility: mode === 'online' ? visibility : 'private',
       });
       setBusy(false);
       if (result.ok) setRoomId(result.value);
@@ -116,10 +141,44 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
             ))}
           </div>
         )}
+        {/*
+          PUBLIC vs PRIVATE, chosen before the table exists (V1_FEATURE_GAPS #9). This is the one
+          control the room browser adds to the lobby, and it is here rather than inside the room
+          because a table that is briefly public is public: somebody can already have joined by the
+          time you change your mind. Public is the default — that is what every table was before
+          the browser, and a discovery surface nobody appears on is worth nothing.
+        */}
+        {mode === 'online' && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Who can join">
+            {(['public', 'private'] as const).map((v) => (
+              <Button
+                key={v}
+                size="sm"
+                variant={v === visibility ? 'secondary' : 'ghost'}
+                aria-pressed={v === visibility}
+                onClick={() => {
+                  setVisibility(v);
+                }}
+              >
+                {v === 'public' ? 'Listed' : 'Code only'}
+              </Button>
+            ))}
+          </div>
+        )}
         <Button variant="primary" disabled={busy} onClick={createTable}>
           Create table
         </Button>
       </Card>
+
+      {/* Renders nothing when no table of this game is open, so the lobby is unchanged on a quiet
+          day and the code form below is still the way in. */}
+      <RoomBrowser
+        gameId={manifest.id}
+        title="Open tables"
+        onJoin={(_gameId, joinRoomId) => {
+          setRoomId(joinRoomId);
+        }}
+      />
 
       <Card className="flex flex-col gap-4 p-6">
         <h2 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">

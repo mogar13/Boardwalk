@@ -17,7 +17,14 @@
  * nothing but say hello.
  */
 
-import type { RoomSnapshot, RoomStatus, SeatOccupant, ChatMessage } from './types';
+import type {
+  ChatMessage,
+  RoomListing,
+  RoomSnapshot,
+  RoomStatus,
+  RoomVisibility,
+  SeatOccupant,
+} from './types';
 
 // ── Client → Server ────────────────────────────────────────────────────────────────────────────
 
@@ -28,7 +35,15 @@ export interface HelloMsg {
 
 /** A mutating request: always an `id` the reply echoes. */
 export type RequestMsg =
-  | { t: 'create'; id: number; gameId: string; host: SeatOccupant; seatCount: number }
+  | {
+      t: 'create';
+      id: number;
+      gameId: string;
+      host: SeatOccupant;
+      seatCount: number;
+      /** Absent from a client that predates the room browser — the store reads that as `public`. */
+      visibility?: RoomVisibility;
+    }
   | { t: 'claimSeat'; id: number; gameId: string; roomId: string; index: number; who: SeatOccupant }
   | { t: 'releaseSeat'; id: number; gameId: string; roomId: string; index: number; fallback: 'ai' | 'open' }
   | { t: 'setAi'; id: number; gameId: string; roomId: string; index: number; name: string | null }
@@ -55,7 +70,14 @@ export type SubscribeMsg =
   | { t: 'chatSub'; gameId: string; roomId: string; limit: number }
   | { t: 'chatUnsub'; gameId: string; roomId: string }
   | { t: 'presence'; gameId: string; roomId: string }
-  | { t: 'unpresence'; gameId: string; roomId: string };
+  | { t: 'unpresence'; gameId: string; roomId: string }
+  // THE ROOM BROWSER (V1_FEATURE_GAPS #9). A subscription and not a request, because a list of
+  // joinable tables that is one second stale is a list that sends people to seats already taken —
+  // v1's hub polled and had exactly that problem. It carries NO gameId: the index is global, and
+  // filtering to one game is the READER's business (the hub wants all of them, a lobby wants one),
+  // which also means a player watching the hub holds one subscription rather than one per game.
+  | { t: 'browse' }
+  | { t: 'unbrowse' };
 
 export type ClientMsg = HelloMsg | RequestMsg | SubscribeMsg;
 
@@ -71,7 +93,10 @@ export type ServerMsg =
   // like a promise. `null` is still the wire value for "this seat holds no hand"; it is simply
   // one of the things `unknown` already admits, and the type cannot say more than that.
   | { t: 'private'; gameId: string; roomId: string; index: number; data: unknown }
-  | { t: 'chat'; gameId: string; roomId: string; messages: readonly ChatMessage[] };
+  | { t: 'chat'; gameId: string; roomId: string; messages: readonly ChatMessage[] }
+  /** The whole open-table index, re-sent in full on every change. It is capped and tiny; a diff
+   * protocol for a 60-row list is machinery with nothing to buy. */
+  | { t: 'open'; rooms: readonly RoomListing[] };
 
 /**
  * Decode one `ws` frame to text.
