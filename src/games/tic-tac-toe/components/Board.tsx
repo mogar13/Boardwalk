@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
+import { useGameOptions } from '@/system/options/useGameOptions';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { aiSeatsToDrive } from '@/system/room/seats';
+import { ticTacToeHouseLevel } from '@/games/tic-tac-toe/manifest';
 import {
   EMPTY,
-  bestMove,
+  chooseAiMove,
   initialState,
   play,
   type Player,
@@ -38,6 +40,9 @@ export function Board() {
   const { isMyTurn, mySeatIndex } = useSeats();
   const { reportResult } = useGame();
   const felt = useEquippedFelt();
+  // How hard the house plays — the `house` option, chosen in the lobby before the game starts and
+  // read only here, on the one client that drives an AI seat.
+  const houseLevel = ticTacToeHouseLevel(useGameOptions().values);
 
   // 1. Host seeds the opening state exactly once, when the room flips to playing.
   useEffect(() => {
@@ -55,14 +60,14 @@ export function Board() {
       void patch((s) => {
         if (s === null) return initialState();
         if (s.outcome.kind !== 'playing') return s;
-        const move = bestMove(s, s.turn);
+        const move = chooseAiMove(s, s.turn, houseLevel);
         return move === null ? s : play(s, s.turn, move);
       });
     }, 450);
     return () => {
       clearTimeout(timer);
     };
-  }, [isHost, seats, state, patch]);
+  }, [isHost, seats, state, patch, houseLevel]);
 
   // 3. Report my own seat's result once per finished round. The ref keys on `round`, so a rematch
   // reports again and a re-render of the same finished game does not double-count.

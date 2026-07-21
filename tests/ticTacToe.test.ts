@@ -13,6 +13,7 @@ import {
   LINES,
   bestMove,
   canPlay,
+  chooseAiMove,
   initialState,
   isFull,
   legalMoves,
@@ -173,5 +174,122 @@ describe('bestMove — the house', () => {
       expect(++guard).toBeLessThanOrEqual(9); // must terminate within nine moves
     }
     expect(s.outcome.kind).toBe('draw');
+  });
+});
+
+/**
+ * Difficulty tiers (V1_FEATURE_GAPS #1). What is actually at stake here is not "does Casual feel
+ * easier" — it is that a tier is a value the rulebook takes, so each one can be asserted. Two of
+ * these matter more than the rest: every level returns a move the reducer ACCEPTS (an illegal bot
+ * move is a no-op, and a no-op on a bot's turn stalls the table forever), and `perfect` is
+ * unchanged, because it is the default and the shipped game must not have moved.
+ */
+describe('chooseAiMove — the difficulty tiers', () => {
+  /** A fixed sequence, so a random level is deterministic here. Cycles, so it never runs out. */
+  const fixed = (...xs: number[]) => {
+    let i = 0;
+    return () => xs[i++ % xs.length] as number;
+  };
+
+  const LEVELS = ['casual', 'sharp', 'perfect'] as const;
+
+  it('is null at every level when it is not the house’s turn or the game is over', () => {
+    const won = stateFrom([1, 1, 1, 0, 0, E, E, E, E], 0);
+    for (const level of LEVELS) {
+      expect(chooseAiMove(initialState(), 1, level, fixed(0))).toBeNull(); // seat 0 to move
+      expect(chooseAiMove(won, 0, level, fixed(0))).toBeNull();
+    }
+  });
+
+  it('perfect is bestMove — the default tier is the house that shipped', () => {
+    const boards: Cell[][] = [
+      [E, E, E, E, E, E, E, E, E],
+      [0, 0, E, 1, 1, E, E, E, E],
+      [1, 1, E, 0, E, E, E, E, E],
+      [0, E, E, E, 1, E, E, E, E],
+    ];
+    for (const b of boards) {
+      const s = stateFrom(b, 0);
+      expect(chooseAiMove(s, 0, 'perfect', fixed(0))).toBe(bestMove(s, 0));
+    }
+  });
+
+  it('sharp takes an immediate win, and prefers winning to blocking', () => {
+    // Seat 0 wins at 2; seat 1 would win at 5 next. Taking the game beats defending it.
+    const s = stateFrom([0, 0, E, 1, 1, E, E, E, E], 0);
+    expect(chooseAiMove(s, 0, 'sharp', fixed(0))).toBe(2);
+  });
+
+  it('sharp blocks an immediate loss when it has no win of its own', () => {
+    const s = stateFrom([1, 1, E, 0, E, E, E, E, E], 0);
+    expect(chooseAiMove(s, 0, 'sharp', fixed(0))).toBe(2);
+  });
+
+  it('sharp is beatable — it sees one ply, so a fork beats it', () => {
+    // The classic double-threat: X holds a corner, the centre and the far corner, making TWO
+    // winning cells at once. Sharp answers the one it finds and loses to the other, which is what
+    // makes it a middle tier rather than a second `perfect`.
+    const forked = stateFrom([0, E, E, E, 0, E, 0, E, 1], 1);
+    const block = chooseAiMove(forked, 1, 'sharp', fixed(0));
+    expect([2, 3]).toContain(block); // one of the two threats — it can only cover one
+    const after = play(forked, 1, block as number);
+    const kill = chooseAiMove(after, 0, 'sharp', fixed(0));
+    expect(play(after, 0, kill as number).outcome).toMatchObject({ kind: 'win', player: 0 });
+  });
+
+  it('casual plays at random — every legal cell is reachable, and nothing else is', () => {
+    const s = stateFrom([0, 1, E, E, E, E, E, E, E], 0);
+    const legal = legalMoves(s);
+    const seen = new Set<number>();
+    for (let i = 0; i < legal.length; i++) {
+      // Aim the rng squarely at index i of the legal list.
+      const move = chooseAiMove(s, 0, 'casual', fixed((i + 0.5) / legal.length));
+      expect(legal).toContain(move);
+      seen.add(move as number);
+    }
+    expect(seen.size).toBe(legal.length);
+  });
+
+  it('survives a broken rng rather than returning a cell off the board', () => {
+    const s = initialState();
+    for (const r of [NaN, -1, 1, 2, Infinity]) {
+      const move = chooseAiMove(s, 0, 'casual', () => r);
+      expect(legalMoves(s)).toContain(move);
+    }
+  });
+
+  it('every level only ever returns a move `play` accepts, over whole games', () => {
+    // The stall guard: an illegal choice is a silent no-op inside `patch`, and a bot that no-ops on
+    // its own turn hangs the table. Play every level against every level to the end.
+    for (const a of LEVELS) {
+      for (const b of LEVELS) {
+        const rng = fixed(0.1, 0.9, 0.42, 0.73, 0.05, 0.61);
+        let s = initialState();
+        let guard = 0;
+        while (s.outcome.kind === 'playing') {
+          const level = s.turn === 0 ? a : b;
+          const move = chooseAiMove(s, s.turn, level, rng);
+          expect(move).not.toBeNull();
+          expect(canPlay(s, s.turn, move as number)).toBe(true);
+          const next = play(s, s.turn, move as number);
+          expect(next).not.toBe(s); // a refused move would leave the state identical — the stall
+          s = next;
+          expect(++guard).toBeLessThanOrEqual(9);
+        }
+        expect(s.outcome.kind === 'win' || s.outcome.kind === 'draw').toBe(true);
+      }
+    }
+  });
+
+  it('perfect never loses to a casual house', () => {
+    const rng = fixed(0.3, 0.8, 0.15, 0.66, 0.5, 0.95, 0.02);
+    for (let seat = 0; seat < 2; seat++) {
+      let s = initialState();
+      while (s.outcome.kind === 'playing') {
+        const level = s.turn === seat ? 'perfect' : 'casual';
+        s = play(s, s.turn, chooseAiMove(s, s.turn, level, rng) as number);
+      }
+      if (s.outcome.kind === 'win') expect(s.outcome.player).toBe(seat);
+    }
   });
 });

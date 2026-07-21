@@ -8,6 +8,7 @@ import {
   toPublic,
   type Card,
   type UnoGame,
+  type UnoLevel,
   type UnoState,
 } from '@boardwalk/game-logic/games/uno';
 
@@ -46,6 +47,13 @@ export interface UnoHostArgs {
   readonly seats: readonly Seat[];
   readonly patch: (produce: (prev: UnoState | null) => UnoState) => Promise<void>;
   readonly writeHand: (index: number, data: readonly Card[]) => Promise<void>;
+  /**
+   * How hard the bots play — the `bots` option, resolved to a level by the game (`unoBotLevel`).
+   * It arrives here rather than being read here because this hook is the DEALER, not a game: it
+   * runs the rulebook, and how hard to run it is the table's decision, taken in the lobby before
+   * the deal. Only the host reads it, which is also the only client that drives an AI seat.
+   */
+  readonly level: UnoLevel;
 }
 
 export interface UnoHostApi {
@@ -60,6 +68,7 @@ export function useUnoHost({
   seats,
   patch,
   writeHand,
+  level,
 }: UnoHostArgs): UnoHostApi {
   const gameRef = useRef<UnoGame | null>(null);
   const lastGameRef = useRef<UnoGame | null>(null); // for writing only the hands that changed
@@ -116,14 +125,14 @@ export function useUnoHost({
       const cur = gameRef.current;
       if (cur === null || cur.winner !== -1 || cur.turn !== turn || seats[turn]?.kind !== 'ai')
         return;
-      const next = applyMove(cur, turn, chooseAiMove(cur, turn), Math.random);
+      const next = applyMove(cur, turn, chooseAiMove(cur, turn, level), Math.random);
       gameRef.current = next;
       publish(next);
     }, AI_DELAY_MS);
     return () => {
       clearTimeout(timer);
     };
-  }, [isHost, state, seats, publish]);
+  }, [isHost, state, seats, publish, level]);
 
   // 3. Apply a human's submitted intent in nonce order (the host's own move takes this path too).
   useEffect(() => {

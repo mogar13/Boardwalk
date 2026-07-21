@@ -194,3 +194,88 @@ export function bestMove(state: TicTacToeState, player: Player): number | null {
   }
   return bestCell === -1 ? null : bestCell;
 }
+
+// ── Difficulty tiers ─────────────────────────────────────────────────────────────────────────
+//
+// V1_FEATURE_GAPS #1: 22 of v1's 31 games exposed an AI difficulty selector, and the tier mapped to
+// real engine behaviour (search depth, a house-rule value, a deliberate blunder rate) rather than
+// flavour text. The half v1 got wrong was WHERE it lived: a tier was a HUD dropdown wired into the
+// component, so no test could reach it and the vocabulary drifted across games.
+//
+// Here a tier is TWO things and neither of them is a mechanism: a `select` option declared on the
+// manifest (the seam #2 already built — see `src/games/tic-tac-toe/manifest.ts`), and a level the
+// PURE reducer is asked for, right here. So the difficulty of the house is a value in a unit test,
+// and the OS learns nothing about what `'sharp'` means.
+//
+// The levels are this game's own, deliberately — v1's vocabulary was inconsistent across games
+// (easy/normal/hard, easy/medium/hard, normal/hard) and a fixed SDK-wide enum would either lie
+// about a game or force one. `perfect` is what the house has always played and stays the DEFAULT,
+// so nothing about the shipped game changes unless a player asks it to.
+
+/** How hard the house plays. This game's own vocabulary; see above for why it is not shared. */
+export type TicTacToeLevel = 'casual' | 'sharp' | 'perfect';
+
+/**
+ * A source of randomness, injected so every level is DETERMINISTIC in a test. `Math.random` is the
+ * default for the one real caller (the host driving the seat); a test passes a fixed sequence and
+ * pins the move. The same shape the deck shuffles here take.
+ */
+export type Rng = () => number;
+
+/** Pick from `xs` with `rng`, clamping garbage (NaN, 1, negatives) into range rather than trusting it. */
+function pick<T>(xs: readonly T[], rng: Rng): T | null {
+  if (xs.length === 0) return null;
+  const r = rng();
+  const i = Number.isFinite(r)
+    ? Math.min(xs.length - 1, Math.max(0, Math.floor(r * xs.length)))
+    : 0;
+  return xs[i] ?? null;
+}
+
+/**
+ * The cell that wins for `player` right now, or `null` — one ply, no search. Deliberately does not
+ * consult `state.turn`, so the same function answers "my winning cell" and "the cell I must block".
+ */
+function immediateWin(state: TicTacToeState, player: Player): number | null {
+  for (const i of legalMoves(state)) {
+    const next = state.board.slice();
+    next[i] = player;
+    const oc = outcomeOf(next);
+    if (oc.kind === 'win' && oc.player === player) return i;
+  }
+  return null;
+}
+
+/**
+ * The house's move at a given level, or `null` if it is not their turn or the game is over.
+ *
+ * - `casual` — a legal cell at random. Loses to a child, which is the point: the oldest table on
+ *   the boardwalk should be winnable by someone who has just learned the rules.
+ * - `sharp` — takes an immediate win, blocks an immediate loss, otherwise plays at random. The
+ *   classic middle tier, and it is genuinely beatable: it sees one ply, so it walks into forks.
+ * - `perfect` — full minimax (`bestMove`). Tic-Tac-Toe is a solved draw, so this house never loses
+ *   and a human can at best tie it.
+ *
+ * TOTAL, like `play`: an off-turn or finished state is `null`, never a throw, and every level
+ * returns a cell `canPlay` accepts. That last property is not decoration — an AI that returns a
+ * move the reducer refuses is a no-op on a bot's turn, which stalls the table forever (the lesson
+ * Liar's Dice's house is guarded for), so `tests/ticTacToe.test.ts` asserts it across every level
+ * over whole played-out games.
+ */
+export function chooseAiMove(
+  state: TicTacToeState,
+  player: Player,
+  level: TicTacToeLevel,
+  rng: Rng = Math.random
+): number | null {
+  if (state.outcome.kind !== 'playing' || state.turn !== player) return null;
+  if (level === 'perfect') return bestMove(state, player);
+
+  if (level === 'sharp') {
+    const win = immediateWin(state, player);
+    if (win !== null) return win;
+    const block = immediateWin(state, other(player));
+    if (block !== null) return block;
+  }
+  return pick(legalMoves(state), rng);
+}
