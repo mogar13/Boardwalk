@@ -6,6 +6,7 @@ import {
   applyDaily,
   applyPack,
   applyPurchase,
+  applyRefill,
   applySettle,
   type MutationResult,
 } from '../domain/mutations';
@@ -19,6 +20,7 @@ import type { Outcome } from '../domain/economy';
  *   POST /settle    {nonce, gameId, outcome, payoutCents, …}       → credit a BOUNDED payout, bump stats/XP
  *   POST /purchase  {nonce, itemId}                                 → buy at the SERVER'S price
  *   POST /daily     {nonce}                                         → claim against the SERVER'S clock
+ *   POST /refill    {nonce}                                         → top a BROKE bankroll up to the floor
  *   POST /pack      {nonce, packId}                                 → roll a pull HERE, at the published odds
  *
  * Every one answers with the whole authoritative profile, so the client's next render is the
@@ -34,7 +36,10 @@ import type { Outcome } from '../domain/economy';
  *   • no seed and no item. `/pack` names a PACK; the roll happens here, so a client cannot pick
  *     its own legendary. It is told what it got — and on a retry, told the same thing again.
  *
- * `nonce` is required on all five and is what makes a retry safe — see `mutations.ts`.
+ *   • no amount, on `/refill` either. It names nothing at all. How much is `refillGrantFor` over
+ *     the LEDGER'S balance, and whether you may is counted off the ledger's own rows.
+ *
+ * `nonce` is required on all six and is what makes a retry safe — see `mutations.ts`.
  */
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -147,6 +152,20 @@ export function economyRouter(db: Db, clock: () => number = Date.now): Router {
       return;
     }
     reply(res, applyDaily(db, uid, { nonce }, clock()));
+  });
+
+  /**
+   * The bankrupt refill. Body-for-body identical to `/daily` — a nonce, and nothing else — which is
+   * the whole security argument in one line: there is no amount to inflate and no clock to wind.
+   */
+  router.post('/refill', (req, res) => {
+    const uid = requireUid(req);
+    const nonce = nonceOf(obj(req.body).nonce);
+    if (nonce === null) {
+      res.status(400).json({ error: 'nonce is required' });
+      return;
+    }
+    reply(res, applyRefill(db, uid, { nonce }, clock()));
   });
 
   router.post('/pack', (req, res) => {

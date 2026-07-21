@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { formatMoney } from '@boardwalk/game-logic';
-import { xpProgress } from '@boardwalk/game-logic';
+import { rankForLevel, xpProgress } from '@boardwalk/game-logic';
 import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@/system/progress/boards';
 import { useLeaderboard } from '@/system/progress/useLeaderboard';
 import type { LeaderboardEntry } from '@/system/repo';
@@ -70,7 +70,12 @@ function Row({
           >
             {entry.name}
           </span>
-          <span className="text-bw-muted text-xs">Level {level}</span>
+          {/* The rank rides along on EVERY board, not just the Level one — it is derived from
+              `xp`, which is already in the public projection, so naming it needs no new field and
+              no rules change. (A stored rank would; that is the point of deriving it.) */}
+          <span className="text-bw-muted text-xs">
+            Level {level} · {rankForLevel(level).name}
+          </span>
         </div>
       </div>
       <span

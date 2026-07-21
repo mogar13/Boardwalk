@@ -7,8 +7,11 @@ import {
   checkDaily,
   checkPack,
   checkPurchase,
+  checkRefill,
   checkSettle,
+  dayIndex,
   rollPack,
+  DAY_MS,
   XP_BY_OUTCOME,
   type Decision,
   type Outcome,
@@ -18,7 +21,7 @@ import { deviceOfTicket } from './tickets';
 import type { Profile } from './types';
 
 /**
- * The five money mutations, as transactions. This is the server half of Phase B: the ONLY code in
+ * The six money mutations, as transactions. This is the server half of Phase B: the ONLY code in
  * the system that appends to the ledger during play, and therefore the only thing that can move a
  * balance.
  *
@@ -98,7 +101,8 @@ export function claimNonce(db: Db, uid: string, nonce: string, kind: string, now
   //
   // It lives HERE, in the one function every mutation already funnels through, rather than being
   // threaded as a parameter through six `apply*` signatures. That keeps the change to the money
-  // paths at zero: `applyBet`, `applySettle`, `applyPurchase`, `applyDaily`, `applyPack` and both
+  // paths at zero: `applyBet`, `applySettle`, `applyPurchase`, `applyDaily`, `applyRefill`, `applyPack`
+  // and both
   // blackjack routes are untouched by this feature.
   //
   // No signature is checked here and none is needed: the gate verified it before the transaction
@@ -112,6 +116,25 @@ export function claimNonce(db: Db, uid: string, nonce: string, kind: string, now
     ).run(now, uid, deviceId);
   }
   return true;
+}
+
+/**
+ * Give a nonce back on a refusal.
+ *
+ * A refused request did nothing, so it must not have consumed anything either — including the
+ * client's nonce. Without this, a refused attempt has burned it: the next request carrying that
+ * nonce takes the replay branch, finds nothing pinned to it, and answers "already applied" with an
+ * unchanged profile — an apparent success that moved nothing, which is a worse thing to render
+ * than the honest refusal it replaced.
+ *
+ * IT HAS TO BE WRITTEN DOWN, because the transaction will not do it: better-sqlite3 commits a
+ * transaction function that RETURNS and only rolls back one that THROWS, and every refusal in this
+ * file is a returned value. That is the same `return`-out-of-a-transaction hazard `domain/blackjack.ts`
+ * documents at length — this used to be a private copy there, and it is here now because
+ * `applyRefill` is the second caller (hoist on the second, never the first).
+ */
+export function releaseNonce(db: Db, uid: string, nonce: string): void {
+  db.prepare('DELETE FROM mutations WHERE uid = ? AND nonce = ?').run(uid, nonce);
 }
 
 /** The player's XP as this transaction has just left it — the `AchievementView`'s `xp`. */
@@ -389,6 +412,77 @@ export function applyDaily(db: Db, uid: string, input: DailyInput, now: number):
     ).run(checked.value.state.lastClaimDay, checked.value.state.streak, now, uid);
     appendLedger(db, uid, null, checked.value.rewardCents, 'daily', now);
 
+    return authoritative(db, uid, false);
+  });
+  return tx();
+}
+
+/* ---------------------------------------------------------------- refill */
+
+export interface RefillInput {
+  readonly nonce: string;
+}
+
+/** The ledger `reason` a top-up is written under. The daily limit COUNTS these, so it is a rule. */
+export const REFILL_REASON = 'refill';
+
+/**
+ * How many top-ups this player has already taken today, read off the ledger.
+ *
+ * Exported because the frontend has no way to know it — the hub card renders "come back tomorrow"
+ * from what the last request refused, not from a field — and because a test that asserts the daily
+ * limit should be able to ask the same question the check does rather than a lookalike.
+ *
+ * The window is the UTC day, matching `dayIndex` and therefore the daily reward: two lifelines
+ * resetting at different midnights would be two clocks to explain. The comparison is done in
+ * milliseconds against the day's start rather than by storing a day index, because `created_at` is
+ * already there and is already the truth about when the money moved.
+ *
+ * THE WINDOW IS OPEN-ENDED AT THE TOP (`>= dayStart`, with no upper bound), and that asymmetry is
+ * deliberate — it is `dailyStatus`'s `today > lastClaimDay` wearing SQL. Bounding it at
+ * `< dayStart + DAY_MS` would read more naturally and would hand a rewound clock a second grant:
+ * set the server back one day and yesterday's refill falls outside "today", so the allowance
+ * re-opens. Counting every row from the start of the current day ONWARDS means a clock that moves
+ * backwards can only ever make the check stricter, never looser. Which is the correct direction
+ * for a control whose failure mode is free money.
+ */
+export function refillsToday(db: Db, uid: string, now: number): number {
+  const dayStartMs = dayIndex(now) * DAY_MS;
+  const row = db
+    .prepare('SELECT COUNT(*) AS n FROM ledger WHERE uid = ? AND reason = ? AND created_at >= ?')
+    .get(uid, REFILL_REASON, dayStartMs) as { n: number };
+  return row.n;
+}
+
+/**
+ * THE BANKRUPT REFILL (V1_FEATURE_GAPS.md #10) — a lifeline back to the table, priced entirely
+ * here.
+ *
+ * The request is `{nonce}` and nothing else, exactly like `/daily`: no amount, because the grant is
+ * `refillGrantFor` over the LEDGER'S balance, and no timestamp, because the daily limit is counted
+ * against `created_at` rows this same function writes. So the two things a client would want to lie
+ * about — how much, and how recently — have no field to travel in.
+ *
+ * It appends ONE ledger row and touches nothing else. No XP, no stat, no achievement: going broke
+ * is not an accomplishment and a top-up is not a result. (It deliberately does not bump
+ * `updated_at` on the profile either — the row it writes is the record of the event.)
+ */
+export function applyRefill(db: Db, uid: string, input: RefillInput, now: number): MutationResult {
+  const tx = db.transaction((): MutationResult => {
+    if (!claimNonce(db, uid, input.nonce, 'refill', now)) return authoritative(db, uid, true);
+
+    const checked = checkRefill({
+      balanceCents: balanceOf(db, uid),
+      refillsToday: refillsToday(db, uid, now),
+    });
+    if (!checked.ok) {
+      // A refusal costs nothing — not the nonce, and (because no ledger row is written) not the
+      // day's allowance either. A player refused for being solvent at 9am can still top up at 9pm.
+      releaseNonce(db, uid, input.nonce);
+      return refuse(checked.error);
+    }
+
+    appendLedger(db, uid, null, checked.value.grantCents, REFILL_REASON, now);
     return authoritative(db, uid, false);
   });
   return tx();

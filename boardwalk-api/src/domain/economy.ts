@@ -46,6 +46,7 @@ import {
   DAILY_REWARDS_CENTS,
   DAY_MS,
   PACKS,
+  REFILL_FLOOR_CENTS,
   STARTING_BANKROLL_CENTS,
   XP_BY_OUTCOME,
   claimDaily,
@@ -53,6 +54,7 @@ import {
   dustFor,
   packById,
   packPool,
+  refillGrantFor,
   type DailyState,
   type Outcome,
   type Pack,
@@ -60,7 +62,7 @@ import {
   type Rarity,
 } from '@boardwalk/game-logic';
 
-export { DAILY_REWARDS_CENTS, DAY_MS, STARTING_BANKROLL_CENTS, XP_BY_OUTCOME };
+export { DAILY_REWARDS_CENTS, DAY_MS, REFILL_FLOOR_CENTS, STARTING_BANKROLL_CENTS, XP_BY_OUTCOME };
 export type { DailyState, Outcome };
 
 /**
@@ -228,6 +230,49 @@ export function checkDaily(
   const claimed = claimDaily(state, nowMs);
   if (claimed === null) return refuse('already claimed today');
   return accept(claimed);
+}
+
+/**
+ * THE BANKRUPT REFILL — the lifeline, decided here (V1_FEATURE_GAPS.md #10).
+ *
+ * The SIZE of the grant is not this function's to decide: it is the shared `refillGrantFor`, the
+ * same one the hub card renders from, so "how much" cannot mean two things. What is decided here
+ * is the two questions that need the server's own state and could not be asked on a client:
+ *
+ *   • are you actually broke — against the LEDGER balance, not the number a client is holding;
+ *   • have you already had one TODAY — against the server's clock and the server's ledger.
+ *
+ * THE DAILY LIMIT IS DERIVED, NOT STORED, and that is the same argument the bankroll makes two
+ * sections up. `todaysRefills` is a COUNT over the ledger rows this feature itself writes, so
+ * there is no `last_refill_day` column to add, no migration to deploy, and — more to the point —
+ * no second fact that can drift from the money. A stored day index and a ledger row are two
+ * records of one event, and the write that lands one without the other is v1's `recordWin` defect
+ * with a fresh place to happen.
+ *
+ * WHY THERE IS A DAILY LIMIT AT ALL, since a top-up can never leave anyone above the floor: without
+ * one, a player has an UNLIMITED supply of $200 lottery tickets — top up, stake it all on one hand,
+ * and repeat on a loss. Each ticket is negative expectation, but variance is unbounded when the
+ * attempts are, and the Richest board would eventually rank whoever ground the most refills. One a
+ * day makes the lifeline a lifeline.
+ */
+export interface RefillRequest {
+  readonly balanceCents: number;
+  /** How many refills the ledger already records for this player TODAY, server-side. */
+  readonly refillsToday: number;
+}
+
+/** At most one top-up per UTC day. The same day index the daily reward uses — one clock, not two. */
+export const REFILLS_PER_DAY = 1;
+
+export function checkRefill(req: RefillRequest): Decision<{ readonly grantCents: number }> {
+  if (req.refillsToday >= REFILLS_PER_DAY) {
+    return refuse('you have already topped up today — come back tomorrow');
+  }
+  const grant = refillGrantFor(req.balanceCents);
+  // Not broke. A refusal rather than a 0-cent grant, so the route cannot bank an empty ledger row
+  // and burn the player's one top-up for the day on nothing.
+  if (grant === null) return refuse('a top-up is only for a bankroll that has run out');
+  return accept({ grantCents: grant });
 }
 
 /* ----------------------------------------------------------------- packs */
