@@ -1,10 +1,13 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
-import { Button, Card, cx, useToast } from '@/ui';
+import { useEffect, useReducer, useRef } from 'react';
+import { Button, Card, useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGame } from '@/system/economy/useGame';
 import type { GameProps } from '@/games/registry';
 import { Board } from '@/games/solitaire/components/Board';
+import { GameOptions } from '@/system/options/GameOptions';
+import { solitaireDrawCount } from '@/games/solitaire/manifest';
+import { useGameOptions } from '@/system/options/useGameOptions';
 import {
   canAutoComplete,
   freshDeck,
@@ -28,34 +31,38 @@ import {
  */
 export default function SolitaireGame({ onExit }: GameProps) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
-  const [drawCount, setDrawCount] = useState<1 | 3>(1);
+  const { values } = useGameOptions();
+  const drawCount = solitaireDrawCount(values);
   const { reportResult } = useGame();
   const { play } = useAudio();
   const felt = useEquippedFelt();
   const toast = useToast();
 
-  const newGame = (count: 1 | 3) => {
-    setDrawCount(count);
-    reportedWin.current = false;
+  const newGame = () => {
     play('shuffle');
-    dispatch({ type: 'deal', deck: shuffle(freshDeck()), drawCount: count });
+    dispatch({ type: 'deal', deck: shuffle(freshDeck()), drawCount });
   };
 
-  // Deal the opening game once, on mount. The empty initial state means "before the first deal", so
-  // this is what puts cards on the table; `newGame` is the same call for every subsequent deal.
-  const dealt = useRef(false);
+  // Deal on mount, and RE-deal whenever the draw option changes — one effect, because "put cards on
+  // the table" and "the rules just changed" are the same act. Changing draw mode mid-game is not a
+  // mutation of a game in flight (v1's Chess deferred a difficulty change to the next game for
+  // exactly this reason); here the next game is one shuffle away, so it starts immediately.
+  const dealtFor = useRef<1 | 3 | null>(null);
   useEffect(() => {
-    if (dealt.current) return;
-    dealt.current = true;
+    if (dealtFor.current === drawCount) return;
+    dealtFor.current = drawCount;
     dispatch({ type: 'deal', deck: shuffle(freshDeck()), drawCount });
   }, [drawCount]);
 
-  // Report the win exactly once per game, and voice it. Reset in `newGame`, so a fresh deal can win
-  // and report again — the same ref-guard shape the other games use to avoid a double-credit.
-  const reportedWin = useRef(false);
+  // Report the win exactly once per game, and voice it. The guard is the TRANSITION into `won`,
+  // not a flag reset by whoever deals: a fresh deal clears `won`, which re-arms this by itself. The
+  // flag version needed clearing from `newGame` AND from the deal effect, and a ref written from
+  // three places is both a double-credit waiting to happen and (rightly) a lint error.
+  const wasWon = useRef(false);
   useEffect(() => {
-    if (!state.won || reportedWin.current) return;
-    reportedWin.current = true;
+    if (state.won === wasWon.current) return;
+    wasWon.current = state.won;
+    if (!state.won) return;
     // Clean Sheet feat: cleared without ever recycling the stock. Only the board tracks recycles,
     // so the game reports it; the economy never learns the run any other way.
     reportResult({
@@ -78,21 +85,11 @@ export default function SolitaireGame({ onExit }: GameProps) {
           <span className="text-bw-muted text-sm" data-money>
             {state.moves} moves
           </span>
-          {/* Draw mode picks the difficulty and re-deals — a fresh shuffle, not a mid-game switch. */}
-          <div className="flex overflow-hidden rounded-md">
-            {([1, 3] as const).map((count) => (
-              <Button
-                key={count}
-                variant={drawCount === count ? 'secondary' : 'quiet'}
-                size="sm"
-                onClick={() => newGame(count)}
-                className={cx('rounded-none')}
-              >
-                Draw {count}
-              </Button>
-            ))}
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => newGame(drawCount)}>
+          {/* Draw mode is a DECLARED option now — the manifest names it, the OS draws it, and the
+              effect above re-deals when it changes. This used to be two buttons and a `useState`
+              living here, which is the per-game duplication the seam exists to end. */}
+          <GameOptions />
+          <Button variant="ghost" size="sm" onClick={newGame}>
             New game
           </Button>
           <Button variant="quiet" size="sm" onClick={onExit}>
@@ -110,7 +107,7 @@ export default function SolitaireGame({ onExit }: GameProps) {
           <p className="font-display text-base-content text-lg font-bold tracking-[0.04em]">
             You win — all four suits home in {state.moves} moves.
           </p>
-          <Button variant="primary" onClick={() => newGame(drawCount)}>
+          <Button variant="primary" onClick={newGame}>
             Deal again
           </Button>
         </Card>

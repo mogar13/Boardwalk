@@ -40,8 +40,8 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | # | Gap | v1 reach | Boardwalk today | Call |
 |---|---|---|---|---|
 | 1 | **AI difficulty tiers** | 22/31 games | binary `modes:['ai']`, no tier; Chess has no AI at all | **Build when the 2nd AI game wants it** — design the seam now |
-| 2 | **Declarative game options / variants / house rules** | most games | nothing; every option is baked into `logic/` | **Design the seam**; wire per game |
-| 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam |
+| 2 | **Declarative game options / variants / house rules** | most games | **SHIPPED** — `manifest.options` + `<GameOptions>` + `useGameOptions()`, `select` only; Solitaire's draw-1/draw-3 is the caller | Done for `select`; widen only with a caller |
+| 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam (now built) |
 | 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | none as OS services | **Opt-in shared services**, build the one a game needs first |
 | 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **partly shipped (P2)** — `CosmeticKind = 'avatar' \| 'cardback' \| 'title'`, 31 items, each with a reader; chat colours, felts and dice still absent (felts are P5) | Build alongside their consumer — the rule held: card backs shipped *with* `cardBackSrc`, dice still wait for a dice game |
 | 6 | Level **titles** (rank names) | yes | `level` number only | Cheap, pure — good early add |
@@ -102,11 +102,22 @@ both taking `{ id, label, type: 'select' | 'color', default, options }` arrays. 
 - **Trivial Pursuit** — category + question count.
 - **Hold'em** — stakes were *hardcoded* (`BUY_IN`/blinds), a gap even in v1.
 
-**Boardwalk today:** No options surface at all. Where a variant exists it's **baked into `logic/`** —
-e.g. Solitaire supports draw-1/draw-3 in the engine but there's no pre-game selector to choose. The
-manifest has `id/name/blurb/icon/pier/seats/modes/betting` and nothing for per-game configuration.
+**Boardwalk today: BUILT (2026-07-21), and the recommendation below is what was built.** The
+manifest carries an optional `options` block (`src/system/options/options.ts`), `<GameOptions>` is
+the one control the OS draws for it, `useGameOptions()` is how a game reads the chosen values, and
+`<GameShell>` — the boundary a game is already wrapped in — holds them. **Solitaire is the first
+caller**, and the survey line above was already stale when it was written: draw-1/draw-3 *did* have
+a selector, hand-rolled as two `<Button>`s and a `useState` inside `SolitaireGame` — which is
+precisely the per-game duplication this seam exists to end, caught one game in rather than twenty.
 
-**Recommendation:** This is the most *architecturally* interesting gap, because it's the natural home
+What shipped is narrower than the survey: **only `type: 'select'`** (no colour swatch — no caller),
+**no persistence** (values live for the mounted game; namespaced per-game storage is #10), and
+**no lobby wiring** (every option-declaring game today is solo; the lobby renders `<GameOptions>` in
+the commit that has a room game with an option). Values are resolved against the spec, so a game
+reading an option can never receive a value it does not offer, and an option change means a fresh
+deal rather than a mutated game in flight. Guard: `tests/game-options.test.ts`.
+
+**Recommendation as it stood:** This is the most *architecturally* interesting gap, because it's the natural home
 for #1 and #3 too (difficulty and player-count are just options). Design one declarative options seam
 — a typed `options?` block on the manifest that the lobby (and solo pre-game screen) renders, whose
 selected values are passed into the pure reducer's initial state. Constraints to hold:
@@ -299,7 +310,8 @@ Being explicit so these aren't re-litigated later:
 
 If/when this work is picked up, a sane order that keeps every step with a live caller:
 
-1. **Options seam (#2)** with **Solitaire draw-1/draw-3** as its first caller — unlocks #1 and #3.
+1. ~~**Options seam (#2)** with **Solitaire draw-1/draw-3** as its first caller — unlocks #1 and #3.~~
+   **DONE 2026-07-21.**
 2. **Level titles (#6)** and **bankrupt refill (#10)** — cheap, self-contained morale/UX wins.
 3. **AI difficulty (#1)** the moment a *second* AI game exists to justify the abstraction.
 4. **Rematch (#4)** as the first shared in-game service.
