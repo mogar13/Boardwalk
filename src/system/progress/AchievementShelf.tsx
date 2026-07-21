@@ -4,6 +4,7 @@ import {
   ACHIEVEMENT_COUNT,
   completionPct,
   type Achievement,
+  type ChainRef,
   type Tier,
 } from '@boardwalk/game-logic';
 import { useProfile } from '@/system/profile/useProfile';
@@ -26,20 +27,18 @@ import { useProfile } from '@/system/profile/useProfile';
 /** The medal shown for each tier — metallic, not neon, so it stays inside the glow budget. */
 const TIER_MEDAL: Record<Tier, string> = { bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '🏆' };
 
-/** A chain id → its section title. Derived copy, kept next to the shelf that renders it. */
-const CHAIN_TITLE: Record<string, string> = {
-  wins: 'Wins',
-  level: 'Level',
-  bankroll: 'Bankroll',
-  chess: 'Chess Mastery',
-  blackjack: 'Blackjack Mastery',
-};
-
-/** Chain ids in first-appearance order — the render order for the chain sections. */
-function chainOrder(): readonly string[] {
-  const seen: string[] = [];
+/**
+ * The chains in first-appearance order — the render order for the sections.
+ *
+ * The heading comes off the catalogue (`chain.label`), not a map kept here. It used to be a
+ * `Record<chainId, string>` in this file with a `?? chain` fallback, which meant adding a chain
+ * and forgetting the row rendered "liars-dice" as a heading and nothing went red. The label now
+ * arrives welded to the id it labels.
+ */
+function chainOrder(): readonly ChainRef[] {
+  const seen: ChainRef[] = [];
   for (const a of ACHIEVEMENTS) {
-    if (a.chain !== undefined && !seen.includes(a.chain)) seen.push(a.chain);
+    if (a.chain !== undefined && !seen.some((c) => c.id === a.chain?.id)) seen.push(a.chain);
   }
   return seen;
 }
@@ -70,13 +69,13 @@ export function AchievementShelf() {
       {/* Chains — each a Bronze→Platinum row */}
       <div className="flex flex-col gap-5">
         {chains.map((chain) => {
-          const rungs = ACHIEVEMENTS.filter((a) => a.chain === chain);
+          const rungs = ACHIEVEMENTS.filter((a) => a.chain?.id === chain.id);
           const done = rungs.filter((a) => a.id in profile.achievements).length;
           return (
-            <section key={chain} className="flex flex-col gap-2">
+            <section key={chain.id} className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="text-base-content text-xs font-semibold tracking-[0.08em] uppercase">
-                  {CHAIN_TITLE[chain] ?? chain}
+                  {chain.label}
                 </h3>
                 <span className="text-bw-muted text-[0.7rem] font-semibold tabular-nums">
                   {done} / {rungs.length}

@@ -439,8 +439,10 @@ describe('applySettle', () => {
     );
     const p = loadProfile(db, 'u1');
     // `first_win` from the predicate, `feat_natural` from the report — two sources, one diff.
-    // No mastery bronze here: the chains are per-game and this is not one of the two that have
-    // one, which is worth pinning — a feat must not drag an unrelated chain in with it.
+    // No mastery bronze here, and the reason changed under this test rather than the assertion:
+    // every REGISTERED game has a mastery chain now, and `BETTING_GAME` is a fictional id used
+    // for the ceiling tests, so it has none. Still worth pinning — a feat must not drag an
+    // unrelated chain in with it.
     expect(Object.keys(p?.achievements ?? {}).sort()).toEqual(['feat_natural', 'first_win']);
   });
 
