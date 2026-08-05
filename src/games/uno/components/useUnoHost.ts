@@ -36,6 +36,11 @@ import {
  *      host's OWN moves go through this same path (it submits a `pending` like anyone), so there is
  *      one code path for "a human moved", not a host special-case.
  *
+ * WHO OPENS A ROUND is the host's to remember and nobody else's, which is why `lastWinnerRef` lives
+ * here and not in the projection. The rule is v1's — the last round's winner leads the next — and it
+ * is worth having because the alternative is not neutral: a fixed leader means the HOST opens every
+ * round of the evening and the last seat never opens one at all.
+ *
  * The host reload note, stated not hidden: the hidden state lives only in this ref, so a host that
  * reloads cannot recover it (it may not read the other hands back). In practice a host unmount tears
  * the room down (`<RoomProvider>`'s teardown — the host is the last-present participant), so a host
@@ -84,6 +89,11 @@ export function useUnoHost({
   // WRITES (including ones carrying no move), and reusing it would make the log skip numbers and a
   // client unable to tell "no move happened" from "I missed one".
   const eventSeqRef = useRef(0);
+  // WHO LEADS THE NEXT ROUND: last round's winner, `-1` before anyone has won one. Host-owned like
+  // everything else here, and a ref rather than state because nothing renders from it — it is read
+  // exactly once, by the next `deal`. It deliberately survives a round: clearing it on the deal
+  // would make the second round rotate and the third go back to seat 0.
+  const lastWinnerRef = useRef(-1);
 
   /** Write the changed private hands, then the public projection. Preserves any pending a player wrote. */
   const publish = useCallback(
@@ -114,6 +124,7 @@ export function useUnoHost({
       const seq = eventSeqRef.current + 1;
       const event = describeMove(game, next, seat, move, seq);
       if (event.seq === seq) eventSeqRef.current = seq;
+      if (next.winner !== -1) lastWinnerRef.current = next.winner;
       gameRef.current = next;
       publish(next, event);
     },
@@ -122,13 +133,15 @@ export function useUnoHost({
 
   const startRound = useCallback(
     (round: number) => {
-      const g = deal(seats.length, Math.random);
+      // The winner of the last round opens this one (v1's rule). `deal` floors an out-of-range seat
+      // to 0, which is what makes shrinking the table between rounds safe without a check here.
+      const g = deal(seats.length, Math.random, Math.max(0, lastWinnerRef.current));
       gameRef.current = g;
       lastGameRef.current = null;
       roundRef.current = round;
       ackRef.current = 0;
       eventSeqRef.current = 0;
-      publish(g, dealEvent(g), true);
+      publish(g, dealEvent(g, lastWinnerRef.current < 0), true);
     },
     [seats, publish]
   );

@@ -52,12 +52,7 @@ export function HandView({ cards, myTurn, isPlayable, onPlay, pendingId }: HandV
               className={cx(
                 'relative shrink-0 rounded-md transition duration-150',
                 'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary',
-                // Unplayable cards recede on OPACITY ALONE. Desaturating them too (the first pass
-                // did) drains the one thing that tells four overlapping cards apart in a game
-                // about colour, and a fan of them read as a single grey blob rather than a hand.
-                playable
-                  ? 'hover:z-30 hover:-translate-y-5 cursor-pointer'
-                  : 'cursor-default opacity-70',
+                playable ? 'hover:z-30 hover:-translate-y-5 cursor-pointer' : 'cursor-default',
                 held && '-translate-y-5 z-30'
               )}
               style={{
@@ -76,6 +71,18 @@ export function HandView({ cards, myTurn, isPlayable, onPlay, pendingId }: HandV
                   playable && 'ring-primary shadow-glow-primary ring-2'
                 )}
               />
+              {/* THE DIM, AS A SHADE ON TOP RATHER THAN OPACITY ON THE CARD. This is the one
+                  non-obvious line in the file. Fading the card itself is what a dim obviously is,
+                  and in a FAN it is wrong: the cards overlap, so a translucent card shows you the
+                  one behind it and the whole hand reads as glass. Painting a shade over an opaque
+                  card dims it exactly as much while keeping it a card. Colour survives too, which
+                  is what the earlier note about desaturation was really protecting. */}
+              {!playable && (
+                <span
+                  aria-hidden
+                  className="bg-base-100/55 pointer-events-none absolute inset-0 rounded-md"
+                />
+              )}
             </button>
           );
         })}

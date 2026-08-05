@@ -20,10 +20,12 @@ import type { RoomVisibility } from '@/system/room/types';
  * which is the data point ARCHITECTURE.md's open question was waiting for — the lobby was the
  * component most likely to want a DaisyUI base, and it did not.
  *
- * SHAPE: the outer `Lobby` owns the pre-room choices (which mode, create vs join) as local state
- * and, once there is a room, mounts a single `<RoomProvider>` around the in-room view. The
- * provider is what owns the subscription and the teardown, so "leave the table" is just unmounting
- * it — the hygiene runs itself.
+ * SHAPE: the outer `Lobby` owns the pre-room choices and, once there is a table, mounts a single
+ * `<RoomProvider>` around the in-room view. The provider is what owns the subscription and the
+ * teardown, so "leave the table" is just unmounting it — the hygiene runs itself.
+ *
+ * WHICH table (and which mode) is in the URL, not in state — see `linkedTable` below for why that
+ * is a correctness property and not a routing preference.
  *
  * `children` IS THE GAME. A game (Tic-Tac-Toe onward) renders `<Lobby manifest onExit>` and passes
  * its board as the children; the lobby draws the seat list and chat while `status === 'waiting'`,
@@ -42,12 +44,10 @@ export interface LobbyProps {
 export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
-  const [roomId, setRoomId] = useState<string | null>(null);
   // The lobby is multiplayer-only: `'solo'` means no room at all, so a solo game never renders this
   // component. Filter it out defensively so the mode type stays the three room modes `RoomIdentity`
   // accepts, and a mixed-mode game never offers a "solo" button that a lobby cannot honour.
   const roomModes = manifest.modes.filter((m): m is RoomIdentity['mode'] => m !== 'solo');
-  const [mode, setMode] = useState<RoomIdentity['mode']>(roomModes[0] ?? 'online');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
@@ -62,12 +62,32 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   // game alone is trying to do; anybody who wants a full house is one tap away.
   const sizeChoices = tableSizeChoices(manifest.seats);
   const [seatCount, setSeatCount] = useState(manifest.seats.min);
-  // THE DEEP LINK the hub's room browser produces (`/play/uno?table=ABCD`). It is read HERE and
-  // not in the play route, because the play route hands a game `{ onExit }` and nothing else —
-  // that rule is what stops a `system` prop growing back. The lobby is OS code, so it may read the
-  // URL itself, and a game passing `<Lobby>` gets join-by-link for free without learning it exists.
+  /**
+   * WHICH TABLE YOU ARE AT LIVES IN THE URL, and it is the ONLY place it lives.
+   *
+   * It is read HERE and not in the play route, because the play route hands a game `{ onExit }` and
+   * nothing else — that rule is what stops a `system` prop growing back. The lobby is OS code, so it
+   * may read the URL itself, and a game passing `<Lobby>` gets this for free without learning it
+   * exists.
+   *
+   * It used to be read here AND held in a `roomId` state, reconciled as `roomId ?? linkedTable`.
+   * Two sources of truth for one fact, and the failure was the one the derivation rule always
+   * predicts: only the room BROWSER navigated, so only a table joined from the browser survived a
+   * page load. Create and join-by-code set the state alone — so a refresh, a phone waking a locked
+   * tab, or a shared link opened in a second window dumped you back on the create/join screen with
+   * the code gone and the game still running without you. Mid-game that is indistinguishable from
+   * being kicked out. Now every way in writes the URL and there is nothing to reconcile.
+   *
+   * `mode` rides along for the same reason rather than a different one. It is not decoration: it is
+   * what tells `useSeats` whether this is a shared screen, so a hot-seat table that came back in
+   * the default mode would restore every seat except the second local player's. A fact that has to
+   * survive the reload belongs where the reload can read it.
+   */
   const [params, setParams] = useSearchParams();
   const linkedTable = params.get('table');
+  const linkedMode = params.get('mode');
+  const mode: RoomIdentity['mode'] =
+    roomModes.find((m) => m === linkedMode) ?? roomModes[0] ?? 'online';
 
   if (session === null) {
     return (
@@ -78,18 +98,32 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   }
   const myUid = session.uid;
 
-  // A link's table wins over local state until it is left — entering the room by URL and by click
-  // land in exactly the same place, so there is one in-room code path.
-  const activeRoomId = roomId ?? (linkedTable === null || linkedTable === '' ? null : linkedTable);
+  const activeRoomId = linkedTable === null || linkedTable === '' ? null : linkedTable;
+
+  /**
+   * Enter a table — the one way in, whether it came from Create, a typed code, or the browser's
+   * Join. It PUSHES, so the browser's Back button leaves the table like any other navigation.
+   */
+  const enterTable = (id: string) => {
+    const next = new URLSearchParams(params);
+    next.set('table', id);
+    next.set('mode', mode);
+    setParams(next);
+  };
 
   /** Leave the table AND the link that put us there, or a "leave" would immediately re-enter it. */
   const leaveTable = () => {
-    setRoomId(null);
-    if (linkedTable !== null) {
-      const next = new URLSearchParams(params);
-      next.delete('table');
-      setParams(next, { replace: true });
-    }
+    const next = new URLSearchParams(params);
+    next.delete('table');
+    next.delete('mode');
+    setParams(next, { replace: true });
+  };
+
+  /** The mode buttons write the URL too, so the choice is still there after a reload. */
+  const chooseMode = (m: RoomIdentity['mode']) => {
+    const next = new URLSearchParams(params);
+    next.set('mode', m);
+    setParams(next, { replace: true });
   };
 
   if (activeRoomId !== null) {
@@ -118,7 +152,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         visibility: mode === 'online' ? visibility : 'private',
       });
       setBusy(false);
-      if (result.ok) setRoomId(result.value);
+      if (result.ok) enterTable(result.value);
       else toast.error(result.error);
     })();
   };
@@ -144,7 +178,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
                 size="sm"
                 variant={m === mode ? 'secondary' : 'ghost'}
                 onClick={() => {
-                  setMode(m);
+                  chooseMode(m);
                 }}
               >
                 {m}
@@ -215,7 +249,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         gameId={manifest.id}
         title="Open tables"
         onJoin={(_gameId, joinRoomId) => {
-          setRoomId(joinRoomId);
+          enterTable(joinRoomId);
         }}
       />
 
@@ -227,7 +261,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
           className="flex items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (code.trim() !== '') setRoomId(code.trim().toUpperCase());
+            if (code.trim() !== '') enterTable(code.trim().toUpperCase());
           }}
         >
           <Input

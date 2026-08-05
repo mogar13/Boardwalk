@@ -17,6 +17,7 @@ import {
   canPlay,
   chooseAiMove,
   deal,
+  dealEvent,
   freshDeck,
   shuffle,
   submitMove,
@@ -112,6 +113,52 @@ describe('deal', () => {
     expect(g.turn).toBe(0);
     expect(g.winner).toBe(-1);
     expect(g.color).toBe(g.discard[0]?.color);
+  });
+
+  /**
+   * WHO OPENS THE ROUND. The host passes last round's winner, which is v1's rule and the reason a
+   * seven-seat table does not spend the whole evening opening on the host. The clamp is the half
+   * worth testing hardest: this argument comes from a `winner` read off a live reducer, so it is
+   * only ever wrong when something else already went wrong — and a deal that THROWS at that point
+   * takes the table down, where a deal that opens on seat 0 merely opens on seat 0.
+   */
+  it('opens on the seat it is told to, and defaults to seat 0', () => {
+    expect(deal(4, seeded(7), 2).turn).toBe(2);
+    expect(deal(4, seeded(7), 3).turn).toBe(3);
+    expect(deal(4, seeded(7)).turn).toBe(0); // no leader yet — the opening deal
+  });
+
+  it('floors a leader the table does not have to seat 0 rather than throwing', () => {
+    for (const bad of [-1, 4, 99, 1.5, NaN, Infinity]) {
+      expect(deal(4, seeded(7), bad).turn).toBe(0);
+    }
+  });
+
+  it('deals the same cards whoever leads — the leader moves the turn, not the shuffle', () => {
+    const a = deal(4, seeded(7), 0);
+    const b = deal(4, seeded(7), 3);
+    expect(b.hands).toEqual(a.hands);
+    expect(b.discard).toEqual(a.discard);
+    expect(b.turn).not.toBe(a.turn);
+  });
+});
+
+describe('dealEvent', () => {
+  it('says nothing about a leader on the opening deal', () => {
+    expect(dealEvent(deal(3, seeded(1))).leads).toBe(-1);
+  });
+
+  it('names the leader on a later deal, read off the turn the deal just set', () => {
+    const g = deal(3, seeded(1), 2);
+    expect(dealEvent(g, false).leads).toBe(2);
+  });
+
+  it('is a deal, not a move: no actor, no card, nobody skipped', () => {
+    const e = dealEvent(deal(3, seeded(1), 1), false);
+    expect(e.action).toBe('deal');
+    expect(e.seat).toBe(-1);
+    expect(e.seq).toBe(0);
+    expect(e.winner).toBe(-1);
   });
 });
 

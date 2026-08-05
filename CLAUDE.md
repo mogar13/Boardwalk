@@ -52,7 +52,7 @@ therefore never touches the wire at all — strictly more private than v1, whose
 render the projection plus their own hand (`useHand`) and submit a move as a nonce'd intent the host
 acks; the host's own moves take that same path, so there is one code path for "a human moved". The
 rulebook — 108-card deck, legal-play matching, skip/reverse/draw2/wild4, the UNO-call +2 penalty,
-reshuffle-on-empty, win detection — is all pure and in `tests/uno.test.ts` (30), with the art resolved
+reshuffle-on-empty, win detection — is all pure and in `tests/uno.test.ts` (36), with the art resolved
 to disk in `tests/uno-art.test.ts` (4).
 
 **UNO's BOARD is v1's table, rebuilt — the one place this repo went back to The Game Shack for a
@@ -71,7 +71,7 @@ and lost its turn. The log's one design decision: v1 pushed a formatted SENTENCE
 de-duplication). Here the host publishes FACTS — one `UnoEvent` derived by DIFFING the game either
 side of a move (`describeMove`, so it cannot drift from the rules and a refused move is silent for
 free), ordered by its own `seq` — and each client renders its own prose from its own seat names. Rules
-facts and copy are tested together in `tests/uno-log.test.ts` (15), every case driven through the real
+facts and copy are tested together in `tests/uno-log.test.ts` (18), every case driven through the real
 reducer. The **whole layer is `TPublic`-only**: one new field on the projection, no new node, no rules
 change, and nothing hidden crosses the wire that did not before.
 
@@ -526,6 +526,18 @@ lint rule that matches nothing reports success.
   A `rematch` node on `RoomSnapshot` was the more obvious design and would have cost all three.
   Clearing the votes is by construction, not a cleanup step: the next round is a fresh state object
   from the game's own `initialState`/`toPublic`, which has never heard of `rematch`.
+- **Which table you are at lives in the URL, and that is the ONLY place it lives.** ✅ Live.
+  `<Lobby>` read `?table=` AND held a `roomId` state, reconciled as `roomId ?? linkedTable` — two
+  sources of truth for one fact, and it failed the way the derivation rule always predicts it will.
+  Only the room BROWSER navigated, so only a table joined from the browser survived a page load;
+  Create and join-by-code set the state alone, and a refresh dropped you back on the create/join
+  screen with the code gone and the game still running without you. Now every way in
+  (`enterTable`) writes the URL and there is nothing to reconcile — which also means the address bar
+  is a shareable table link by construction rather than as a second feature. `mode` rides along for
+  the same reason and not a different one: it is what tells `useSeats` whether this is a shared
+  screen, so a hot-seat table restored without it would come back missing its second local player.
+  This is one half of surviving a refresh; the other is the `pagehide` rule below, and **neither is
+  sufficient alone** — the URL brings the page back to a table it has already resigned its seat at.
 - **A public table is DISCOVERABLE, and a table is public only because its host said so.** ✅ Live —
   the room browser (V1_FEATURE_GAPS #9), the last of that doc's "most substantive missing
   multiplayer UX". Multiplayer was share-a-code only, which means you could only play with people
@@ -565,6 +577,19 @@ lint rule that matches nothing reports success.
   client arms the same plan as an `onDisconnect` (`RoomRepo.armDisconnect`, re-armed on every
   snapshot because who is last out and whether the game has started both move under you), and the
   API repo's `armDisconnect` is a deliberate **no-op** because the server already owns it there.
+  **A PAGE UNLOAD IS NOT A DEPARTURE, and the client no longer pretends it can tell.**
+  `<RoomProvider>` used to run the whole `teardownPlan` on `pagehide`/`beforeunload` as well as on
+  unmount — and a RELOAD is a page unloading, so refreshing mid-game made the client hand its own
+  seat to a bot on the way out; the tab that came back two seconds later was a spectator at a table
+  it had been playing at, with its cards gone. F5, a phone locking, a session restore: all the same,
+  and all of it invisible to every static guard because the code did exactly what it said. The
+  handlers are DELETED rather than made cleverer, because no answer is available at `pagehide` time:
+  a page cannot know whether it is coming back. The far end can, and already did — this grace window
+  IS that mechanism, and a returning presence cancels it, so a reload lands inside and keeps the
+  seat while a real leaver's opens a few seconds later. The RTDB fallback's armed `onDisconnect`
+  covers the same event at the server. Both paths had it; the client handler only ever supplied a
+  worse answer that arrived first. What is left is the unambiguous exit — an UNMOUNT, which is what
+  "Leave table" and navigating away both do — and that still tears down at once.
   **A seat is not released ON disconnect — it is SCHEDULED.** The safety net used to fire so eagerly
   that a three-second blip handed your seat to a bot and the reconnect (which replays subscriptions
   and presence, and has never re-claimed a seat) left you watching the house play your hand. So a
@@ -792,9 +817,9 @@ builds the thing it guards.
 | Tic-Tac-Toe's rules are correct | `tests/ticTacToe.test.ts` (27) — every win line, draw-vs-win, `play` immutability + illegal-move no-op, the house (takes a win, blocks a loss, opens centre, perfect-vs-perfect draws), and the DIFFICULTY TIERS: `perfect` still exactly `bestMove` (the default, so the shipped house must not have moved), `sharp` preferring a win to a block and losing to a fork (a middle tier, not a second `perfect`), `casual` reaching every legal cell and no other, a broken rng (NaN/1/-1) clamped rather than indexing off the board, `perfect` never losing to `casual`, and — the one that matters most — every level × every level played to the end with each move asserted `canPlay` and each `play` asserted to CHANGE the state, because a bot move the reducer refuses is a no-op on a bot's turn and stalls the table forever |
 | Blackjack's rules + casino payout are correct | `tests/blackjack.test.ts` (26) — ace-soft `handValue`, natural-vs-3-card-21, dealer stands-on-all-17s at the boundary, the full settle matrix, the **integer-safe 3:2 payout on an odd wager** (the v1 `parseInt` chip), and the pure reducer (deal/hit-bust/stand/double/no-op) |
 | Chess's rules are correct | `tests/chess.test.ts` (40) — FEN round-trip, 20 opening moves, piece movement + blocking, check/pin/out-of-check, castling (both sides, out-of/through-check, blocked, rights bookkeeping incl. captured-rook), en passant (set/capture/expiry), promotion (four pieces, chosen + default), fool's/scholar's mate + winner seat, stalemate-not-mate, insufficient-material + fifty-move draws, and `playMove` totality (illegal/finished → unchanged) + input immutability |
-| UNO's rules + wire projection are correct | `tests/uno.test.ts` (30) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO) and its TIERS (`sharp` the default so the shipped bots are unchanged, `casual` reaching every playable card and no unplayable one, `casual` always naming a colour for a wild — a wild without one is refused — and **`casual` still calling UNO, because a bot that does not can never win**: a hand reaches zero only through one, and going to one undeclared is what the +2 punishes, so an undeclaring bot bounces off one card back to three and a four-casual table ran 3,000 turns with no winner; whole dealt games are played to a WINNER at both levels with every move asserted to change the state), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, and `toPublic` hiding every card behind sentinels |
+| UNO's rules + wire projection are correct | `tests/uno.test.ts` (36) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO) and its TIERS (`sharp` the default so the shipped bots are unchanged, `casual` reaching every playable card and no unplayable one, `casual` always naming a colour for a wild — a wild without one is refused — and **`casual` still calling UNO, because a bot that does not can never win**: a hand reaches zero only through one, and going to one undeclared is what the +2 punishes, so an undeclaring bot bounces off one card back to three and a four-casual table ran 3,000 turns with no winner; whole dealt games are played to a WINNER at both levels with every move asserted to change the state), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, `toPublic` hiding every card behind sentinels, and WHO OPENS A ROUND — `deal` taking the leader as an argument, an out-of-range/fractional/NaN one floored to seat 0 rather than thrown (it is fed by a live `winner`, so it is only wrong when something already went wrong, and a deal that throws takes the table down while a deal on the wrong seat merely opens on the wrong seat), the shuffle unchanged by who leads, and `dealEvent` carrying `leads` only from the second round on |
 | UNO's table seats everyone, once, in turn order | `tests/uno-layout.test.ts` (11) — over every table size 2–7 and every seat at it: each opponent placed exactly ONCE, never yourself, always in range (a seat rendered twice, or nowhere, still LOOKS like a table — only counting them catches it); v1's three fixed arrangements reproduced exactly (heads-up opposite, three-handed flanking, four-handed left/top/right); the order running bottom → left → top → right so reading clockwise is reading turn order, including the part that is easy to get backwards — a two-deep column fans BOTTOM-first, because the next player up sits nearest you and a flex column renders top-down (falsified by dropping the `.reverse()`); the arrangement being relative to MY seat rather than absolute; both flanks always equal depth (the lopsided five-seat table that killed the "even distribution" formula and is why this is a lookup); a spectator and an off-the-end seat degrading instead of throwing; and the hand fan's overlap staying inside its bounds at EVERY hand size, however silly, since a hand can be drawn up past twenty and a fan that keeps tightening becomes a row of stripes |
-| UNO's move log says what happened, and never says what did not | `tests/uno-log.test.ts` (15) — the facts (`describeMove`) and the sentences (`linesFor`), every case driven through the REAL reducer rather than a hand-built "after" state, because a diff of two states written by the same hand only proves it can subtract. A play, a draw, a draw-two and a wild-four read off the RESULT (victim, count, skip) so a change to who a draw-two hits needs no edit here; a wild carrying the CHOSEN colour, which the card's face cannot say; a reverse, the one action whose effect is otherwise invisible; the UNO call and the +2 penalty distinguished (the penalty is a PLAY whose hand grew); the winner; and — the one that matters — **a refused move producing no line at all**, both illegal-card and off-turn, since `applyMove` is total and a log written at the call site claims moves that never happened (falsified by removing the unchanged-state guard: two go red). Plus the copy: one draw-four expanding to its four real consequences with unique React keys, a skip NOT announced twice when the victim already drew, and a blank or missing seat name falling back rather than rendering an empty subject |
+| UNO's move log says what happened, and never says what did not | `tests/uno-log.test.ts` (18) — the facts (`describeMove`) and the sentences (`linesFor`), every case driven through the REAL reducer rather than a hand-built "after" state, because a diff of two states written by the same hand only proves it can subtract. A play, a draw, a draw-two and a wild-four read off the RESULT (victim, count, skip) so a change to who a draw-two hits needs no edit here; a wild carrying the CHOSEN colour, which the card's face cannot say; a reverse, the one action whose effect is otherwise invisible; the UNO call and the +2 penalty distinguished (the penalty is a PLAY whose hand grew); the winner; and — the one that matters — **a refused move producing no line at all**, both illegal-card and off-turn, since `applyMove` is total and a log written at the call site claims moves that never happened (falsified by removing the unchanged-state guard: two go red). Plus the copy: one draw-four expanding to its four real consequences with unique React keys, a skip NOT announced twice when the victim already drew, a blank or missing seat name falling back rather than rendering an empty subject, and the ONE line a deal says — "X won the last round and leads", present from round two and absent on the opening deal, never on a move, driven through the real `dealEvent` so a deal that stops carrying its leader fails here rather than quietly printing nothing |
 | Every UNO card maps to art on disk | `tests/uno-art.test.ts` (4) — all 108 `unoCardSrc` paths resolve in `public/cards/uno/`, the action-kind→filename map (`skip`→`block`, `reverse`→`inverse`, `draw2`→`2plus`), both colourless wilds, and the back |
 | Solitaire's Klondike rules are correct | `tests/solitaire.test.ts` (34) — a 52-card face-down deck, deterministic shuffle (permutation, input untouched), the deal (column sizes 1–7, only the top face up, 24 to stock), `canStackTableau`/`canStackFoundation` (King-on-empty, alternating descending, Ace-on-empty, up-by-suit), `isValidRun`, `liftable` (waste/foundation tops, a tableau run, never the stock, refuses a face-down start), the draw (1 and 3, waste→stock **recycle** re-serves the order and bumps the `recycles` counter the Clean Sheet feat reads, no-op when empty), moves (waste→foundation, a run move that flips the exposed card, King-only-on-empty, illegal no-ops, one-card-to-foundation), `auto`, win detection, `canAutoComplete`/`autoComplete`, a won game frozen but re-dealable, and input immutability |
 | The security rules do what they say | `tests/database-rules.test.ts` (64) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, the P2 `equipped` map (card back + title accepted, a stray `frame`/`avatar` key and a wrong-type/over-long id refused), and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup. Phase E added `dice` as the fifth `equipped` key (accepted whole and alone, wrong-type and over-long refused per-key), and moved the STRAY-key example to `chip` — the kind `catalog.ts` still withholds for want of a reader, which is what `dice` used to be |
@@ -937,6 +962,25 @@ To drive the room flow locally: `npx firebase emulators:start --only auth,databa
 `VITE_USE_EMULATOR=1 npm run dev`, and open `/Boardwalk/_dev/lobby` (or `/Boardwalk/play/tic-tac-toe`
 to play a real game against the emulator). The flag is dev-only and points the app at the emulators
 instead of production.
+
+That drives the **RTDB fallback**, which is not the path prod uses. To drive the WS REFEREE — which
+is what a multiplayer browser pass should be testing — run `boardwalk-api` beside it and add
+`VITE_WS_ROOMS=1`:
+
+```bash
+npx firebase emulators:start --only auth,database --project demo-boardwalk
+cd boardwalk-api && npm run build && FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
+  FIREBASE_PROJECT_ID=demo-boardwalk GOOGLE_CLOUD_PROJECT=demo-boardwalk \
+  DB_PATH=/tmp/drive.db PORT=8788 ALLOWED_ORIGIN=http://localhost:5176 node dist/server.js
+VITE_USE_EMULATOR=1 VITE_API_BASE_URL=http://127.0.0.1:8788 VITE_WS_ROOMS=1 \
+  VITE_FIREBASE_PROJECT_ID=demo-boardwalk VITE_FIREBASE_API_KEY=demo \
+  VITE_FIREBASE_DATABASE_URL="http://127.0.0.1:9000/?ns=demo-boardwalk" \
+  VITE_FIREBASE_APP_ID=1:1:web:1 npx vite --port 5176 --strictPort
+```
+
+**`npm run build` the API first, and check the artifact rather than the exit code** — a stale `dist/`
+is the failure mode here, and it does not announce itself: a `dist/` predating the empty-room reap
+grace collects every table the instant it is created, which reads exactly like "create is broken".
 
 Phases are listed in [ARCHITECTURE.md](plans/done/ARCHITECTURE.md#phases) — one per conversation, each ends
 green and deployed. **Phase 6 is complete: Tic-Tac-Toe, Blackjack, Chess, UNO and Solitaire all

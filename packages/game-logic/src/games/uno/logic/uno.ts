@@ -177,10 +177,26 @@ function seatAfter(turn: number, steps: number, direction: 1 | -1, seatCount: nu
 
 /**
  * Deal a fresh round: shuffle, seven to each seat, and flip the first NON-action, non-wild card as
- * the starting discard (so the opening card never skips or reverses seat 0 into a rules corner — v1
- * did the same). `round` is carried through for rematch/result keying.
+ * the starting discard (so the opening card never skips or reverses the leader into a rules corner —
+ * v1 did the same). `round` is carried through for rematch/result keying.
+ *
+ * `firstSeat` is WHO LEADS, and it defaults to seat 0 — the opening deal, where nobody has won
+ * anything yet. From the second round on the caller passes the LAST ROUND'S WINNER, which is v1's
+ * rule and worth stating as a rule rather than a nicety: with a fixed leader the host plays first
+ * every single round of the evening, and at a seven-seat table the player sitting last never opens
+ * a hand. Rotating on the win also gives winning a second, smaller prize, which is the whole
+ * argument for it in a game that has no score.
+ *
+ * It is a PARAMETER and not a field on `UnoGame` on purpose: who leads is a fact about how this
+ * round was dealt, not a piece of state anything reads afterwards, and a `lastWinner` living in the
+ * game would be a second copy of `winner` that the next deal has to remember to clear.
+ *
+ * Out-of-range and non-integer input floors to seat 0 rather than throwing. This is fed by a host
+ * that has just read a `winner` off its own reducer, so it should always be in range — but a deal
+ * that throws takes the whole table down, and a deal that starts on the wrong seat merely starts on
+ * the wrong seat.
  */
-export function deal(seatCount: number, rng: () => number = Math.random): UnoGame {
+export function deal(seatCount: number, rng: () => number = Math.random, firstSeat = 0): UnoGame {
   let deck = shuffle(freshDeck(), rng);
   const hands: Card[][] = [];
   for (let s = 0; s < seatCount; s += 1) {
@@ -200,12 +216,14 @@ export function deal(seatCount: number, rng: () => number = Math.random): UnoGam
   }
   if (start === undefined) start = { id: 'u0', color: 'red', kind: 'number', value: 0 };
   deck = bottom.concat(deck);
+  const lead =
+    Number.isInteger(firstSeat) && firstSeat >= 0 && firstSeat < seatCount ? firstSeat : 0;
   return {
     hands,
     deck,
     discard: [start],
     color: start.color as UnoColor,
-    turn: 0,
+    turn: lead,
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
@@ -478,6 +496,15 @@ export interface UnoEvent {
   readonly penalty: boolean;
   /** The seat that emptied its hand on this move, or `-1`. */
   readonly winner: number;
+  /**
+   * DEAL EVENTS ONLY: the seat leading this round because it won the last one, or `-1` when nobody
+   * has (the opening deal). It is on the event rather than derived from `UnoState.turn` because
+   * `turn` at the deal answers "who plays first", which is the same seat but a different fact — a
+   * client that read the turn could say "X leads" but never "X leads BECAUSE they won", and it
+   * would say it again after the first move moved the turn on. `-1` is the sentinel: the wire
+   * drops nulls.
+   */
+  readonly leads: number;
 }
 
 /** The card an event carries when no card was played — never null, because the wire drops null. */
@@ -497,6 +524,7 @@ export const DEAL_EVENT: UnoEvent = {
   calledUno: false,
   penalty: false,
   winner: -1,
+  leads: -1,
 };
 
 /**

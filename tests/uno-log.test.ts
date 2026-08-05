@@ -3,6 +3,7 @@ import {
   DEAL_EVENT,
   applyMove,
   deal,
+  dealEvent,
   describeMove,
   freshDeck,
   type Card,
@@ -238,6 +239,46 @@ describe('linesFor', () => {
 
   it('says nothing for the deal sentinel', () => {
     expect(linesFor(DEAL_EVENT, NAMES)).toEqual([]);
+  });
+
+  /**
+   * THE ONE LINE A DEAL SAYS. From the second round on the turn starts on whoever won the last one,
+   * and a rule the table cannot see reads as a bug — "why is it AI 3's go, I'm the host". These are
+   * driven through the REAL `dealEvent` rather than a hand-built event, so a deal that stops
+   * carrying its leader fails here rather than quietly printing nothing.
+   */
+  it('announces the leader on a rotated deal, and stays quiet on the opening one', () => {
+    const opening = dealEvent(deal(3, () => 0.5));
+    expect(linesFor(opening, NAMES)).toEqual([]);
+
+    const rotated = dealEvent(
+      deal(3, () => 0.5, 2),
+      false
+    );
+    const lines = linesFor(rotated, NAMES);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.text).toBe('AI 3 won the last round and leads.');
+    expect(lines[0]?.seat).toBe(2);
+    expect(lines[0]?.system).toBe(true);
+    expect(lines[0]?.card).toBeNull();
+  });
+
+  it('names an unnamed leader the way every other line does', () => {
+    const e = dealEvent(
+      deal(3, () => 0.5, 1),
+      false
+    );
+    expect(linesFor(e, [])[0]?.text).toBe('Player 2 won the last round and leads.');
+  });
+
+  it('never puts a leader line on a MOVE, however the round opened', () => {
+    const g = rigged(
+      [[card('a', 'red', 'number', 5)], [card('b', 'blue', 'number', 1)]],
+      card('t', 'red', 'number', 9)
+    );
+    const { event } = step(g, 0, { type: 'play', cardId: 'a' });
+    expect(event.leads).toBe(-1);
+    expect(linesFor(event, NAMES).some((l) => l.text.includes('leads'))).toBe(false);
   });
 
   it('labels a card the way the log needs to say it out loud', () => {

@@ -57,7 +57,22 @@ export function cardLabel(card: Card): string {
  * rejected intent silently produces no commentary rather than a line claiming it happened.
  */
 export function linesFor(event: UnoEvent, names: readonly string[]): LogLine[] {
-  if (event.action === 'deal' || event.seat < 0) return [];
+  // THE DEAL. It says one thing and only from the second round on: who won the last one and is
+  // therefore leading this one. Without it the turn simply starts on somebody who is not the host
+  // and nobody at the table knows why — the rule is invisible, and an invisible rule reads as a bug.
+  if (event.action === 'deal') {
+    if (event.leads < 0) return [];
+    return [
+      {
+        key: `${String(event.seq)}-lead`,
+        seat: event.leads,
+        text: `${nameOf(names, event.leads)} won the last round and leads.`,
+        card: null,
+        system: true,
+      },
+    ];
+  }
+  if (event.seat < 0) return [];
   const out: LogLine[] = [];
   const key = (n: number): string => `${String(event.seq)}-${String(n)}`;
   const actor = nameOf(names, event.seat);
