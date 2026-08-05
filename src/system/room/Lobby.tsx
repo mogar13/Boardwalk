@@ -51,11 +51,17 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
-  // HOW MANY CHAIRS. Defaults to `seats.max`, which is exactly what every table was before this
-  // control existed — the same "the default is what already shipped" rule the AI-difficulty option
-  // follows, so adding a picker re-sizes nobody's table for them.
+  // HOW MANY CHAIRS. Defaults to `seats.min` — the SMALLEST table, not the largest.
+  //
+  // The first draft defaulted to `seats.max` on the "default is whatever already shipped" rule that
+  // AI difficulty follows. That rule is about not silently RETUNING a game under someone, and a seat
+  // count is not a tuning knob: defaulting to the biggest table reproduces exactly the friction this
+  // control exists to remove, for everyone who does not notice the control. Sitting down to UNO meant
+  // adding six CPUs before you could press Start, and a picker you have to find first does not fix
+  // that. The smallest table is the one you can start on your own, which is what a player opening a
+  // game alone is trying to do; anybody who wants a full house is one tap away.
   const sizeChoices = tableSizeChoices(manifest.seats);
-  const [seatCount, setSeatCount] = useState(manifest.seats.max);
+  const [seatCount, setSeatCount] = useState(manifest.seats.min);
   // THE DEEP LINK the hub's room browser produces (`/play/uno?table=ABCD`). It is read HERE and
   // not in the play route, because the play route hands a game `{ onExit }` and nothing else —
   // that rule is what stops a `system` prop growing back. The lobby is OS code, so it may read the

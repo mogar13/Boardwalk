@@ -496,11 +496,16 @@ lint rule that matches nothing reports success.
   "PLAYERS: 2 / 3 / 4" before anything else, and it was right. The choice is at CREATE time because
   `seatCount` is a create parameter — a table cannot grow a chair under someone who has already joined
   by code — and a range holding ONE size (Chess) draws no control at all, so the seam is invisible to
-  every game that does not want it. **The default is `seats.max`**, which is exactly what every table
-  was before the control existed: the same "the default is what already shipped" rule the AI-difficulty
-  option follows, so adding a picker re-sized nobody's table for them. This is the variable-table-size
-  seam [plans/LIARS_DICE.md](plans/LIARS_DICE.md) recorded as open, and it is one pure function plus a
-  button row because the count was already plumbed end to end (`create` → protocol → gateway → store).
+  every game that does not want it. **The default is `seats.min`, the SMALLEST table.** It shipped as
+  `seats.max` for one afternoon on the "default is whatever already shipped" rule that AI difficulty
+  follows, and that was wrong: **that rule is about not silently RETUNING a game under someone, and a
+  seat count is not a tuning knob.** Defaulting to the biggest table reproduces the exact friction the
+  control exists to remove for everyone who does not notice the control — you still had to add six CPUs
+  before Start would light up, which is the complaint that prompted the picker. The smallest table is
+  the one a player opening a game alone can actually start; a full house is one tap away. This is the
+  variable-table-size seam [plans/LIARS_DICE.md](plans/LIARS_DICE.md) recorded as open, and it is one
+  pure function plus a button row because the count was already plumbed end to end (`create` →
+  protocol → gateway → store).
 - **A rematch is asked for by everyone, and the OS owns the asking.** ✅ Live —
   `<Rematch restart={…}>` over the pure `rematchTally`/`castVotes`/`haveVoted` in
   `src/system/room/rematch.ts`. A game renders one component and passes ONE thing (how to start the
