@@ -513,7 +513,18 @@ export interface RoomRepo {
    */
   create(
     gameId: string,
-    init: { seatCount: number; host: SeatOccupant; visibility: RoomVisibility }
+    init: {
+      seatCount: number;
+      host: SeatOccupant;
+      visibility: RoomVisibility;
+      /**
+       * What every seat pays to play, in cents; `0` for a table not playing for money. REQUIRED
+       * for `visibility`'s reason — a stake is a decision, and a default is how a caller makes one
+       * without noticing. Stamped onto the room here and never written again, so a joiner reads
+       * the price off the snapshot before taking a chair. See `RoomMeta.anteCents`.
+       */
+      anteCents: number;
+    }
   ): Promise<RepoResult<string>>;
 
   /**

@@ -30,7 +30,7 @@ function room(args: {
   presence?: Record<string, true>;
 }): RoomSnapshot<unknown> {
   return {
-    meta: { host: HOST, status: args.status ?? 'waiting', createdAt: 1, seq: 1 },
+    meta: { host: HOST, status: args.status ?? 'waiting', createdAt: 1, seq: 1, anteCents: 0 },
     seats: args.seats,
     state: null,
     presence: args.presence ?? { [HOST]: true, [GUEST]: true },

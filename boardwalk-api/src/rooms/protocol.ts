@@ -43,6 +43,16 @@ export type RequestMsg =
       seatCount: number;
       /** Absent from a client that predates the room browser — the store reads that as `public`. */
       visibility?: RoomVisibility;
+      /**
+       * What every seat pays to play, in cents. Absent (or absent-minded) reads as `0` — a table
+       * playing for nothing, which is what every game but UNO does today and what every client
+       * that predates this field meant.
+       *
+       * This is the ONLY frame in the game that carries a stake, and it carries it exactly once,
+       * at create, before anyone has joined. `unoStart` has no such field: the referee reads the
+       * ante off the room, so a client cannot name what it is about to be charged. See `RoomMeta`.
+       */
+      anteCents?: number;
     }
   | { t: 'claimSeat'; id: number; gameId: string; roomId: string; index: number; who: SeatOccupant }
   | { t: 'releaseSeat'; id: number; gameId: string; roomId: string; index: number; fallback: 'ai' | 'open' }

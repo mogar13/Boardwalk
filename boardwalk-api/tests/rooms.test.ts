@@ -73,7 +73,14 @@ describe('RoomStore — create + snapshot', () => {
     const roomId = room(store);
     expect(roomId).toMatch(/^[A-Z2-9]{4}$/);
     const snap = store.snapshot('chess', roomId);
-    expect(snap?.meta).toEqual({ host: 'ada', status: 'waiting', createdAt: 1_000, seq: 0 });
+    // A table created with no stake plays for nothing — which is every game but UNO today.
+    expect(snap?.meta).toEqual({
+      host: 'ada',
+      status: 'waiting',
+      createdAt: 1_000,
+      seq: 0,
+      anteCents: 0,
+    });
     expect(snap?.seats[0]).toEqual({ kind: 'human', name: 'Ada', uid: 'ada' });
     expect(snap?.seats.slice(1)).toEqual([
       { kind: 'open', name: '', uid: null },
@@ -86,6 +93,58 @@ describe('RoomStore — create + snapshot', () => {
 
   it('snapshot is null for a room that does not exist', () => {
     expect(fixedStore().snapshot('chess', 'ZZZZ')).toBeNull();
+  });
+
+  /**
+   * THE STAKE IS STAMPED AT CREATE AND VISIBLE TO EVERYONE.
+   *
+   * A guest has to know what a chair costs before sitting in it, and game state is `null` until the
+   * host deals — so if the ante travelled in the projection, the money would have moved before the
+   * number arrived. Being room meta is what lets the lobby price the table for a joiner.
+   */
+  it('stamps the host-chosen ante onto the room, where every subscriber can read it', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 2_500);
+    if (!res.ok) throw new Error(res.error);
+    expect(store.snapshot('uno', res.roomId)?.meta.anteCents).toBe(2_500);
+  });
+
+  /**
+   * A STAKE IS THE ONE NUMBER IN THIS SYSTEM A BROWSER GETS TO CHOOSE, so it is sanitised at the
+   * only moment it crosses the wire. Money is integer cents everywhere — `bet.ts` REFUSES a
+   * fractional bet rather than rounding it, for the reason v1's `parseInt` gave — and none of these
+   * should be able to reach a ledger row.
+   */
+  it('floors a hostile stake to a non-negative integer rather than letting it reach the ledger', () => {
+    const store = fixedStore();
+    const stamp = (ante: number): number => {
+      const res = store.create('uno', ada, 4, 'public', ante);
+      if (!res.ok) throw new Error(res.error);
+      return store.snapshot('uno', res.roomId)?.meta.anteCents ?? -1;
+    };
+    expect(stamp(2_500.9)).toBe(2_500); // a fractional chip
+    expect(stamp(-5_000)).toBe(0); // a negative stake would PAY the table to sit down
+    expect(stamp(Number.NaN)).toBe(0);
+    expect(stamp(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
+  /**
+   * The ante is write-once, and nothing exposes a setter. This is the property that makes "you
+   * cannot raise the stakes on a player who already sat down" true by construction rather than by
+   * anyone remembering — v1 pushed a retuned ante to the room on change, so the number you agreed
+   * to was not necessarily the number you paid.
+   */
+  it('never changes once stamped — seats, status, state and presence all leave it alone', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 10_000);
+    if (!res.ok) throw new Error(res.error);
+    const { roomId } = res;
+    store.claimSeat('uno', roomId, 1, bob);
+    store.setAi('uno', roomId, 2, 'CPU');
+    store.addPresence('uno', roomId, bob.uid);
+    store.patchState('uno', roomId, { anything: true });
+    store.setStatus('uno', roomId, 'playing');
+    expect(store.snapshot('uno', roomId)?.meta.anteCents).toBe(10_000);
   });
 
   it('refuses a non-positive seat count', () => {
@@ -222,9 +281,28 @@ describe('RoomStore — the open-table index', () => {
         players: 2,
         openSeats: 2,
         seatCount: 4,
+        anteCents: 0,
         createdAt: 1_000,
       },
     ]);
+  });
+
+  /**
+   * THE PRICE IS ON THE POSTER. The stake is the fact most likely to decide whether a stranger
+   * sits down, so a listing that shows "3/4 seats" and not "$500 a hand" advertises the wrong
+   * number — and the player finds out by losing the money.
+   *
+   * It is still a poster and not a window: a price, never a pot total, never a uid, never a roster.
+   */
+  it('carries the stake, so a browser can price a table before joining it', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 50_000);
+    if (!res.ok) throw new Error(res.error);
+    store.addPresence('uno', res.roomId, ada.uid);
+    const listing = store.listOpen()[0];
+    expect(listing?.anteCents).toBe(50_000);
+    // Still a poster: nothing about who is at the table or what they hold.
+    expect(JSON.stringify(listing)).not.toContain('ada');
   });
 
   it('drops a table the moment it starts — a listing that outlives the deal sends joiners at a game in progress', () => {

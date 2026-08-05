@@ -947,7 +947,7 @@ gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
 cd boardwalk-api && npm ci
 npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
 npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
-npm test            # vitest — 309
+npm test            # vitest — 315
 npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 

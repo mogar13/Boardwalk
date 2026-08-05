@@ -170,6 +170,18 @@ function readMeta(wire: RoomWire): RoomMeta {
     createdAt: num(m.createdAt),
     // Lifted from the state wrapper — see the header on why it is stored there.
     seq: num(wire.state?.seq),
+    /**
+     * ALWAYS ZERO ON THIS PATH, and not because the field was forgotten.
+     *
+     * A stake is only meaningful where something can deal for it, and this repo has no referee —
+     * the only dealer available here is one player's browser, which for UNO would be a host who
+     * can see every hand AND move the money. So no game is dealt for money on the RTDB fallback,
+     * nothing writes an ante here, and reporting `0` is the true answer rather than a default.
+     *
+     * It also means `database.rules.json` needs no new field and no hand-run deploy: this build
+     * does not touch the rules at all.
+     */
+    anteCents: 0,
   };
 }
 
