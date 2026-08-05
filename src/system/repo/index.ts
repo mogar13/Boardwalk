@@ -127,15 +127,24 @@ const blackjack =
  * the disconnect→seat-release safety net, all green (`boardwalk-api/tests/gateway.test.ts` covers the
  * same protocol in CI). The `firebase/room`/`chat` repos stay in the tree as the fallback: setting
  * **`VITE_WS_ROOMS=0`** forces rooms back onto RTDB with a rebuild, no code change — the kill switch
- * for a Pi outage. Inert under the emulator (a `demo-boardwalk` token the Pi's verifier rejects). When
- * this has run clean in prod for a stretch, the Firebase room/chat repos get deleted and RTDB is no
- * longer read or written. No game, hook, or component is touched — the whole point of the seam.
+ * for a Pi outage. When this has run clean in prod for a stretch, the Firebase room/chat repos get
+ * deleted and RTDB is no longer read or written. No game, hook, or component is touched — the whole
+ * point of the seam.
+ *
+ * INERT UNDER THE EMULATOR BY DEFAULT, because a `demo-boardwalk` token is one the Pi's verifier
+ * rejects — but `VITE_WS_ROOMS=1` now says so explicitly and turns it back on. That escape hatch
+ * exists because without it the production room path was not drivable locally AT ALL: an emulator
+ * run exercised the RTDB fallback, so every browser pass of a multiplayer game tested the path prod
+ * does not use, and the gateway's own behaviour was reachable only from unit tests. It is three
+ * deliberate flags (`VITE_USE_EMULATOR=1` + a `VITE_API_BASE_URL` + `VITE_WS_ROOMS=1`) pointed at a
+ * locally-run `boardwalk-api` started with `FIREBASE_AUTH_EMULATOR_HOST`, never something a
+ * production build can fall into — `useEmulator` is already gated on `import.meta.env.DEV`.
  */
 const wsRooms =
   import.meta.env.VITE_WS_ROOMS !== '0' &&
   apiBaseUrl !== undefined &&
   apiBaseUrl !== '' &&
-  !useEmulator
+  (!useEmulator || import.meta.env.VITE_WS_ROOMS === '1')
     ? apiRoomChat({ baseUrl: apiBaseUrl, getToken })
     : null;
 

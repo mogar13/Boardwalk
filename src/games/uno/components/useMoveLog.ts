@@ -30,6 +30,12 @@ interface Scrollback {
  * same event arrives repeatedly and must be appended exactly once. A round change resets it, which
  * is what makes "Deal again" start a fresh log rather than continuing the last one.
  *
+ * THE BASELINE IS `-1`, NOT `0`, and that is load-bearing rather than tidy. The deal is itself an
+ * event and it is stamped seq 0 (the host's per-round counter starts there), so a baseline of 0
+ * made `event.seq > log.seq` false for it and the deal was the one event that could never be
+ * appended. That was invisible while a deal had nothing to say; it says something now — who won the
+ * last round and is leading this one — so the off-by-one became a missing line.
+ *
  * ONE piece of state, updated during render — the "adjust state when props change" pattern
  * `Board.tsx` already uses for the wild picker. It is one object rather than three `useState`s (or,
  * as first written, two refs) so that a StrictMode double-invoke recomputes the SAME value from the
@@ -40,10 +46,10 @@ export function useMoveLog(
   names: readonly string[],
   round: number
 ): readonly LogLine[] {
-  const [log, setLog] = useState<Scrollback>({ round, seq: 0, events: [] });
+  const [log, setLog] = useState<Scrollback>({ round, seq: -1, events: [] });
 
   if (log.round !== round) {
-    setLog({ round, seq: 0, events: [] });
+    setLog({ round, seq: -1, events: [] });
   } else if (event.seq > log.seq) {
     setLog({ round, seq: event.seq, events: [...log.events, event].slice(-MAX_EVENTS) });
   }

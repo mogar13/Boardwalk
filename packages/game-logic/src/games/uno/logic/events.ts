@@ -86,10 +86,19 @@ export function describeMove(
     calledUno,
     penalty,
     winner: after.winner,
+    leads: -1, // a move is not a deal; only `dealEvent` ever sets this
   };
 }
 
-/** The event a fresh deal publishes, stamped for `round`. Seat-less: nobody acted, the dealer did. */
-export function dealEvent(game: UnoGame): UnoEvent {
-  return { ...DEAL_EVENT, color: game.color };
+/**
+ * The event a fresh deal publishes. Seat-less — nobody acted, the dealer did — so `seat` stays `-1`
+ * and `leads` carries the round's opener instead.
+ *
+ * `leads` is the seat that won the LAST round and therefore opens this one, or `-1` on the opening
+ * deal. It is read off the game's own `turn` rather than passed separately, because `deal` has just
+ * put the leader there: two ways to say the same thing is how the log ends up naming a seat that is
+ * not the one holding the turn.
+ */
+export function dealEvent(game: UnoGame, isFirstRound = true): UnoEvent {
+  return { ...DEAL_EVENT, color: game.color, leads: isFirstRound ? -1 : game.turn };
 }

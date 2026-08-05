@@ -11,9 +11,18 @@ import type { Card, UnoColor } from '@boardwalk/game-logic/games/uno';
  * whose effect is invisible — a skip removes a turn you can see coming, a draw-two lands on somebody,
  * but a reverse changes nothing on the felt and everything about who plays next. v1 answered with
  * four arrows slowly orbiting the piles, and the reason it works is that the ROTATION carries the
- * state, not the arrowheads: you read it out of the corner of your eye without looking at it. It is
- * `animate-spin` slowed right down and run backwards for anticlockwise, so it costs no new theme
- * token, and `prefers-reduced-motion` stops it with everything else.
+ * state: you read it out of the corner of your eye without looking at it. It is `animate-spin`
+ * slowed right down and run backwards for anticlockwise, so it costs no new theme token, and
+ * `prefers-reduced-motion` stops it with everything else.
+ *
+ * THE ARROWHEADS ARE TANGENTIAL, and this is the part the first pass got wrong. It placed `↑ → ↓ ←`
+ * at top/right/bottom/left — each arrow pointing straight OUT from the centre, which is not a
+ * rotation at all, it is an explosion. Spinning it did not rescue the reading: a player sees four
+ * arrows aimed at the four walls of the room and the spin looks like decoration wrapped around the
+ * piles. An arrow that says "play goes this way" has to point ALONG the circle, not away from it —
+ * clockwise is `→` at the top, `↓` on the right, `←` at the bottom, `↑` on the left, which is v1's
+ * own set, and it is legible in a still screenshot before the animation contributes anything.
+ * So both halves now carry the state: the arrowheads say which way, the spin repeats it in motion.
  *
  * THE ACTIVE COLOUR is a tinted pill rather than v1's solid one. Solid was the obvious port and it
  * fails on contrast: `--color-uno-yellow` is a light token and `--color-uno-red` a mid one, so one
@@ -33,6 +42,20 @@ const TINT: Record<UnoColor, string> = {
   blue: 'bg-uno-blue/15 border-uno-blue/70',
   green: 'bg-uno-green/15 border-uno-green/70',
   yellow: 'bg-uno-yellow/15 border-uno-yellow/70',
+};
+
+/** Where each arrow sits on the ring. The glyph it carries depends on which way play is going. */
+const AT = [
+  'top-0 left-1/2 -translate-x-1/2',
+  'top-1/2 right-0 -translate-y-1/2',
+  'bottom-0 left-1/2 -translate-x-1/2',
+  'top-1/2 left-0 -translate-y-1/2',
+] as const;
+
+/** Tangential, in the same order as `AT`: top, right, bottom, left. Clockwise, then anticlockwise. */
+const GLYPHS: Record<1 | -1, readonly [string, string, string, string]> = {
+  1: ['→', '↓', '←', '↑'],
+  [-1]: ['←', '↑', '→', '↓'],
 };
 
 export interface TableCentreProps {
@@ -63,16 +86,9 @@ export function TableCentre({
           direction === -1 && '[animation-direction:reverse]'
         )}
       >
-        {(
-          [
-            ['↑', 'top-0 left-1/2 -translate-x-1/2'],
-            ['→', 'top-1/2 right-0 -translate-y-1/2'],
-            ['↓', 'bottom-0 left-1/2 -translate-x-1/2'],
-            ['←', 'top-1/2 left-0 -translate-y-1/2'],
-          ] as const
-        ).map(([glyph, at]) => (
+        {AT.map((at, i) => (
           <span key={at} className={cx('absolute text-2xl leading-none', at)}>
-            {glyph}
+            {GLYPHS[direction][i]}
           </span>
         ))}
       </div>
@@ -88,20 +104,23 @@ export function TableCentre({
             'group relative rounded-box transition',
             canDraw
               ? 'hover:-translate-y-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary'
-              : 'cursor-default opacity-70'
+              : 'cursor-default brightness-75'
           )}
         >
+          {/* The two cards UNDER the top one. They are darkened, not faded: a translucent card
+              shows the felt through the sliver of it that sticks out, which reads as a smudge
+              rather than a deck. Brightness keeps them opaque, so the stack reads as depth. */}
           <img
             src={unoBackSrc()}
             alt=""
             aria-hidden
-            className="absolute top-1 left-1 h-28 w-auto rounded-md opacity-60"
+            className="absolute top-1 left-1 h-28 w-auto rounded-md brightness-50"
           />
           <img
             src={unoBackSrc()}
             alt=""
             aria-hidden
-            className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md opacity-80"
+            className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md brightness-75"
           />
           <img
             src={unoBackSrc()}
