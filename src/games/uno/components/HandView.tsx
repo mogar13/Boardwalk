@@ -35,7 +35,13 @@ export function HandView({ cards, myTurn, isPlayable, onPlay, pendingId }: HandV
   const overlap = handOverlapRem(cards.length);
 
   return (
-    <div className="flex w-full justify-center overflow-x-auto px-4 pt-8 pb-2">
+    // The fan is a group of images with an accessible name each and none of its own, so a reader
+    // arriving here got a bare list of card names with nothing saying whose they were.
+    <div
+      role="group"
+      aria-label="Your hand"
+      className="flex w-full justify-center overflow-x-auto px-4 pt-8 pb-2"
+    >
       <div className="flex shrink-0 items-end">
         {cards.map((card, i) => {
           const playable = myTurn && isPlayable(card);

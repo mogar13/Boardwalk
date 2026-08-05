@@ -10,11 +10,13 @@ import { useHand } from '@/system/room/useHand';
 import {
   DEAL_EVENT,
   canPlay,
+  mustDraw,
   submitMove,
   type Card as UnoCard,
   type UnoColor,
   type UnoState,
 } from '@boardwalk/game-logic/games/uno';
+import { useAutoDraw } from '@/games/uno/components/useAutoDraw';
 import { useUnoHost } from '@/games/uno/components/useUnoHost';
 import { useMoveLog } from '@/games/uno/components/useMoveLog';
 import { HandView } from '@/games/uno/components/HandView';
@@ -135,6 +137,27 @@ export function Board() {
       audio.play(state.winner === mySeatIndex ? 'win' : 'lose');
     }
   }, [state, isMyTurn, mySeatIndex, audio]);
+
+  // STUCK — my turn, nothing in my hand plays, and no half-made wild choice in the way. The
+  // rulebook's own predicate, so the line below the fan and the timer above cannot come to
+  // different conclusions about the same hand. Computed before the early return because the hook
+  // that reads it cannot be called conditionally; `mustDraw` is false for an empty hand, which is
+  // what makes it safe to ask before the private node has arrived.
+  const stuck =
+    state !== null &&
+    state.winner < 0 &&
+    isMyTurn(state.turn) &&
+    pendingWild === null &&
+    mustDraw(myHand, state.top, state.color);
+
+  useAutoDraw(
+    stuck && state !== null ? `${String(state.round)}:${String(state.lastEvent.seq)}` : null,
+    () => {
+      if (state === null || mySeatIndex < 0) return;
+      void patch((prev) => submitMove(prev ?? state, mySeatIndex, { type: 'draw' }));
+      setUnoArmed(false);
+    }
+  );
 
   if (state === null) {
     return (
@@ -291,20 +314,22 @@ export function Board() {
           />
 
           {/* A hand with nothing in it you can play looks exactly like a hand you have not read
-              yet — every card dimmed reads as "still loading" rather than "you must draw". Say it. */}
-          {myTurn &&
-            pendingWild === null &&
-            myHand.length > 0 &&
-            !myHand.some((c) => canPlay(c, state.top, state.color)) && (
-              <p className="text-bw-muted text-xs">
-                Nothing matches {state.color} — draw from the pile.
-              </p>
-            )}
+              yet — every card dimmed reads as "still loading" rather than "you must draw". Say it,
+              and then do it: the line now announces the draw the board is about to take rather than
+              instructing the player to take it. The pile stays live throughout, so anyone who does
+              not want to wait out the beat can still click it and skip ahead. */}
+          {stuck && (
+            <p className="text-bw-muted text-xs" aria-live="polite">
+              Nothing matches {state.color} — drawing a card…
+            </p>
+          )}
 
           {/* CALL UNO. It arms BEFORE the play that takes you to one card, because that is when the
               rulebook decides the penalty (`declareUno` rides on the move). v1 let you yell after
-              the fact; the decision point is the same one, it just has to be made a beat earlier. */}
-          {myHand.length === 2 && myTurn && (
+              the fact; the decision point is the same one, it just has to be made a beat earlier.
+              Hidden while stuck: with no playable card the button cannot change the next move, and
+              the draw it is about to be interrupted by clears the call anyway. */}
+          {myHand.length === 2 && myTurn && !stuck && (
             <Button
               variant={unoArmed ? 'primary' : 'secondary'}
               size="sm"

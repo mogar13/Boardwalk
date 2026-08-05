@@ -19,6 +19,7 @@ import {
   deal,
   dealEvent,
   freshDeck,
+  mustDraw,
   shuffle,
   submitMove,
   toPublic,
@@ -99,6 +100,55 @@ describe('canPlay', () => {
     const wildTop = c('wild', 'wild4');
     expect(canPlay(c('green', 'number', 2), wildTop, 'green')).toBe(true);
     expect(canPlay(c('red', 'number', 2), wildTop, 'green')).toBe(false);
+  });
+});
+
+describe('mustDraw — the position where the board draws for you', () => {
+  const top = c('red', 'number', 5);
+
+  it('is true only when NOTHING in the hand plays', () => {
+    expect(mustDraw([c('blue', 'number', 9), c('green', 'skip')], top, 'red')).toBe(true);
+    expect(mustDraw([c('blue', 'number', 9), c('red', 'number', 1)], top, 'red')).toBe(false); // colour
+    expect(mustDraw([c('blue', 'number', 5)], top, 'red')).toBe(false); // value
+    expect(mustDraw([c('wild', 'wild4')], top, 'red')).toBe(false); // a wild always plays
+  });
+
+  it('reads the ACTIVE colour, not the top card — a wild changes the answer', () => {
+    const wildTop = c('wild', 'wild');
+    const hand = [c('green', 'number', 2)];
+    expect(mustDraw(hand, wildTop, 'green')).toBe(false);
+    expect(mustDraw(hand, wildTop, 'red')).toBe(true);
+  });
+
+  it('is FALSE for an empty hand — a won hand and an unloaded one look identical', () => {
+    // The trap this function exists to close. `![].some(…)` is `true`, so an inline check reads a
+    // hand whose private node has not arrived yet as "you must draw" and draws for a player who has
+    // not been dealt in. Both callers (the hint and the auto-draw) go through here instead.
+    expect(mustDraw([], top, 'red')).toBe(false);
+  });
+
+  it('agrees with the REDUCER: every play refused, and draw the one move that changes anything', () => {
+    // The property that makes auto-drawing safe, asserted against `applyMove` rather than against a
+    // second copy of the matching rule. Two directions, because both failures are silent: firing in
+    // a position with a legal play takes a turn away, and NOT firing in a stuck one stalls the table
+    // on a click nobody knows to make.
+    const stuck = game(
+      [[c('blue', 'number', 9), c('green', 'skip')], [c('red', 'number', 1)]],
+      top
+    );
+    expect(mustDraw(stuck.hands[0] ?? [], top, stuck.color)).toBe(true);
+    for (const card of stuck.hands[0] ?? []) {
+      expect(applyMove(stuck, 0, { type: 'play', cardId: card.id })).toBe(stuck); // refused
+    }
+    expect(applyMove(stuck, 0, { type: 'draw' })).not.toBe(stuck);
+
+    const playable = game(
+      [[c('blue', 'number', 9), c('red', 'number', 1)], [c('red', 'skip')]],
+      top
+    );
+    expect(mustDraw(playable.hands[0] ?? [], top, playable.color)).toBe(false);
+    const id = playable.hands[0]?.[1]?.id ?? '';
+    expect(applyMove(playable, 0, { type: 'play', cardId: id })).not.toBe(playable);
   });
 });
 

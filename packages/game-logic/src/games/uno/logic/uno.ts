@@ -112,6 +112,21 @@ export function canPlay(card: Card, top: Card, color: UnoColor): boolean {
   return matchKey(card) === matchKey(top);
 }
 
+/**
+ * Is `draw` this seat's ONLY legal move — a hand holding nothing that plays on the current top?
+ * `applyMove` refuses every play from such a hand and accepts exactly one action, so a client that
+ * takes it automatically removes a mandatory click rather than a decision. (Drawing here also ENDS
+ * the turn — this rulebook has no play-what-you-drew — so there is nothing after it to choose.)
+ *
+ * AN EMPTY HAND IS `false`, NOT `true`, and that is the whole reason this is a function rather than
+ * an inline `!hand.some(…)`: a hand is `[]` both when a player has won and — the case that bites —
+ * while their private `hands/` node is still loading, and `![].some(…)` is `true` for both. A caller
+ * reading that as "you must draw" auto-draws on behalf of a player who has not been dealt yet.
+ */
+export function mustDraw(hand: readonly Card[], top: Card, color: UnoColor): boolean {
+  return hand.length > 0 && !hand.some((card) => canPlay(card, top, color));
+}
+
 // ── The complete game (host memory + the reducer's unit) ─────────────────────────────────────────
 
 export interface UnoGame {
