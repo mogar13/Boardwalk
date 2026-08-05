@@ -8,29 +8,38 @@ import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
 import {
+  DEAL_EVENT,
   canPlay,
   submitMove,
   type Card as UnoCard,
   type UnoColor,
   type UnoState,
 } from '@boardwalk/game-logic/games/uno';
-import { unoBackSrc, unoCardSrc } from '@/games/uno/art';
 import { useUnoHost } from '@/games/uno/components/useUnoHost';
+import { useMoveLog } from '@/games/uno/components/useMoveLog';
+import { HandView } from '@/games/uno/components/HandView';
+import { MoveLog } from '@/games/uno/components/MoveLog';
+import { SeatView } from '@/games/uno/components/SeatView';
+import { TableCentre } from '@/games/uno/components/TableCentre';
+import { PenaltyFlash, RoundResult, TurnCue, UnoShout } from '@/games/uno/components/UnoOverlays';
+import { opponentSlots, slotsOn, type UnoSeatSide } from '@/games/uno/seatLayout';
 import { useGameOptions } from '@/system/options/useGameOptions';
 import { unoBotLevel } from '@/games/uno/manifest';
 
 /**
- * The board — the only part of UNO that is neither the OS nor the tested pure `logic/`. It reads
- * `useRoom` (the public projection), `useHand` (this seat's private cards), `useSeats` and
- * `useGame`, and it NEVER runs the rules: a move is submitted as an intent (`submitMove`) and the
- * host's `useUnoHost` engine applies it. So the whole component is a renderer plus an intent sender —
- * hot-seat-free, mode-blind, exactly like Chess's board, and the reason no client can leak a listener
- * is still structural (the provider owns every subscription; `useHand` owns its own teardown).
+ * THE TABLE. Still a renderer plus an intent sender — it never runs the rules (a move is
+ * `submitMove`, the host's `useUnoHost` applies it) and it never branches on a mode. What changed is
+ * the SHAPE: opponents used to wrap into one row above the piles, which is a scoreboard. Now they
+ * are seated around the felt (`opponentSlots`), you sit at the bottom, and play runs bottom → left →
+ * top → right, so reading the table clockwise is reading the order of play. That is v1's board, and
+ * the reason to bring it over is not nostalgia: in a game where every hand is face down, the SHAPE
+ * of the table is most of the information — who is next, who is nearly out, which way it is going.
  *
- * A note on colour: the four UNO colours are the deck's identity (game content), so they come from
- * theme tokens (`bg-uno-*`, defined in packages/theme/theme.css — the one file allowed to name a
- * colour) via the literal maps below, which Tailwind can see. The card FACES carry their colour in
- * the art; the swatch and the wild picker are the only places a bare colour is drawn.
+ * A note on colour, kept from the previous board and still true: the four UNO colours are the deck's
+ * identity (game content), so they come from theme tokens (`bg-uno-*`) via literal maps Tailwind can
+ * see. What is new is that CYAN and BLUE are now spent deliberately — cyan is "here" (whose turn it
+ * is, your seat, your turn cue), blue is "act" (a card you can legally play). The old board used
+ * cyan for both, which is the glow budget being spent without buying the distinction it exists for.
  */
 
 const SWATCH: Record<UnoColor, string> = {
@@ -80,6 +89,17 @@ export function Board() {
     setUnoArmed(false);
   }
 
+  // THE TURN CUE's trigger. It has to fire on the TRANSITION into my turn, not on the state of it
+  // being mine, so it is a counter bumped when the answer flips — the same render-phase adjustment
+  // the wild picker above uses. Passing the boolean straight to the cue would re-arm it on every
+  // republish for as long as the turn stayed mine, which is a toast that never goes away.
+  const mineNow = state !== null && state.winner < 0 && isMyTurn(state.turn);
+  const [cue, setCue] = useState({ mine: mineNow, key: 0 });
+  if (cue.mine !== mineNow) setCue({ mine: mineNow, key: cue.key + 1 });
+
+  const names = seats.map((s, i) => (s.name === '' ? `Player ${String(i + 1)}` : s.name));
+  const lines = useMoveLog(state?.lastEvent ?? DEAL_EVENT, names, state?.round ?? -1);
+
   // Report my own seat's result once per finished round — keyed on round like Chess, so a rematch
   // re-arms and a re-render of the same win does not double-count. No betting: XP + a stat, no money.
   const reportedRound = useRef<number | null>(null);
@@ -90,15 +110,21 @@ export function Board() {
     reportResult({ outcome: state.winner === mySeatIndex ? 'win' : 'loss' });
   }, [state, mySeatIndex, reportResult]);
 
-  // Audio, from the OS roles (never a filename): a soft place on any played card, a chime when the
-  // turn becomes mine, and win/lose at the end.
+  // Audio, from the OS roles (never a filename): a slide when anyone draws, a place on any played
+  // card, a chime when the turn becomes mine, and win/lose at the end.
   const topKey = useRef<string | null>(null);
+  const drawKey = useRef(0);
   const prevTurnMine = useRef(false);
   const wonKey = useRef<number | null>(null);
   useEffect(() => {
     if (state === null) return;
     if (topKey.current !== null && topKey.current !== state.top.id) audio.play('place');
     topKey.current = state.top.id;
+
+    if (state.lastEvent.seq > drawKey.current) {
+      if (state.lastEvent.action === 'draw') audio.play('deal');
+      drawKey.current = state.lastEvent.seq;
+    }
 
     const mine = state.winner < 0 && isMyTurn(state.turn);
     if (mine && !prevTurnMine.current) audio.play('notify');
@@ -120,6 +146,7 @@ export function Board() {
 
   const myTurn = state.winner < 0 && isMyTurn(state.turn);
   const finished = state.winner >= 0;
+  const event = state.lastEvent;
 
   const submit = (move: Parameters<typeof submitMove>[2]): void => {
     if (mySeatIndex < 0) return;
@@ -143,106 +170,69 @@ export function Board() {
     setPendingWild(null);
   };
 
-  // Opponents in turn order, starting after me (so the table reads clockwise from my seat).
-  const others = seats
-    .map((seat, index) => ({ seat, index }))
-    .filter((o) => o.index !== mySeatIndex)
-    .sort(
-      (a, b) =>
-        turnDistance(mySeatIndex, a.index, seats.length) -
-        turnDistance(mySeatIndex, b.index, seats.length)
-    );
+  const slots = opponentSlots(mySeatIndex, seats.length);
+  const seatView = (seat: number, side: UnoSeatSide) => (
+    <SeatView
+      key={seat}
+      name={names[seat] ?? `Player ${String(seat + 1)}`}
+      side={side}
+      count={state.counts[seat] ?? 0}
+      active={state.turn === seat && !finished}
+      calledUno={state.calledUno[seat] === true}
+    />
+  );
 
   return (
-    <Card felt={felt} className="flex flex-col items-center gap-5 p-6">
-      <p className={cx('text-sm', finished ? 'text-base-content' : 'text-bw-muted')}>
-        {statusLine(state, seats, myTurn, mySeatIndex)}
-      </p>
+    <Card
+      felt={felt}
+      className="relative flex flex-col items-center gap-3 overflow-hidden p-4 sm:p-6"
+    >
+      <TurnCue turnKey={cue.mine ? cue.key : null} />
+      <UnoShout
+        shout={event.calledUno ? { key: event.seq, name: names[event.seat] ?? 'A player' } : null}
+      />
+      <PenaltyFlash penaltyKey={event.penalty && event.seat === mySeatIndex ? event.seq : null} />
 
-      {/* Opponents */}
-      <div className="flex flex-wrap items-start justify-center gap-3">
-        {others.map(({ seat, index }) => {
-          const count = state.counts[index] ?? 0;
-          const active = state.turn === index && !finished;
-          return (
-            <div
-              key={index}
-              className={cx(
-                'flex min-w-24 flex-col items-center gap-1 rounded-lg border p-2 transition',
-                active ? 'border-secondary bg-base-300' : 'border-bw-line bg-base-200'
-              )}
-            >
-              <span className="max-w-28 truncate text-xs font-semibold">
-                {seat.name || `Player ${String(index + 1)}`}
-              </span>
-              <div className="flex h-8 items-center">
-                {Array.from({ length: Math.min(count, 7) }).map((_, k) => (
-                  <img
-                    key={k}
-                    src={unoBackSrc()}
-                    alt=""
-                    className="-ml-4 h-8 w-auto rounded-sm first:ml-0"
-                  />
-                ))}
-              </div>
-              <span className="text-bw-muted text-[0.65rem]">
-                {count} card{count === 1 ? '' : 's'}
-                {count === 1 && state.calledUno[index] ? ' · UNO!' : ''}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
+          three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
+          left a band of dead felt above the piles. */}
+      {slotsOn(slots, 'top').length > 0 && (
+        <div className="flex flex-wrap items-start justify-center gap-3">
+          {slotsOn(slots, 'top').map((s) => seatView(s.seat, 'top'))}
+        </div>
+      )}
 
-      {/* Table centre: draw pile, discard, active colour, direction */}
-      <div className="flex items-center gap-6">
-        <button
-          type="button"
-          disabled={!myTurn}
-          onClick={() => {
+      {/* THE FELT — side seats flanking the piles. `items-center` so a one-seat column sits level
+          with the discard rather than floating at the top of a tall row. */}
+      <div className="flex w-full items-center justify-between gap-2">
+        <div className="flex min-w-16 flex-col items-center gap-3">
+          {slotsOn(slots, 'left').map((s) => seatView(s.seat, 'left'))}
+        </div>
+
+        <TableCentre
+          top={state.top}
+          color={state.color}
+          direction={state.direction}
+          deckCount={state.deckCount}
+          canDraw={myTurn && pendingWild === null}
+          onDraw={() => {
             submit({ type: 'draw' });
           }}
-          className={cx(
-            'relative rounded-lg transition',
-            myTurn ? 'cursor-pointer hover:-translate-y-0.5' : 'opacity-80'
-          )}
-          aria-label="Draw a card"
-        >
-          <img src={unoBackSrc()} alt="Draw pile" className="h-28 w-auto rounded-lg" />
-          <span className="bg-base-100/80 text-bw-muted absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5 text-[0.6rem]">
-            {state.deckCount}
-          </span>
-        </button>
+        />
 
-        <div className="flex flex-col items-center gap-2">
-          <img
-            src={unoCardSrc(state.top)}
-            alt="Top of the pile"
-            className="h-28 w-auto rounded-lg"
-          />
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cx(
-                'inline-block h-3 w-3 rounded-full ring-1 ring-inset',
-                SWATCH[state.color],
-                RING[state.color]
-              )}
-            />
-            <span className="text-bw-muted text-[0.65rem] uppercase tracking-wide">
-              {state.color}
-            </span>
-            <span className="text-bw-muted ml-1 text-[0.65rem]">
-              {state.direction === 1 ? '↻' : '↺'}
-            </span>
-          </div>
+        <div className="flex min-w-16 flex-col items-center gap-3">
+          {slotsOn(slots, 'right').map((s) => seatView(s.seat, 'right'))}
         </div>
       </div>
 
-      {/* The wild colour picker (inline, like Chess's promotion picker) */}
+      {/* THE WILD PICKER — inline, like Chess's promotion picker, and it holds the card up out of
+          the fan while it is open so you can see what you are about to commit. */}
       {pendingWild !== null && (
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-bw-muted text-xs">Pick a colour</p>
-          <div className="flex gap-2">
+        <div className="border-bw-line bg-base-300/90 rounded-box flex flex-col items-center gap-2 border px-4 py-3">
+          <p className="font-display text-bw-muted text-xs tracking-[0.2em] uppercase">
+            Pick a colour
+          </p>
+          <div className="flex gap-3">
             {(['red', 'blue', 'green', 'yellow'] as const).map((color) => (
               <button
                 key={color}
@@ -252,84 +242,103 @@ export function Board() {
                 }}
                 aria-label={color}
                 className={cx(
-                  'h-9 w-9 rounded-full ring-2 ring-inset transition hover:scale-110',
+                  'size-11 rounded-full ring-2 ring-inset transition hover:scale-110',
+                  'focus-visible:outline-secondary focus-visible:outline-2 focus-visible:outline-offset-4',
                   SWATCH[color],
                   RING[color]
                 )}
               />
             ))}
           </div>
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              setPendingWild(null);
+            }}
+          >
+            Pick a different card
+          </Button>
         </div>
       )}
 
-      {/* My hand */}
+      {/* YOUR SEAT — the label reads exactly like an opponent's, so the table is symmetrical. */}
       {mySeatIndex >= 0 && (
-        <div className="flex w-full max-w-[min(92vw,44rem)] flex-col items-center gap-2">
-          <div className="flex w-full items-center justify-center gap-1 overflow-x-auto pb-2">
-            {myHand.map((card) => {
-              const playable = myTurn && canPlay(card, state.top, state.color);
-              return (
-                <button
-                  key={card.id}
-                  type="button"
-                  disabled={!myTurn}
-                  onClick={() => {
-                    playCard(card);
-                  }}
-                  className={cx(
-                    'shrink-0 rounded-lg transition',
-                    playable ? 'cursor-pointer hover:-translate-y-1.5' : 'opacity-60',
-                    playable && 'ring-secondary ring-2'
-                  )}
-                >
-                  <img src={unoCardSrc(card)} alt="" className="h-24 w-auto rounded-lg sm:h-28" />
-                </button>
-              );
-            })}
-            {myHand.length === 0 && !finished && (
-              <span className="text-bw-muted text-sm">No cards.</span>
+        <>
+          <div className="flex flex-col items-center gap-1">
+            <span
+              className={cx(
+                'font-display flex items-center gap-1 text-sm font-semibold tracking-wide',
+                myTurn ? 'text-secondary text-shadow-neon-cyan' : 'text-base-content'
+              )}
+            >
+              {myTurn && <span aria-hidden>★</span>}
+              {names[mySeatIndex] ?? 'You'}
+            </span>
+            {myHand.length === 1 && (
+              <span className="text-warning animate-lastcard text-xs font-bold tracking-[0.2em] uppercase">
+                {state.calledUno[mySeatIndex] === true ? 'UNO!' : 'One card left'}
+              </span>
             )}
           </div>
 
+          <HandView
+            cards={myHand}
+            myTurn={myTurn && pendingWild === null}
+            isPlayable={(card) => canPlay(card, state.top, state.color)}
+            onPlay={playCard}
+            pendingId={pendingWild}
+          />
+
+          {/* A hand with nothing in it you can play looks exactly like a hand you have not read
+              yet — every card dimmed reads as "still loading" rather than "you must draw". Say it. */}
+          {myTurn &&
+            pendingWild === null &&
+            myHand.length > 0 &&
+            !myHand.some((c) => canPlay(c, state.top, state.color)) && (
+              <p className="text-bw-muted text-xs">
+                Nothing matches {state.color} — draw from the pile.
+              </p>
+            )}
+
+          {/* CALL UNO. It arms BEFORE the play that takes you to one card, because that is when the
+              rulebook decides the penalty (`declareUno` rides on the move). v1 let you yell after
+              the fact; the decision point is the same one, it just has to be made a beat earlier. */}
           {myHand.length === 2 && myTurn && (
             <Button
-              variant={unoArmed ? 'primary' : 'ghost'}
+              variant={unoArmed ? 'primary' : 'secondary'}
               size="sm"
+              className={cx(!unoArmed && 'animate-lastcard')}
               onClick={() => {
                 setUnoArmed((v) => !v);
               }}
             >
-              {unoArmed ? 'UNO armed ✓' : 'Call UNO!'}
+              {unoArmed ? 'UNO! armed — play your card' : 'Call UNO!'}
             </Button>
           )}
-        </div>
+        </>
       )}
 
-      {/* Every human at the table has to ask for the next deal — the guests used to have no say
-          at all here, only the host's button and a line telling them to wait for it. The dealer is
-          still the host (`dealAgain` no-ops for anyone else); what changed is who gets asked. */}
-      {finished && <Rematch restart={dealAgain} label="Deal again" />}
+      {mySeatIndex < 0 && <p className="text-bw-muted text-sm">Watching — every hand is hidden.</p>}
+
+      <MoveLog lines={lines} mySeat={mySeatIndex} />
+
+      {finished && (
+        <div className="flex flex-col items-center gap-3">
+          <RoundResult
+            won={state.winner === mySeatIndex}
+            text={
+              state.winner === mySeatIndex
+                ? 'You went out — you win!'
+                : `${names[state.winner] ?? 'A player'} wins`
+            }
+          />
+          {/* Every human at the table has to ask for the next deal — the guests used to have no say
+              at all here, only the host's button and a line telling them to wait for it. The dealer
+              is still the host (`dealAgain` no-ops for anyone else); what changed is who gets asked. */}
+          <Rematch restart={dealAgain} label="Deal again" />
+        </div>
+      )}
     </Card>
   );
-}
-
-/** Steps from `me` to `seat` going in the (initial, clockwise) direction — for ordering opponents. */
-function turnDistance(me: number, seat: number, n: number): number {
-  if (me < 0) return seat;
-  return (((seat - me) % n) + n) % n;
-}
-
-/** The one line above the table: the result if the game is over, else whose turn it is. */
-function statusLine(
-  state: UnoState,
-  seats: ReadonlyArray<{ readonly name: string }>,
-  myTurn: boolean,
-  mySeat: number
-): string {
-  if (state.winner >= 0) {
-    if (state.winner === mySeat) return 'You went out — you win! 🎉';
-    return `${seats[state.winner]?.name ?? 'A player'} went out and wins.`;
-  }
-  if (myTurn) return 'Your turn — play a card or draw.';
-  return `${seats[state.turn]?.name ?? '…'} is playing…`;
 }

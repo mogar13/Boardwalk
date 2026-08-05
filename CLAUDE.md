@@ -53,7 +53,29 @@ render the projection plus their own hand (`useHand`) and submit a move as a non
 acks; the host's own moves take that same path, so there is one code path for "a human moved". The
 rulebook — 108-card deck, legal-play matching, skip/reverse/draw2/wild4, the UNO-call +2 penalty,
 reshuffle-on-empty, win detection — is all pure and in `tests/uno.test.ts` (30), with the art resolved
-to disk in `tests/uno-art.test.ts` (4). UNO shipped the two SDK seams Phase 5 built with no caller:
+to disk in `tests/uno-art.test.ts` (4).
+
+**UNO's BOARD is v1's table, rebuilt — the one place this repo went back to The Game Shack for a
+design rather than a war story.** The first version wrapped every opponent into a row above the piles,
+which is a scoreboard: correct, and silent. v1 seated them around the felt, and in a game where every
+hand is face down the SHAPE of the table is most of the information — who plays next, who is nearly
+out, which way it is going. So opponents now sit at fixed compass positions (`opponentSlots`, a pure
+lookup, `tests/uno-layout.test.ts` (11)), you are at the bottom, and play runs bottom → left → top →
+right, so reading the table clockwise is reading the order of play. With it came the rest of what made
+that board legible: fanned face-down hands that grow and shrink, a draw pile that is a stack with a
+count, the orbiting **direction ring** (reverse is the one action card whose effect is otherwise
+invisible), the active-colour pill, the "★ YOUR TURN" cue, and the **move log** — which is not
+decoration in a hidden-hand game, because it is the only place the table ever says that a bot drew four
+and lost its turn. The log's one design decision: v1 pushed a formatted SENTENCE over the wire
+(`lastLogSync`, carrying English, the sender's copy of everyone's names, and a wall-clock timestamp for
+de-duplication). Here the host publishes FACTS — one `UnoEvent` derived by DIFFING the game either
+side of a move (`describeMove`, so it cannot drift from the rules and a refused move is silent for
+free), ordered by its own `seq` — and each client renders its own prose from its own seat names. Rules
+facts and copy are tested together in `tests/uno-log.test.ts` (15), every case driven through the real
+reducer. The **whole layer is `TPublic`-only**: one new field on the projection, no new node, no rules
+change, and nothing hidden crosses the wire that did not before.
+
+UNO shipped the two SDK seams Phase 5 built with no caller:
 `useRoom().writeHand`/`useHand(index)` (the private channel's write/read halves), and it closed one OS
 gap — the lobby's `canStart` gated on `humanCount >= seats.min`, which **conflated "min players" with
 "min humans"** and wrongly refused a legitimately bot-filled AI table; it now gates on a full table with
@@ -466,6 +488,24 @@ lint rule that matches nothing reports success.
   `seq`. Ordering is the OS's job now, not each game's.
 - **AI is an occupant kind, not a mode.** ✅ Live — a leaving human's seat can be handed *back* to an
   AI (`releaseSeat(…, 'ai')`) so the table stays alive, v1's best drop-in/drop-out idea.
+- **The host picks how many chairs, and the manifest's `seats` range is what they may pick from.** ✅
+  Live — `tableSizeChoices({min,max})` (pure, in `src/system/room/seats.ts`) and a picker the lobby
+  draws next to public/private. Before this the lobby created EVERY table at `seats.max` and `canStart`
+  demands a full one, so `seats.min` was decoration: a game declaring 2–7 had exactly one real table
+  size, and sitting down to UNO meant filling six CPU chairs whether you wanted them or not. v1 asked
+  "PLAYERS: 2 / 3 / 4" before anything else, and it was right. The choice is at CREATE time because
+  `seatCount` is a create parameter — a table cannot grow a chair under someone who has already joined
+  by code — and a range holding ONE size (Chess) draws no control at all, so the seam is invisible to
+  every game that does not want it. **The default is `seats.min`, the SMALLEST table.** It shipped as
+  `seats.max` for one afternoon on the "default is whatever already shipped" rule that AI difficulty
+  follows, and that was wrong: **that rule is about not silently RETUNING a game under someone, and a
+  seat count is not a tuning knob.** Defaulting to the biggest table reproduces the exact friction the
+  control exists to remove for everyone who does not notice the control — you still had to add six CPUs
+  before Start would light up, which is the complaint that prompted the picker. The smallest table is
+  the one a player opening a game alone can actually start; a full house is one tap away. This is the
+  variable-table-size seam [plans/LIARS_DICE.md](plans/LIARS_DICE.md) recorded as open, and it is one
+  pure function plus a button row because the count was already plumbed end to end (`create` →
+  protocol → gateway → store).
 - **A rematch is asked for by everyone, and the OS owns the asking.** ✅ Live —
   `<Rematch restart={…}>` over the pure `rematchTally`/`castVotes`/`haveVoted` in
   `src/system/room/rematch.ts`. A game renders one component and passes ONE thing (how to start the
@@ -620,6 +660,15 @@ lint rule that matches nothing reports success.
   and that's the lot. (Act and here are both cool now — blue sits ~53° from cyan, told apart by
   depth and brightness, not hue — so keeping the focus ring exclusively cyan matters more, not less.) Status colours (info/success/warning/error) are flat on purpose — a neon
   success toast is a slot machine telling you your form saved. If everything glows, nothing does.
+- **The KIT has exactly one entrance animation; a GAME's motion is a different category.** `rise` is
+  still the only way anything in `src/ui` may arrive — a kit with five entrances is a kit where every
+  component author picked one. But a card being dealt is the game happening, not a component
+  appearing, so `--animate-deal` / `pitch` / `cue` / `lastcard` sit in `packages/theme/theme.css`
+  beside `--color-uno-*`, for the same reason those do: game content lives in the theme because the
+  theme is the one file that may name a colour, and (for motion) because keyframes cannot be spelled
+  from JSX — Tailwind generates `animate-*` only from an `--animate-*` token, so the alternative is a
+  second stylesheet, which is how a look drifts. Same bar as a sound role or a cosmetic kind: **add
+  one in the commit that first plays it.** A motion token with no reader is `loadout.color`.
 - **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live, and they now have a
   destination: one `<Modal>` (native `<dialog>`), one `useToast()`, and `useConfirm()` for the
   one-liner. v1 has four ad-hoc modal systems and toasts that lazily self-inject an inline-styled
@@ -744,6 +793,8 @@ builds the thing it guards.
 | Blackjack's rules + casino payout are correct | `tests/blackjack.test.ts` (26) — ace-soft `handValue`, natural-vs-3-card-21, dealer stands-on-all-17s at the boundary, the full settle matrix, the **integer-safe 3:2 payout on an odd wager** (the v1 `parseInt` chip), and the pure reducer (deal/hit-bust/stand/double/no-op) |
 | Chess's rules are correct | `tests/chess.test.ts` (40) — FEN round-trip, 20 opening moves, piece movement + blocking, check/pin/out-of-check, castling (both sides, out-of/through-check, blocked, rights bookkeeping incl. captured-rook), en passant (set/capture/expiry), promotion (four pieces, chosen + default), fool's/scholar's mate + winner seat, stalemate-not-mate, insufficient-material + fifty-move draws, and `playMove` totality (illegal/finished → unchanged) + input immutability |
 | UNO's rules + wire projection are correct | `tests/uno.test.ts` (30) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO) and its TIERS (`sharp` the default so the shipped bots are unchanged, `casual` reaching every playable card and no unplayable one, `casual` always naming a colour for a wild — a wild without one is refused — and **`casual` still calling UNO, because a bot that does not can never win**: a hand reaches zero only through one, and going to one undeclared is what the +2 punishes, so an undeclaring bot bounces off one card back to three and a four-casual table ran 3,000 turns with no winner; whole dealt games are played to a WINNER at both levels with every move asserted to change the state), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, and `toPublic` hiding every card behind sentinels |
+| UNO's table seats everyone, once, in turn order | `tests/uno-layout.test.ts` (11) — over every table size 2–7 and every seat at it: each opponent placed exactly ONCE, never yourself, always in range (a seat rendered twice, or nowhere, still LOOKS like a table — only counting them catches it); v1's three fixed arrangements reproduced exactly (heads-up opposite, three-handed flanking, four-handed left/top/right); the order running bottom → left → top → right so reading clockwise is reading turn order, including the part that is easy to get backwards — a two-deep column fans BOTTOM-first, because the next player up sits nearest you and a flex column renders top-down (falsified by dropping the `.reverse()`); the arrangement being relative to MY seat rather than absolute; both flanks always equal depth (the lopsided five-seat table that killed the "even distribution" formula and is why this is a lookup); a spectator and an off-the-end seat degrading instead of throwing; and the hand fan's overlap staying inside its bounds at EVERY hand size, however silly, since a hand can be drawn up past twenty and a fan that keeps tightening becomes a row of stripes |
+| UNO's move log says what happened, and never says what did not | `tests/uno-log.test.ts` (15) — the facts (`describeMove`) and the sentences (`linesFor`), every case driven through the REAL reducer rather than a hand-built "after" state, because a diff of two states written by the same hand only proves it can subtract. A play, a draw, a draw-two and a wild-four read off the RESULT (victim, count, skip) so a change to who a draw-two hits needs no edit here; a wild carrying the CHOSEN colour, which the card's face cannot say; a reverse, the one action whose effect is otherwise invisible; the UNO call and the +2 penalty distinguished (the penalty is a PLAY whose hand grew); the winner; and — the one that matters — **a refused move producing no line at all**, both illegal-card and off-turn, since `applyMove` is total and a log written at the call site claims moves that never happened (falsified by removing the unchanged-state guard: two go red). Plus the copy: one draw-four expanding to its four real consequences with unique React keys, a skip NOT announced twice when the victim already drew, and a blank or missing seat name falling back rather than rendering an empty subject |
 | Every UNO card maps to art on disk | `tests/uno-art.test.ts` (4) — all 108 `unoCardSrc` paths resolve in `public/cards/uno/`, the action-kind→filename map (`skip`→`block`, `reverse`→`inverse`, `draw2`→`2plus`), both colourless wilds, and the back |
 | Solitaire's Klondike rules are correct | `tests/solitaire.test.ts` (34) — a 52-card face-down deck, deterministic shuffle (permutation, input untouched), the deal (column sizes 1–7, only the top face up, 24 to stock), `canStackTableau`/`canStackFoundation` (King-on-empty, alternating descending, Ace-on-empty, up-by-suit), `isValidRun`, `liftable` (waste/foundation tops, a tableau run, never the stock, refuses a face-down start), the draw (1 and 3, waste→stock **recycle** re-serves the order and bumps the `recycles` counter the Clean Sheet feat reads, no-op when empty), moves (waste→foundation, a run move that flips the exposed card, King-only-on-empty, illegal no-ops, one-card-to-foundation), `auto`, win detection, `canAutoComplete`/`autoComplete`, a won game frozen but re-dealable, and input immutability |
 | The security rules do what they say | `tests/database-rules.test.ts` (64) — boots the RTDB emulator, loads the **real** `database.rules.json`; the refusal of a stored `level`, the shape of every Phase 4 field, `wins`+`played` allowed but nothing beyond it, the P2 `equipped` map (card back + title accepted, a stray `frame`/`avatar` key and a wrong-type/over-long id refused), and Phase 5's rooms/hands/chat: owner-only hand reads, forged-author refusal, monotonic `seq`, self-only presence, no-evict seat claims, host-only room removal and host-only hands cleanup. Phase E added `dice` as the fifth `equipped` key (accepted whole and alone, wrong-type and over-long refused per-key), and moved the STRAY-key example to `chip` — the kind `catalog.ts` still withholds for want of a reader, which is what `dice` used to be |
@@ -777,7 +828,7 @@ builds the thing it guards.
 | A backup restores, and the drill says so | `boardwalk-api/tests/backup.test.ts` (16) — online-backup API (not a file copy), `PRAGMA integrity_check` on the RESULT, balances recomputed from the restored ledger, and a corrupt/unopenable file reported red rather than thrown |
 | The Phase-A shadow diff + mirror are correct | `tests/shadow.test.ts` (13) — `diffProfiles` (clean round-trip empty, null read-back as one whole-profile diff, scalar/nested-stat/daily mismatch, a field present on only one side), and `shadowProfileRepo`/`mirrorProfile` (reads through the primary alone, mirrors on save, a throwing mirror never rejects the write — Firebase stays authoritative) |
 | A rematch needs everyone, and cannot be satisfied by a ghost | `tests/rematch.test.ts` (13) — `castVotes` (idempotent, additive, votes every local seat at once for a hot-seat screen, input untouched), and the tally: only HUMAN seats are asked, one human at a table of bots restarts on a single click, a departed player's stale vote is ignored because `needed` is recomputed from the current seats, and **an all-bot/empty table never agrees** (the `every`-over-an-empty-list trap that would restart a dead room forever). Falsified by dropping the `needed.length > 0` clause and by counting raw vote keys instead of the needed subset — one test each |
-| Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't) |
+| Seats/ordering/lifecycle are correct | `tests/room.test.ts` — claim (open-before-ai, no-evict), `releaseSeat` fallback, `localSeatIds` ×3 modes, `aiSeatsToDrive` host-only, `seq` strictly-fresh + shuffled-delivery, `teardownPlan` (host clears chat/room, guest doesn't), and `tableSizeChoices`: every size in the range inclusive, **nothing at all when the range holds one size** (a picker with one button is a control that cannot change the outcome — falsified by relaxing `max <= min` to `max < min`), a reversed/zero/fractional/NaN range collapsing rather than rendering a broken picker, and — read against the REAL registry, not a fixture — every size it offers being one the lobby can actually START, since `canStart` needs a full table and a picker offering a size the game refuses is a Start button that never lights up |
 | Chat orders by key, not clock | `tests/chat.test.ts` — `messageKey` fixed-width ASCII sort = send order, counter tiebreak/rollover, `sanitizeMessage` |
 | Every sound role names a file that is staged | `tests/audio.test.ts` (4) — every `sounds.ts` file exists in `public/audio/`, every role non-empty, variation pools distinct, `click` primer single-file. Covers P5's `unlock`/`fanfare` by construction (the test walks the registry, so a role added without its file is red) |
 | Every card + every card back maps to art that is on disk | `tests/cards.test.ts` (8) — all 52 `cardSrc` paths resolve in `public/cards/standard/`, suit-casing + `10`, every `CARD_BACKS` id resolves, an unknown/absent back id falls back to the default (never a 404), a known id maps to its own file, **every `cardback` store cosmetic resolves to art + the default back is a free starter**, `isRed` |

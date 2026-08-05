@@ -5,8 +5,12 @@ import {
   applyMove,
   chooseAiMove,
   deal,
+  dealEvent,
+  describeMove,
   toPublic,
   type Card,
+  type Move,
+  type UnoEvent,
   type UnoGame,
   type UnoLevel,
   type UnoState,
@@ -74,10 +78,16 @@ export function useUnoHost({
   const lastGameRef = useRef<UnoGame | null>(null); // for writing only the hands that changed
   const roundRef = useRef(0);
   const ackRef = useRef(0);
+  // The move log's ordering. HOST-OWNED because the host is the only writer of the projection, and
+  // it restarts at 0 with each round — which is what makes a client's scrollback reset on a rematch
+  // without the client being told to. It is deliberately NOT the room's own `seq`: that one orders
+  // WRITES (including ones carrying no move), and reusing it would make the log skip numbers and a
+  // client unable to tell "no move happened" from "I missed one".
+  const eventSeqRef = useRef(0);
 
   /** Write the changed private hands, then the public projection. Preserves any pending a player wrote. */
   const publish = useCallback(
-    (game: UnoGame, reset = false) => {
+    (game: UnoGame, event: UnoEvent, reset = false) => {
       const last = lastGameRef.current;
       seats.forEach((s, i) => {
         if (s.kind !== 'human') return; // AI/host-unowned hands stay in memory; nobody may read them
@@ -88,10 +98,26 @@ export function useUnoHost({
       const round = roundRef.current;
       const ack = reset ? 0 : ackRef.current;
       void patch((prev) =>
-        toPublic(game, round, reset || prev === null ? NO_PENDING : prev.pending, ack)
+        toPublic(game, round, reset || prev === null ? NO_PENDING : prev.pending, ack, event)
       );
     },
     [seats, writeHand, patch]
+  );
+
+  /** Apply a move, describe what it did, and publish both. The one path every move takes. */
+  const commit = useCallback(
+    (game: UnoGame, seat: number, move: Move) => {
+      const next = applyMove(game, seat, move, Math.random);
+      // `describeMove` returns the deal sentinel when nothing changed, so a refused intent burns no
+      // event seq and produces no log line — the reducer's totality carried through to the
+      // commentary rather than re-checked here.
+      const seq = eventSeqRef.current + 1;
+      const event = describeMove(game, next, seat, move, seq);
+      if (event.seq === seq) eventSeqRef.current = seq;
+      gameRef.current = next;
+      publish(next, event);
+    },
+    [publish]
   );
 
   const startRound = useCallback(
@@ -101,7 +127,8 @@ export function useUnoHost({
       lastGameRef.current = null;
       roundRef.current = round;
       ackRef.current = 0;
-      publish(g, true);
+      eventSeqRef.current = 0;
+      publish(g, dealEvent(g), true);
     },
     [seats, publish]
   );
@@ -125,14 +152,12 @@ export function useUnoHost({
       const cur = gameRef.current;
       if (cur === null || cur.winner !== -1 || cur.turn !== turn || seats[turn]?.kind !== 'ai')
         return;
-      const next = applyMove(cur, turn, chooseAiMove(cur, turn, level), Math.random);
-      gameRef.current = next;
-      publish(next);
+      commit(cur, turn, chooseAiMove(cur, turn, level));
     }, AI_DELAY_MS);
     return () => {
       clearTimeout(timer);
     };
-  }, [isHost, state, seats, publish, level]);
+  }, [isHost, state, seats, commit, level]);
 
   // 3. Apply a human's submitted intent in nonce order (the host's own move takes this path too).
   useEffect(() => {
@@ -142,10 +167,8 @@ export function useUnoHost({
     const p = state.pending;
     if (p.nonce <= ackRef.current || p.seat !== g.turn || seats[p.seat]?.kind !== 'human') return;
     ackRef.current = p.nonce;
-    const next = applyMove(g, p.seat, p.move, Math.random);
-    gameRef.current = next;
-    publish(next);
-  }, [isHost, state, seats, publish]);
+    commit(g, p.seat, p.move);
+  }, [isHost, state, seats, commit]);
 
   const dealAgain = useCallback(() => {
     if (!isHost || gameRef.current === null) return;

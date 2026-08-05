@@ -277,6 +277,77 @@
       transform: translateY(0);
     }
   }
+
+  /* ── Table motion ──────────────────────────────────────────────────────────
+   *
+   * GAME CONTENT, exactly like `--color-uno-*` above and for the same reason: a
+   * card sliding onto the pile is the game happening, not a component appearing,
+   * and it lives here because keyframes cannot be spelled from JSX — Tailwind
+   * generates `animate-*` only from an `--animate-*` token, so the alternative
+   * is a second stylesheet, which is how a look drifts.
+   *
+   * This does NOT reopen `rise`'s "one entrance animation" rule, which is about
+   * the KIT: every panel, modal and toast still arrives exactly one way. These
+   * four are motion a game asks for, they have a reader in the commit that adds
+   * them (UNO's board — the deal, the discard, the turn cue, the last card), and
+   * the reduced-motion block below neutralises them with everything else.
+   *
+   * Deliberately no bounce. v1's deal used a back-out curve that overshoots, and
+   * at seven seats dealing seven cards each that is 49 objects springing at once;
+   * `--ease-strike` settles instead, which is what the rest of the theme does. */
+  --animate-deal: deal 320ms var(--ease-strike) backwards;
+  --animate-pitch: pitch 220ms var(--ease-strike);
+  --animate-cue: cue 240ms var(--ease-strike);
+  /* The one LOOP here, and the only thing on the board that pulses: a hand at one
+     card. It is the game's loudest state and v1 flashed it too. Slow and on
+     opacity alone — a scale loop under a fanned hand reflows its neighbours. */
+  --animate-lastcard: lastcard 1.4s ease-in-out infinite;
+
+  /* Cards arrive from the middle of the table, where the deck is. */
+  @keyframes deal {
+    from {
+      opacity: 0;
+      transform: translateY(-1.75rem) scale(0.86);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* A played card lands ON the pile: it comes down onto it, slightly oversized. */
+  @keyframes pitch {
+    from {
+      opacity: 0;
+      transform: scale(1.22);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The turn cue slides in from the edge it is parked against. */
+  @keyframes cue {
+    from {
+      opacity: 0;
+      transform: translateX(-0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes lastcard {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
 }
 
 @layer base {
