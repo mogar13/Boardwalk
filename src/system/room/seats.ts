@@ -171,3 +171,28 @@ export function tableIsFull(seats: readonly Seat[]): boolean {
 export function humanCount(seats: readonly Seat[]): number {
   return seats.filter((s) => s.kind === 'human').length;
 }
+
+/**
+ * HOW BIG A TABLE THE HOST MAY BUILD — every size the manifest's `seats` range allows.
+ *
+ * `manifest.seats.min` was very nearly dead data before this: the lobby created every table at
+ * `seats.max` and `canStart` requires a FULL table, so a game declaring `{ min: 2, max: 7 }` had
+ * exactly one real table size, seven, and the `min` was decoration. That is why an UNO table was
+ * always you plus six CPUs, and why the first thing v1 asked was "2, 3 or 4?".
+ *
+ * The choice lives at CREATE time, not in the room, because `seatCount` is a create parameter — a
+ * table cannot grow a chair once people are sitting at it, and pretending otherwise would mean
+ * re-seating a room that somebody has already joined by code.
+ *
+ * Returns EMPTY when the range holds one size (Chess's `{ min: 2, max: 2 }`), so the lobby draws no
+ * control at all rather than a picker with one button — a control that cannot change the outcome is
+ * worse than none, which is the same reasoning the visibility toggle is hidden in AI mode for.
+ * A reversed or nonsensical range collapses to nothing for the same reason.
+ */
+export function tableSizeChoices(range: { readonly min: number; readonly max: number }): number[] {
+  const { min, max } = range;
+  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 1 || max <= min) return [];
+  const out: number[] = [];
+  for (let n = min; n <= max; n += 1) out.push(n);
+  return out;
+}

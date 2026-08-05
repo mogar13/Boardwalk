@@ -9,7 +9,7 @@ import { repos } from '@/system/repo';
 import { RoomProvider } from '@/system/room/RoomProvider';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
 import { SeatList } from '@/system/room/SeatList';
-import { humanCount, tableIsFull } from '@/system/room/seats';
+import { humanCount, tableIsFull, tableSizeChoices } from '@/system/room/seats';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
 import type { RoomVisibility } from '@/system/room/types';
@@ -51,6 +51,11 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
+  // HOW MANY CHAIRS. Defaults to `seats.max`, which is exactly what every table was before this
+  // control existed — the same "the default is what already shipped" rule the AI-difficulty option
+  // follows, so adding a picker re-sizes nobody's table for them.
+  const sizeChoices = tableSizeChoices(manifest.seats);
+  const [seatCount, setSeatCount] = useState(manifest.seats.max);
   // THE DEEP LINK the hub's room browser produces (`/play/uno?table=ABCD`). It is read HERE and
   // not in the play route, because the play route hands a game `{ onExit }` and nothing else —
   // that rule is what stops a `system` prop growing back. The lobby is OS code, so it may read the
@@ -96,7 +101,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
     setBusy(true);
     void (async () => {
       const result = await repos.room.create(manifest.id, {
-        seatCount: manifest.seats.max,
+        seatCount,
         host: { uid: myUid, name: session.username || 'Player' },
         // AN 'AI' TABLE IS NEVER LISTED, whatever the toggle last said. The mode is otherwise a
         // client-side matter (it decides which seats are LOCAL, nothing about the room), but a
@@ -139,6 +144,34 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
                 {m}
               </Button>
             ))}
+          </div>
+        )}
+        {/*
+          HOW MANY CHAIRS (v1's "PLAYERS 2 / 3 / 4"). Only drawn when the manifest's seat range
+          holds more than one size — see `tableSizeChoices`. Before this, `seats.min` was decoration
+          and every table was built at `max`, which is why sitting down to UNO meant filling six
+          CPU chairs whether or not you wanted them.
+        */}
+        {sizeChoices.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
+              Players
+            </span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="How many players">
+              {sizeChoices.map((n) => (
+                <Button
+                  key={n}
+                  size="sm"
+                  variant={n === seatCount ? 'secondary' : 'ghost'}
+                  aria-pressed={n === seatCount}
+                  onClick={() => {
+                    setSeatCount(n);
+                  }}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
         {/*

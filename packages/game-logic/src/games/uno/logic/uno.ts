@@ -439,6 +439,67 @@ export interface PendingMove {
 export const NO_PENDING: PendingMove = { seat: -1, nonce: 0, move: { type: 'draw' } };
 
 /**
+ * WHAT JUST HAPPENED, as facts rather than prose — the table's move log (v1's `#move-log`, the
+ * running commentary that makes a hidden-hand game readable: you cannot see anyone's cards, so the
+ * log is the only place "AI 3 drew 4 and is skipped" is ever said).
+ *
+ * FACTS, NOT SENTENCES, and the split is deliberate. v1 pushed a formatted string over the wire
+ * (`lastLogSync`, a JSON'd `{ts, name, msg}`) which meant the wire carried English, the sender's
+ * copy of everyone's names, and a wall-clock timestamp used for de-duplication. Here the host
+ * writes what the RULES did — which seat, which card, who drew how many, did the direction flip —
+ * and each client renders its own sentence from its own seat names. So a rename is not a stale log
+ * line, the log needs no clock (`seq` orders it, the OS's rule), and the derivation is unit-testable
+ * without asserting on copy.
+ *
+ * Wire-safe like everything else here: every field is dense, absence is a `-1`/`0`/`false`
+ * sentinel, and `card` carries a real card even on a draw (the sentinel below) because RTDB drops a
+ * null child and a receiver must never have to distinguish "no card" from "no state".
+ */
+export interface UnoEvent {
+  /** Monotonic within a round; `0` is the deal. A client appends only what it has not shown. */
+  readonly seq: number;
+  /** The acting seat, or `-1` for the deal (nobody acted). */
+  readonly seat: number;
+  readonly action: 'deal' | 'play' | 'draw';
+  /** The card played. Meaningless (and the sentinel) unless `action === 'play'`. */
+  readonly card: Card;
+  /** The colour in force AFTER the move — a wild's chosen colour, which the card face cannot say. */
+  readonly color: UnoColor;
+  /** The seat an action card made draw, or `-1`. */
+  readonly victim: number;
+  /** How many `victim` drew; `0` when there was none. */
+  readonly drew: number;
+  /** The seat whose turn was skipped over, or `-1`. */
+  readonly skipped: number;
+  readonly reversed: boolean;
+  /** The actor declared UNO going to one card. */
+  readonly calledUno: boolean;
+  /** The actor took the +2 for going to one card silently. */
+  readonly penalty: boolean;
+  /** The seat that emptied its hand on this move, or `-1`. */
+  readonly winner: number;
+}
+
+/** The card an event carries when no card was played — never null, because the wire drops null. */
+const NO_CARD: Card = { id: '', color: 'wild', kind: 'wild', value: -1 };
+
+/** The opening event: the deal itself, seat-less, seq 0. Also what a no-op move produces. */
+export const DEAL_EVENT: UnoEvent = {
+  seq: 0,
+  seat: -1,
+  action: 'deal',
+  card: NO_CARD,
+  color: 'red',
+  victim: -1,
+  drew: 0,
+  skipped: -1,
+  reversed: false,
+  calledUno: false,
+  penalty: false,
+  winner: -1,
+};
+
+/**
  * Everything a non-host needs to render, and NOTHING hidden — no deck, no opponent's cards, only the
  * top discard, the active colour, per-seat COUNTS, and whose turn it is. This is the `TPublic` the
  * host writes to `state/data`; the deck and every hand stay off the wire. All wire-safe: `winner` is
@@ -457,6 +518,13 @@ export interface UnoState {
   /** The intent a non-host has submitted for the host to apply; `ackNonce` is the last one applied. */
   readonly pending: PendingMove;
   readonly ackNonce: number;
+  /**
+   * The last transition, as facts (see `UnoEvent`). ONE event, not a list: the log is per-client
+   * scrollback, so each client appends this to its own and a late joiner simply starts from now —
+   * which is the same answer chat gives, and it keeps the room node from growing without bound over
+   * a long game.
+   */
+  readonly lastEvent: UnoEvent;
 }
 
 /** Project the complete game to its public wire view. Pure — the host calls it on every transition. */
@@ -464,7 +532,8 @@ export function toPublic(
   game: UnoGame,
   round: number,
   pending: PendingMove = NO_PENDING,
-  ackNonce = 0
+  ackNonce = 0,
+  lastEvent: UnoEvent = DEAL_EVENT
 ): UnoState {
   return {
     top: top(game),
@@ -478,6 +547,7 @@ export function toPublic(
     round,
     pending,
     ackNonce,
+    lastEvent,
   };
 }
 

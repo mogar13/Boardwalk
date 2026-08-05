@@ -16,7 +16,9 @@ import {
   mySeatIndex,
   releaseSeat,
   tableIsFull,
+  tableSizeChoices,
 } from '@/system/room/seats';
+import { registry } from '@/games/registry';
 import { applyIfFresh, isFresh, nextSeq } from '@/system/room/ordering';
 import { teardownPlan } from '@/system/room/lifecycle';
 import type { RoomSnapshot, Seat } from '@/system/room/types';
@@ -235,5 +237,45 @@ describe('teardownPlan — only the host clears shared state', () => {
     const s = snap(YOU, { [ME]: true, [YOU]: true }, [human(YOU), ai()]);
     const plan = teardownPlan(s, ME);
     expect(plan.some((p) => p.target === 'seat')).toBe(false);
+  });
+});
+
+/**
+ * HOW BIG A TABLE THE HOST MAY BUILD. Before this, the lobby created every room at `seats.max` and
+ * `canStart` demands a FULL table — so `seats.min` was decoration, and a game declaring 2–7 had
+ * exactly one real size. The declaration is the source of truth now, which is why the last test
+ * reads the REAL registry rather than a fixture: a manifest whose range is a single number gets no
+ * control, and that has to be a fact about the manifest, not about a hand-written example.
+ */
+describe('tableSizeChoices', () => {
+  it('offers every size in the range, inclusive', () => {
+    expect(tableSizeChoices({ min: 2, max: 7 })).toEqual([2, 3, 4, 5, 6, 7]);
+    expect(tableSizeChoices({ min: 2, max: 3 })).toEqual([2, 3]);
+  });
+
+  it('offers NOTHING when the range holds one size', () => {
+    // Chess. A picker with one button is a control that cannot change the outcome, which is worse
+    // than no control — the same reason the visibility toggle is hidden on an AI table.
+    expect(tableSizeChoices({ min: 2, max: 2 })).toEqual([]);
+  });
+
+  it('collapses a nonsensical range instead of producing a broken picker', () => {
+    expect(tableSizeChoices({ min: 5, max: 2 })).toEqual([]); // reversed
+    expect(tableSizeChoices({ min: 0, max: 4 })).toEqual([]); // a zero-seat table
+    expect(tableSizeChoices({ min: 2.5, max: 6 })).toEqual([]); // half a player
+    expect(tableSizeChoices({ min: Number.NaN, max: 6 })).toEqual([]);
+  });
+
+  it('every choice it offers is a table the lobby can actually start', () => {
+    // `canStart` needs a FULL table with at least one human, so every offered size must be at
+    // least 1 (a chair for the host) and within the manifest's own declared bounds. A picker that
+    // offers a size the game refuses is a Start button that never lights up.
+    for (const { manifest } of Object.values(registry)) {
+      for (const n of tableSizeChoices(manifest.seats)) {
+        expect(n).toBeGreaterThanOrEqual(manifest.seats.min);
+        expect(n).toBeLessThanOrEqual(manifest.seats.max);
+        expect(tableIsFull(emptyTable(n).map(() => human(ME)))).toBe(true);
+      }
+    }
   });
 });
