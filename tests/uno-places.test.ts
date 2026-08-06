@@ -1,5 +1,5 @@
 /**
- * RANKED PLACES — slice 3 of `plans/UNO_HOUSE_RULES.md`, and the house rule that changes the
+ * RANKED PLACES — slice 3 of `plans/done/UNO_HOUSE_RULES.md`, and the house rule that changes the
  * ROTATION rather than the legal set.
  *
  * It has its own file for stacking's reason: it is a second rulebook layered on the first, and the

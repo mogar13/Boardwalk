@@ -251,7 +251,7 @@ that did not come from playing the whole game: a full round is a few hundred bro
 table and both antes were real and then the winning seat's hand was shortened to a single wild
 directly in SQLite. The referee re-reads the match row on every action, so the winning move itself
 was ordinary and fully refereed — the same technique, and the same disclosure, as
-[LIARS_DICE.md §10](done/LIARS_DICE.md).
+[LIARS_DICE.md §10](LIARS_DICE.md).
 
 Three failed attempts at that fixture are worth recording, because each is a real property of the
 design asserting itself:

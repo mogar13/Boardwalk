@@ -200,7 +200,7 @@ export interface GameManifest {
    * wrong for a rule the REFEREE enforces and every guest's `canPlay` has to agree with. So a house
    * rule is stamped on the ROOM at create — where `anteCents` is, for `anteCents`'s reasons — and
    * the OS draws its toggles in the lobby beside the ante picker. See `@/system/room/houseRules`
-   * and `plans/UNO_HOUSE_RULES.md` §1.
+   * and `plans/done/UNO_HOUSE_RULES.md` §1.
    *
    * Absent on every game but UNO. Declaring one means the game has a resolver that reads these ids
    * — asserted as a bijection in `tests/uno-house-rules.test.ts`, because a toggle the resolver

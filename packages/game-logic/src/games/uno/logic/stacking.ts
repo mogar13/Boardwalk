@@ -2,7 +2,7 @@
  * STACKING — the house rule everybody actually plays: a +2 played at you can be answered with your
  * own +2, and the debt accumulates until somebody cannot answer and takes the lot.
  *
- * Slice 2 of `plans/UNO_HOUSE_RULES.md`. It rides the seam slice 1 built: `stack`/`crossStack` are
+ * Slice 2 of `plans/done/UNO_HOUSE_RULES.md`. It rides the seam slice 1 built: `stack`/`crossStack` are
  * booleans on the TABLE (chosen at create, stamped onto the round by `deal`, published by
  * `toPublic`), so the referee and every client read the same two flags and `unoStart` still has no
  * field for either.

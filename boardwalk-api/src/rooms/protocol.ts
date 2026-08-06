@@ -83,7 +83,7 @@ export type RequestMsg =
   // which comes off the authenticated socket.
   | { t: 'ldStart'; id: number; gameId: string; roomId: string; nonce: string; anteCents: number }
   | { t: 'ldAction'; id: number; gameId: string; roomId: string; nonce: string; action: unknown }
-  // UNO, DEALT (plans/UNO_POT.md). The same two-frames-in, zero-out shape, with one difference
+  // UNO, DEALT (plans/done/UNO_POT.md). The same two-frames-in, zero-out shape, with one difference
   // worth reading: `unoStart` has NO `anteCents`. The stake is a property of the table, stamped on
   // the room at create and agreed to by everyone who sat down, so the referee reads it from the
   // room rather than from whoever happens to press Deal — a client that can name its own stake can

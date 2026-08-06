@@ -38,7 +38,7 @@ export const unoManifest = {
   seats: { min: 2, max: 7 },
   modes: ['ai', 'online'],
   /**
-   * THE POT (plans/UNO_POT.md). Every human seat antes at the deal and the winner takes the whole
+   * THE POT (plans/done/UNO_POT.md). Every human seat antes at the deal and the winner takes the whole
    * thing — v1's ante, and the first half of v1's pot; raise/call/fold is a second slice.
    *
    * The range is the LADDER the lobby offers, not a stake this file picks: `anteChoices` filters the
@@ -54,7 +54,7 @@ export const unoManifest = {
     min: 2_500,
     max: 100_000,
     /**
-     * THE HOUSE WILL BANK A LONE PLAYER (plans/UNO_HOUSE_RULES.md §4). One human against bots
+     * THE HOUSE WILL BANK A LONE PLAYER (plans/done/UNO_HOUSE_RULES.md §4). One human against bots
      * antes like anybody else, and a win pays `ante × seats × HOUSE_RETURN` out of the house's
      * own money — Blackjack's model, not v1's, and the distinction is the whole feature: v1
      * covered each bot's ante so the pot matched fair odds, which at 4 seats is a $75 grant on a
@@ -104,7 +104,7 @@ export const unoManifest = {
     },
   ],
   /**
-   * HOUSE RULES (plans/UNO_HOUSE_RULES.md) — the ways a TABLE agrees to play differently, as
+   * HOUSE RULES (plans/done/UNO_HOUSE_RULES.md) — the ways a TABLE agrees to play differently, as
    * opposed to `options` above, which is how one client does. The ids are the keys
    * `resolveHouseRules` reads, asserted as a bijection in `tests/uno-house-rules.test.ts`.
    *

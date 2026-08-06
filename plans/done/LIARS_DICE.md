@@ -29,11 +29,11 @@ game could be developed locally at all.** Fixed with the grace crash-recovery al
 for seats, applied to `unpresence` and deliberately not to a socket close.
 
 The sixth game, and the first one that is neither host-dealt nor room-less. It exists because
-someone wants to play it — see [Scope discipline](../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated),
+someone wants to play it — see [Scope discipline](../../CLAUDE.md#scope-discipline--the-rule-most-likely-to-be-violated),
 which is still the governing rule and is not repealed by this document.
 
 But it is also the game that forces two questions the codebase has been carrying openly:
-[ROADMAP item 4](ROADMAP.md#4-a-sixth-game--built-and-it-was-liars-dice) names both — the `dice`
+[ROADMAP item 4](../ROADMAP.md#4-a-sixth-game--built-and-it-was-liars-dice) names both — the `dice`
 cosmetic with no reader, and non-Blackjack outcomes still being self-reported. This build answers
 both, because a bluffing game that bets real chips cannot be built any other way.
 

@@ -2,7 +2,7 @@
  * RANKED PLACES — the house rule that stops a round ending the instant somebody goes out. 1st sits
  * out, the rest play on for 2nd, then 3rd, and the last player standing is last.
  *
- * Slice 3 of `plans/UNO_HOUSE_RULES.md`, riding the seam slice 1 built and the same one stacking
+ * Slice 3 of `plans/done/UNO_HOUSE_RULES.md`, riding the seam slice 1 built and the same one stacking
  * uses: `playToLast` is a boolean on the TABLE (chosen at create, stamped onto the round by `deal`,
  * published by `toPublic`), so `unoStart` still has no field for it.
  *

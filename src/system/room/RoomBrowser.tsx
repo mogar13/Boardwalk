@@ -78,7 +78,7 @@ function TableRow({
   const game = findGame(table.gameId);
   const icon = gameIconSrc(game?.manifest.icon);
   /**
-   * WHAT GAME THIS TABLE IS PLAYING, on the poster (plans/UNO_HOUSE_RULES.md §1).
+   * WHAT GAME THIS TABLE IS PLAYING, on the poster (plans/done/UNO_HOUSE_RULES.md §1).
    *
    * "UNO" and "UNO with stacking and places" are different enough that it changes whether a
    * stranger wants the chair, so a browser that lists the second as the first advertises the wrong

@@ -272,7 +272,7 @@ CREATE TABLE IF NOT EXISTS liars_dice_players (
   PRIMARY KEY (match_id, uid)
 );
 
--- UNO, THE THIRD SERVER-DEALT GAME AND THE SECOND MULTIPLAYER ONE (plans/UNO_POT.md).
+-- UNO, THE THIRD SERVER-DEALT GAME AND THE SECOND MULTIPLAYER ONE (plans/done/UNO_POT.md).
 --
 -- Structurally identical to the Liar's Dice pair above, and deliberately NOT merged with it. A
 -- shared \`matches\` table would put two games' state blobs in one column whose shape depends on a

@@ -18,7 +18,7 @@
  *
  * IT IS NOT `manifest.options`. Those values live in `<GameShell>` and are per-CLIENT, which is
  * fine for a difficulty the host alone reads and wrong for a rule the referee enforces and every
- * client's `canPlay` has to agree with. See `plans/UNO_HOUSE_RULES.md` §1.
+ * client's `canPlay` has to agree with. See `plans/done/UNO_HOUSE_RULES.md` §1.
  */
 
 /**
@@ -45,7 +45,7 @@ export const NO_TABLE_RULES: TableRules = Object.freeze({});
  *
  * There is no `type` field and no default. Every house rule is a boolean and every one of them is
  * OFF unless a table says otherwise — an on-by-default house rule would be a game silently retuned
- * under everybody who does not read the lobby, which is the rule `plans/UNO_HOUSE_RULES.md` §3
+ * under everybody who does not read the lobby, which is the rule `plans/done/UNO_HOUSE_RULES.md` §3
  * states about `playToLast` and which holds for all of them.
  */
 export interface HouseRuleSpec {
