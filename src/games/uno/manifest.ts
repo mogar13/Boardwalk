@@ -1,6 +1,6 @@
 import type { GameManifest } from '@/games/registry';
 import type { OptionValues } from '@/system/options/options';
-import type { UnoLevel } from '@boardwalk/game-logic/games/uno';
+import { HOUSE_TABLE_LEVEL, type UnoLevel } from '@boardwalk/game-logic/games/uno';
 
 /**
  * UNO — the SDK's proof of the hard multiplayer half: HIDDEN HANDS (each player sees only their own
@@ -50,7 +50,24 @@ export const unoManifest = {
    * stake and a 7-seat one pays 7×, where the generic `/settle` ceiling is 3× — and the host held
    * every hand. Both had to go, together; see `domain/uno.ts`.
    */
-  betting: { min: 2_500, max: 100_000 },
+  betting: {
+    min: 2_500,
+    max: 100_000,
+    /**
+     * THE HOUSE WILL BANK A LONE PLAYER (plans/UNO_HOUSE_RULES.md §4). One human against bots
+     * antes like anybody else, and a win pays `ante × seats × HOUSE_RETURN` out of the house's
+     * own money — Blackjack's model, not v1's, and the distinction is the whole feature: v1
+     * covered each bot's ante so the pot matched fair odds, which at 4 seats is a $75 grant on a
+     * coin flip.
+     *
+     * It is declared here rather than assumed by the lobby because it is the GAME that earned it.
+     * A house pot is only safe once somebody has measured what a player wins against that game's
+     * own bots, and `tests/uno-house-odds.test.ts` did: 2,000 seeded rounds a cell at every table
+     * size and under both rule sets, an attentive-human proxy lifting at worst 1.230 against a
+     * break-even of 1.50. A game that has not run that measurement must not get this by default.
+     */
+    house: true,
+  },
   /**
    * The SECOND caller of AI difficulty, and the reason it was built at all: V1_FEATURE_GAPS #1 says
    * not to abstract a tier system until a second AI game exists, because one driver is not enough
@@ -73,6 +90,17 @@ export const unoManifest = {
         { value: 'casual', label: 'Casual' },
         { value: 'sharp', label: 'Sharp' },
       ],
+      /**
+       * PINNED WHEN THE HOUSE IS PAYING. `HOUSE_RETURN` was measured against `sharp` and nothing
+       * else, so a player choosing `casual` at a `sharp` price is not an exploit to be found
+       * later — it is the feature paying out on demand. The referee pins it inside the
+       * transaction that takes the ante; this is what stops the control offering a choice the
+       * deal will not honour.
+       */
+      pinnedForMoney: {
+        value: HOUSE_TABLE_LEVEL,
+        why: 'Playing the house, the bots play their best — the odds are priced against it.',
+      },
     },
   ],
   /**

@@ -1,7 +1,8 @@
 # UNO house rules — stacking, ranked places, and betting the house
 
-**Status:** slices 1–4 SHIPPED (the seam, stacking, ranked places, the house-odds simulation); slice
-5, betting a bot table, is the remainder and is now unblocked. Written after
+**Status:** ALL FIVE SLICES BUILT — the seam, stacking, ranked places, the house-odds simulation,
+and betting a bot table. **Slice 5 owes a Pi deploy** (it is a money change in `boardwalk-api`, so
+the Pi goes first — see [§5](#5-slices-and-the-deploy-that-comes-first)). Written after
 [UNO_POT.md](done/UNO_POT.md) shipped, and it changes what every one of these costs: the referee
 deals UNO now, so **three of the four items below are rulebook changes that land on the Pi**, and
 the Pi goes first.
@@ -14,7 +15,7 @@ Asked for by the owner (and Steve). Decisions taken before any code:
 | Stacking | **+2 on +2 and +4 on +4.** Cross-stacking (+4 onto a +2) is a separate toggle, default off. See [§2](#2-stacking). |
 | Ranked places | **A house rule (`playToLast`), default OFF**, so today's round is unchanged unless asked for. **BUILT.** See [§3](#3-ranked-places). |
 | How a ranked pot splits | **The top HALF of the paying places, weighted `k, k-1, … 1`** — so two and three payers are still winner-takes-all and today's tables do not move. See [§3](#the-pot). |
-| Betting a bot table | **House odds with the bot tier PINNED** — Blackjack's model, not v1's faucet. **Unblocked:** the edge is measured and real. See [§4](#4-betting-the-house). |
+| Betting a bot table | **House odds with the bot tier PINNED** — Blackjack's model, not v1's faucet. **BUILT.** See [§4](#4-betting-the-house). |
 | The multiple | **Measured, not guessed — and now measured: `M = N × 2/3`.** Break-even is 0.813; the margin is what pays for the player a simulation cannot play. See [§4.2](#42-the-number-is-an-empirical-question-not-a-design-one). |
 
 ---
@@ -278,6 +279,10 @@ half-win would put a second meaning into a number four leaderboards already rank
 
 ## 4. Betting the house
 
+**Status: BUILT (slice 5).** What follows is the design as it was reasoned out; what it turned into
+is recorded in [§5.5](#5-slices-and-the-deploy-that-comes-first), including the one rule the design
+did not see (a house pot has ONE payer, so the ranked ladder pays it out for placing LAST).
+
 **The ask:** be able to bet at a table of bots. **The obstacle:** UNO_POT §3 refused it, and was
 right to — v1's *"the house antes for each bot so the pot matches what the player put up"* is, on a
 4-seat $25 table, a **$75 grant on a coin flip**. `refillGrantFor` cost a whole plan to make that
@@ -471,15 +476,45 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    (lift < 1.50, which must never be wrong) and a **review trigger** at 1.15 that fires long before
    the house starts losing, because every figure is seeded and a band pinned to the last measurement
    goes red on changes that move the number without moving the risk.
-5. **Betting the house** — the edge is real, so this is live work rather than a conditional. What it
-   still owes, none of which slice 4 built: `M = N × 2/3` as a shared constant **with its caller**
-   (a constant landing before its reader is `loadout.color`, which is why slice 4 deliberately left
-   the number in the test); the payout inside the dealer's own transaction with a per-match ceiling
-   computed from the match's own seat count (§4.1); the ante path for a table with ONE human, which
-   `stakePerSeat` currently floors to zero by `MIN_HUMANS_TO_BET` — that rule is right for a
-   human pot and is exactly what a house-funded one has to route around; the difficulty control
-   pinned to `sharp` whenever a stake is set, and saying why; and the lobby copy. **It is a money
-   change in `boardwalk-api`, so the Pi goes first** — unlike slices 2 and 4, and like slice 3.
+5. ~~**Betting the house**~~ — **BUILT.** `HOUSE_RETURN` and `housePayout` beside `potSplit` in the
+   shared pot (imported by the harness that measured them, which is what turned slice 4's number
+   into a price); `potBacking` naming who funds a table; `houseStakeFor` putting the house IN the
+   pot; `rankedPayees` and `maxRoundPayout` guarding the settle; the referee pinning the tier;
+   `manifest.betting.house` and `GameOption.pinnedForMoney` as the two manifest declarations the OS
+   draws from; and the lobby's ante picker reaching an `ai` table at last. `tests/uno-pot.test.ts`
+   (25), `tests/uno-house-bet.test.ts` (9) and `boardwalk-api/tests/uno.test.ts` (38).
+   **Five things worth recording.**
+   **The house's share is a STAKE, not a payout**, and that one framing is why nothing downstream
+   acquired a case: the pot stays "the literal sum of what everyone put in" with the house as one of
+   "everyone", so `potSplit` divides a pot that conserves and `voidMatch` refunds the players' half
+   with the house's simply evaporating.
+   **`rankedPayees` is the line the design did not see coming.** §3's rule is "the paying seats that
+   PLACED, in the order they placed" — with ONE payer that is the lone player at every placement, so
+   under `playToLast` the ordinary filter hands them the whole house pot for finishing fourth of
+   five. It is most ranked rounds rather than a corner case. A house pot pays first place and
+   nothing else, because a win rate is the only thing `HOUSE_RETURN` was ever priced against.
+   **The ceiling bounds both modes with one number**, `ante × every chair`: a players' pot is
+   `ante × payers` and payers never exceed chairs, and a house pot is `2/3` of the same product. So
+   it never binds on an honest round — which is what a ceiling should do — and it CLAMPS rather than
+   refusing, because a settle that threw would roll back its own transaction and strand the antes in
+   a round nobody can finish.
+   **`StoredMatch.level` had a docblock that stopped being true.** It argued a difficulty "cannot
+   move a chip … the worst a hostile value could do is make the house play badly against the person
+   who chose it", which held for every UNO table ever dealt and is exactly inverted here. Watch for
+   that shape: a field is safe *because of* a fact, and the slice that changes the fact does not
+   touch the field.
+   **The OS restates the backing rule and is asserted to agree**, because `src/system/room` may not
+   import a rulebook — it moves a bag it must not interpret, which is what keeps a second game's
+   house rules from having to work around UNO's. `tableBacking` decides copy and locks, `potBacking`
+   decides money, and `tests/uno-house-bet.test.ts` drives both over every table shape off the real
+   manifest. Nothing there can pay the wrong amount, which is why it needs a test at all: a wrong
+   payout announces itself in a ledger, and a lobby saying "winner takes the pot" at a table the
+   house is banking is wrong forever and looks fine.
+   **It is a money change in `boardwalk-api`, so the Pi goes first** — unlike slices 2 and 4, and
+   like slice 3. The window is benign and named rather than hoped for: a new client at an old
+   referee sends `anteCents` on an AI table, the old `potFor` floors a lone player to zero, and the
+   lobby promises a pot nobody is charged for and nobody is paid. A UI that lies, and not a chip
+   moved — which is precisely the argument for the ordering rather than against it.
 
 Every slice ends green, and each of 2 and 3 is a **shared-rulebook change**, which means the Pi
 carries it before the frontend that depends on it — the ordering rule Phase D paid ten minutes of

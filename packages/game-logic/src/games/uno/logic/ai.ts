@@ -23,6 +23,23 @@ import type { UnoGame } from './uno';
  */
 export type UnoLevel = 'casual' | 'sharp';
 
+/**
+ * THE TIER THE HOUSE'S ODDS ARE PRICED AGAINST, and therefore the one a house table plays at
+ * whatever anybody chose.
+ *
+ * `HOUSE_RETURN` was measured against `sharp` and nothing else. Leaving `casual` selectable at a
+ * `sharp` price is not an exploit to be discovered later — it is the feature paying out on demand,
+ * since a player picks the tier and the house pays the bill. So a table the house is banking is
+ * pinned here, at the referee, in the same transaction that takes the ante.
+ *
+ * It is a constant rather than an inline `'sharp'` because it has THREE readers that must agree —
+ * the dealer that stamps it onto the match, the lobby control that shows a player what they are
+ * facing, and the harness that measured the number — and the day a third tier makes `sharp` no
+ * longer the top of the ladder, the compiler brings whoever moves this to `HOUSE_RETURN`'s
+ * assumption note.
+ */
+export const HOUSE_TABLE_LEVEL: UnoLevel = 'sharp';
+
 /** Injected randomness, so `casual` is deterministic in a test. The same shape `applyMove` takes. */
 export type Rng = () => number;
 

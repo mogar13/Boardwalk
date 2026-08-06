@@ -38,7 +38,9 @@ import {
   type StartOk,
 } from '../src/domain/uno';
 import {
+  HOUSE_TABLE_LEVEL,
   chooseAiMove,
+  housePayout,
   placesOf,
   roundOver,
   winnerOf,
@@ -73,8 +75,11 @@ interface Stored {
 
 const stored = (db: Db, id: number): Stored =>
   JSON.parse(
-    (db.prepare('SELECT state_json FROM uno_matches WHERE id = ?').get(id) as { state_json: string })
-      .state_json
+    (
+      db.prepare('SELECT state_json FROM uno_matches WHERE id = ?').get(id) as {
+        state_json: string;
+      }
+    ).state_json
   ) as Stored;
 
 const rowOf = (db: Db, id: number): MatchRow =>
@@ -115,6 +120,19 @@ function legalMove(game: UnoGame, rng: () => number = Math.random): Move {
   return chooseAiMove(game, game.turn, 'sharp', rng);
 }
 
+/**
+ * The same seeded PRNG the rest of the UNO suite uses. Needed here because a HOUSE round's two
+ * outcomes are two different economics rather than two spellings of one rule, so both have to be
+ * reached on purpose rather than whenever the deal happens to produce them.
+ */
+function rngFrom(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1_664_525 + 1_013_904_223) >>> 0;
+    return s / 0x1_0000_0000;
+  };
+}
+
 describe('startMatch — the deal, and the antes', () => {
   it('takes every human ante through the LEDGER and builds the pot from them', () => {
     const db = seeded();
@@ -137,15 +155,91 @@ describe('startMatch — the deal, and the antes', () => {
     expect(game.discard).toHaveLength(1);
   });
 
-  it('NOBODY ANTES below two humans — the table plays for XP and stats alone', () => {
-    // A bot has no bankroll, so the pot would be this player's own ante handed back. v1 covered the
-    // bots from the house instead, which is a grant on a coin flip.
+  it('a LONE player antes too, and the HOUSE tops the pot up — under fair odds', () => {
+    // Slice 5. A bot still has no bankroll and still stakes nothing; what pays the difference is the
+    // house, at `HOUSE_RETURN` of fair. The distinction from v1 is the whole feature and it is one
+    // inequality: v1 covered each bot's ante so the pot matched FAIR odds, which on a 3-seat table
+    // is $75 on a $25 stake — EV-neutral against an equal player and EV-positive against a bot.
     const db = seeded();
     const res = dealTable(db, [human('ada'), bot(), bot()], ANTE);
-    expect(res.row.pot_cents).toBe(0);
-    expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS);
+    expect(res.row.pot_cents).toBe(housePayout(ANTE, 3));
+    expect(res.row.pot_cents).toBeLessThan(ANTE * 3); // sub-fair, which is the point
+    expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
+    // One stake, from the one account there is. A bot is never charged and never has a wager row.
     const wagers = db.prepare('SELECT COUNT(*) AS n FROM wagers').get() as { n: number };
-    expect(wagers.n).toBe(0);
+    expect(wagers.n).toBe(1);
+    expect(playersOf(db, res.matchId).map((p) => p.ante_cents)).toEqual([ANTE]);
+  });
+
+  it('PINS THE TIER when the house is paying, whatever the client asked for', () => {
+    // `StoredMatch.level` is the one field `unoStart` still carries from a client, on the argument
+    // that a difficulty "cannot move a chip". That is exactly false at a house table: the odds were
+    // measured against `sharp`, the player picks the tier, and the house pays the bill — so
+    // `casual` at a `sharp` price is not an exploit to find later, it is the feature paying out on
+    // demand. Pinned in the transaction that takes the ante.
+    const db = seeded();
+    const house = ok(
+      startMatch(
+        db,
+        'ada',
+        {
+          nonce: 'n-h',
+          gameId: GAME_ID,
+          roomId: ROOM,
+          seats: [human('ada'), bot(), bot()],
+          anteCents: ANTE,
+          level: 'casual',
+          houseRules: {},
+        },
+        1_000
+      )
+    );
+    expect(stored(db, house.matchId).level).toBe(HOUSE_TABLE_LEVEL);
+
+    // …and a table of PEOPLE is untouched: nobody there is paying for anybody else's difficulty, so
+    // a request for an easier game is honoured exactly as it always was.
+    const people = ok(
+      startMatch(
+        db,
+        'ada',
+        {
+          nonce: 'n-p',
+          gameId: GAME_ID,
+          roomId: 'WXYZ',
+          seats: [human('ada'), human('bob')],
+          anteCents: ANTE,
+          level: 'casual',
+          houseRules: {},
+        },
+        1_000
+      )
+    );
+    expect(stored(db, people.matchId).level).toBe('casual');
+  });
+
+  it('does NOT pin, or charge, a lone player at a table playing for nothing', () => {
+    // The tier is only worth pinning where it prices something. A free table against bots is the
+    // game five other tables have always played, and it must be exactly as easy to ask for.
+    const db = seeded();
+    const res = ok(
+      startMatch(
+        db,
+        'ada',
+        {
+          nonce: 'n-free',
+          gameId: GAME_ID,
+          roomId: ROOM,
+          seats: [human('ada'), bot(), bot()],
+          anteCents: 0,
+          level: 'casual',
+          houseRules: {},
+        },
+        1_000
+      )
+    );
+    expect(res.row.pot_cents).toBe(0);
+    expect(stored(db, res.matchId).level).toBe('casual');
+    expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS);
   });
 
   it('a table at no stake still deals, and moves no money', () => {
@@ -186,9 +280,9 @@ describe('startMatch — the deal, and the antes', () => {
     expect((db.prepare('SELECT COUNT(*) AS n FROM wagers').get() as { n: number }).n).toBe(0);
     // Not "the ledger is empty" — seeding a profile writes its signup grant, so the baseline is
     // three rows. What must be absent is a STAKE: no `bet` row was written by the refused deal.
-    const bets = db
-      .prepare("SELECT COUNT(*) AS n FROM ledger WHERE reason = 'bet'")
-      .get() as { n: number };
+    const bets = db.prepare("SELECT COUNT(*) AS n FROM ledger WHERE reason = 'bet'").get() as {
+      n: number;
+    };
     expect(bets.n).toBe(0);
   });
 
@@ -418,6 +512,163 @@ describe('settling — the pot is paid, and the board never claims it', () => {
     expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
     expect(balanceOf(db, 'bob')).toBe(STARTING_BANKROLL_CENTS - ANTE);
   });
+
+  /**
+   * A HOUSE-BANKED ROUND — the one settle in this repo that MINTS money rather than moving it.
+   *
+   * Everywhere else the pot is exactly what the seats paid, so conservation is structural and the
+   * only question is who gets it. Here the house has put chips in that no account was charged for,
+   * which means the amount matters as much as the recipient.
+   *
+   * SEEDED, AND BOTH OUTCOMES ASSERTED. The ordinary settle tests let the deal decide and branch on
+   * the result, which is fine when both branches are the same rule. It is not fine here: the two
+   * branches ARE the economics, and a test that happened to land on the winning one every run would
+   * never once check that a loss costs the ante — the whole faucet question. So the rounds are
+   * played through a seeded rng end to end and a seed is found for each side.
+   */
+  interface HouseRound {
+    readonly db: Db;
+    readonly matchId: number;
+    readonly podium: readonly number[];
+    readonly potCents: number;
+  }
+
+  /** One house-banked round, dealt and played to the end deterministically. */
+  function houseRound(seed: number, seats: SeatSpec[], rules: unknown): HouseRound {
+    const db = seeded();
+    const rng = rngFrom(seed);
+    const res = ok(
+      startMatch(
+        db,
+        'ada',
+        {
+          nonce: 'n-house',
+          gameId: GAME_ID,
+          roomId: ROOM,
+          seats,
+          anteCents: ANTE,
+          level: 'sharp',
+          houseRules: rules,
+        },
+        1_000,
+        rng
+      )
+    );
+    for (let i = 0; i < 8_000; i += 1) {
+      if (rowOf(db, res.matchId).settled === 1) break;
+      const game = stored(db, res.matchId).game;
+      if (roundOver(game)) break;
+      if (game.turn === 0) {
+        playMove(db, 'ada', res.matchId, `m${String(i)}`, legalMove(game, rng), 2_000 + i, rng);
+      } else if (playAiTurn(db, res.matchId, 2_000 + i, rng) === null) break;
+    }
+    return {
+      db,
+      matchId: res.matchId,
+      podium: placesOf(stored(db, res.matchId).game),
+      potCents: res.row.pot_cents,
+    };
+  }
+
+  /** The first seed in 1..60 whose round ends with the lone player first, or not. */
+  function seedWhere(seats: SeatSpec[], rules: unknown, won: boolean): HouseRound {
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const round = houseRound(seed, seats, rules);
+      if ((round.podium[0] === 0) === won) return round;
+    }
+    throw new Error(`no seed in 60 produced a ${won ? 'win' : 'loss'}`);
+  }
+
+  it('pays a lone winner ante × seats × 2/3, and takes the ante when they lose', () => {
+    const seats = [human('ada'), bot(), bot()];
+    const pot = housePayout(ANTE, 3);
+
+    const won = seedWhere(seats, {}, true);
+    expect(won.potCents).toBe(pot);
+    // The stake back plus the house's contribution…
+    expect(balanceOf(won.db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE + pot);
+    // …and BELOW fair, asserted on the ledger movement rather than on a ratio. v1's version paid
+    // `ANTE * 3` here, which is the faucet in one number.
+    expect(balanceOf(won.db, 'ada')).toBeLessThan(STARTING_BANKROLL_CENTS + ANTE * 2);
+    expect(rowOf(won.db, won.matchId).settled).toBe(1);
+
+    const lost = seedWhere(seats, {}, false);
+    // The house keeps the ante, and nobody else is paid — there is no second payer to fall through
+    // to, which is the one thing the ordinary "a bot won" case cannot tell you.
+    expect(balanceOf(lost.db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
+
+    for (const round of [won, lost]) {
+      const rows = round.db
+        .prepare('SELECT uid, played, won FROM stats WHERE game_id = ?')
+        .all(GAME_ID) as { uid: string; played: number; won: number }[];
+      expect(rows.map((r) => r.uid)).toEqual(['ada']); // one account at the table, one row
+      const open = round.db
+        .prepare('SELECT COUNT(*) AS n FROM wagers WHERE match_id = ? AND settled_at IS NULL')
+        .get(round.matchId) as { n: number };
+      expect(open.n).toBe(0);
+    }
+  });
+
+  /**
+   * THE CASE THE ORDINARY SPLIT WOULD GET WRONG, and it is most ranked rounds rather than a corner.
+   *
+   * `rankedPayees` filters the podium to the PAYING seats — with one payer that is the lone player
+   * at EVERY placement, so `potSplit(pot, 1)` would hand them the entire house pot for coming
+   * fourth of five. A house pot pays first place and nothing else, because first place is the only
+   * event `HOUSE_RETURN` was priced against.
+   */
+  it('pays a house pot on FIRST place only, however far up the podium a loser finished', () => {
+    const seats = [human('ada'), bot(), bot(), bot()];
+    const pot = housePayout(ANTE, 4);
+    const RANKED_HOUSE = { playToLast: true };
+
+    const won = seedWhere(seats, RANKED_HOUSE, true);
+    expect(won.potCents).toBe(pot);
+    expect(balanceOf(won.db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE + pot);
+
+    const lost = seedWhere(seats, RANKED_HOUSE, false);
+    // Ranked, so everybody places and the lone player is ON the podium — which is exactly why the
+    // ordinary filter would have paid them the whole pot for finishing second, third or last.
+    expect(lost.podium.length).toBe(4);
+    expect(lost.podium).toContain(0);
+    expect(balanceOf(lost.db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
+
+    // And placing is not winning: one `played` either way, a `won` only for an outright win.
+    for (const [round, wins] of [
+      [won, 1],
+      [lost, 0],
+    ] as const) {
+      const row = round.db
+        .prepare('SELECT played, won FROM stats WHERE game_id = ? AND uid = ?')
+        .get(GAME_ID, 'ada') as { played: number; won: number };
+      expect(row.played).toBe(1);
+      expect(row.won).toBe(wins);
+    }
+  });
+
+  /**
+   * THE PER-MATCH CEILING (§4.1). `DEFAULT_PAYOUT_MULTIPLE` is 3× and could never bound this — a
+   * 7-seat human pot honestly pays 7× a stake — so the bound is computed from the match's own ante
+   * and seat count and lives inside the dealer's transaction.
+   *
+   * It is asserted by CORRUPTING the stored pot, which is the only way to reach it: on an honest
+   * round it never binds, and a guard that cannot be observed firing is a guard nobody has tested.
+   */
+  it('clamps a payout to the match’s own bound rather than paying a corrupted pot', () => {
+    const db = seeded();
+    const res = dealTable(db, [human('ada'), human('bob')], ANTE);
+    // A pot ten times what any 2-seat table could hold — the shape of a bug in the pot arithmetic,
+    // or of a row edited by anything that should not have.
+    db.prepare('UPDATE uno_matches SET pot_cents = ? WHERE id = ?').run(ANTE * 20, res.matchId);
+    playToAWinner(db, res.matchId, (seat) => (seat === 0 ? 'ada' : 'bob'));
+
+    const winner = winnerOf(stored(db, res.matchId).game) === 0 ? 'ada' : 'bob';
+    // Bounded at `ante × seats`, not paid at `ante × 20`. Clamped rather than refused: a settle
+    // that threw would roll back its own transaction and strand the antes in a round nobody can
+    // finish, which is a worse failure than paying a bounded amount.
+    expect(balanceOf(db, winner)).toBe(STARTING_BANKROLL_CENTS - ANTE + ANTE * 2);
+    expect(rowOf(db, res.matchId).settled).toBe(1);
+  });
 });
 
 /**
@@ -497,13 +748,7 @@ describe('settling a ranked round — the pot splits, and only 1st is a win', ()
   it('records ONE win — placing 2nd of 3 is not a win', () => {
     // Inventing a half-win would put a second meaning into a number four leaderboards already rank.
     const db = seeded();
-    const res = dealTable(
-      db,
-      [human('ada'), human('bob'), human('cy')],
-      ANTE,
-      'n-rank3',
-      RANKED
-    );
+    const res = dealTable(db, [human('ada'), human('bob'), human('cy')], ANTE, 'n-rank3', RANKED);
     playToTheEnd(db, res.matchId, (seat) => ['ada', 'bob', 'cy'][seat] ?? null);
     const rows = db
       .prepare('SELECT uid, played, won, lost FROM stats WHERE game_id = ? ORDER BY uid')
@@ -521,13 +766,7 @@ describe('settling a ranked round — the pot splits, and only 1st is a win', ()
     // the paying ladder — the pot is split among the seats that PAID and PLACED — so the humans'
     // own money still lands entirely on humans.
     const db = seeded();
-    const res = dealTable(
-      db,
-      [human('ada'), human('bob'), bot(), bot()],
-      ANTE,
-      'n-rank4',
-      RANKED
-    );
+    const res = dealTable(db, [human('ada'), human('bob'), bot(), bot()], ANTE, 'n-rank4', RANKED);
     playToTheEnd(db, res.matchId, (seat) => (seat === 0 ? 'ada' : seat === 1 ? 'bob' : null));
 
     const podium = placesOf(stored(db, res.matchId).game);
@@ -579,9 +818,9 @@ describe('void and the boot sweep — a restart must refund, never strand', () =
     expect(refunded).toBe(ANTE * 2);
     expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS);
     expect(balanceOf(db, 'bob')).toBe(STARTING_BANKROLL_CENTS);
-    const open = db
-      .prepare('SELECT COUNT(*) AS n FROM wagers WHERE settled_at IS NULL')
-      .get() as { n: number };
+    const open = db.prepare('SELECT COUNT(*) AS n FROM wagers WHERE settled_at IS NULL').get() as {
+      n: number;
+    };
     expect(open.n).toBe(0);
   });
 
@@ -674,4 +913,3 @@ describe('house rules — the table decides, and the match remembers', () => {
     });
   });
 });
-

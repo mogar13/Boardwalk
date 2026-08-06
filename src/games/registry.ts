@@ -169,8 +169,16 @@ export interface GameManifest {
    * touch the bankroll at all (chess, solitaire) — and absence is the signal, not a
    * `betting: false`, because "this game has no economy" and "this game's minimum bet is
    * zero" are different facts and only one of them is true here.
+   *
+   * `house` declares that a LONE player may bet: below two humans the game does not fall back to
+   * XP alone, because the house banks the pot and pays under fair odds. It is a manifest fact
+   * rather than something the lobby infers, because it is the game that had to earn it — a house
+   * pot is only safe once somebody has MEASURED what a player wins against that game's own bots
+   * (UNO did, in `tests/uno-house-odds.test.ts`), and a game that has not measured it must not get
+   * the behaviour by default. What the ODDS are stays inside the game; the OS learns only that a
+   * one-human table is worth charging, which is all it needs to draw the picker and the copy.
    */
-  readonly betting?: { readonly min: number; readonly max: number };
+  readonly betting?: { readonly min: number; readonly max: number; readonly house?: boolean };
 
   /**
    * How this game can be played DIFFERENTLY — draw-1 vs draw-3, a house rule, later an AI tier.

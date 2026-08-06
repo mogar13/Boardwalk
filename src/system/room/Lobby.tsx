@@ -10,7 +10,7 @@ import { repos } from '@/system/repo';
 import { RoomProvider } from '@/system/room/RoomProvider';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
 import { SeatList } from '@/system/room/SeatList';
-import { anteChoices, DEFAULT_ANTE_CENTS } from '@/system/room/ante';
+import { anteChoices, DEFAULT_ANTE_CENTS, tableBacking } from '@/system/room/ante';
 import {
   houseRuleChoices,
   isRuleAvailable,
@@ -80,6 +80,10 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   // unnoticed.
   const anteOptions = anteChoices(manifest.betting);
   const [anteCents, setAnteCents] = useState(DEFAULT_ANTE_CENTS);
+  // THE HOUSE WILL BANK A LONE PLAYER, if the game declared that it has measured what its bots are
+  // worth. That single flag is what lets an 'ai' table charge an ante at all — before it, betting
+  // needed two humans everywhere, so a table of bots had nothing to win and the picker was hidden.
+  const houseBanks = manifest.betting?.house === true;
   // WHAT GAME THIS TABLE IS PLAYING. The ante's sibling, and create-time for the same reason with
   // the money taken out: a table must not change the rules under a player who already sat down.
   // Defaults to nothing on — every house rule off IS the game as it already plays, so a host who
@@ -174,12 +178,14 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         // that mode for the same reason — a visible toggle that cannot change the outcome is
         // worse than none.
         visibility: mode === 'online' ? visibility : 'private',
-        // AN 'AI' TABLE NEVER ANTES, whatever the picker last said — the same shape as the
-        // visibility line above and for a sharper reason. Betting needs two humans (one human's
-        // pot is their own ante handed back), an AI table has exactly one by construction, and
-        // charging a stake that can only ever be refunded to the person who paid it is worse than
-        // not offering it. The control is hidden in that mode too.
-        anteCents: mode === 'online' ? anteCents : 0,
+        // AN 'AI' TABLE ANTES ONLY IF THE HOUSE WILL BANK IT. It never did before slice 5, and the
+        // reason was sound while it held: betting needed two humans, an AI table has exactly one by
+        // construction, and charging a stake that could only ever be handed back to the person who
+        // paid it is worse than not offering it. What changed is not the reasoning but the fact —
+        // UNO measured what a player wins against its own `sharp` bots, so there is now a
+        // counterparty and a price. A game that has NOT measured it still zeroes here, and the
+        // control is hidden with it.
+        anteCents: mode === 'online' || houseBanks ? anteCents : 0,
         // NOT mode-gated, unlike the two above, and the difference is the point: those are both
         // about other PEOPLE (who may join, who can be charged), so an AI table zeroes them. A
         // house rule is about the GAME, and a table of bots plays the same game a table of humans
@@ -255,11 +261,12 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
           `[0]` otherwise, and a stake picker offering only "None" is a control that cannot change
           the outcome.
 
-          ONLINE ONLY, for the reason `createTable` zeroes it: betting needs two humans, and an AI
-          table has one. A visible ante on a table that can never pay one out is the same lie as a
-          visibility toggle on a table that is never listed.
+          ONLINE, or AI at a game the house will bank — the mirror of what `createTable` sends. A
+          visible ante on a table that can never pay one out is the same lie as a visibility toggle
+          on a table that is never listed, which is why this was online-only until a lone player had
+          a counterparty and a measured price.
         */}
-        {mode === 'online' && anteOptions.length > 1 && (
+        {(mode === 'online' || houseBanks) && anteOptions.length > 1 && (
           <div className="flex flex-col gap-2">
             <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
               Ante
@@ -279,12 +286,28 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
                 </Button>
               ))}
             </div>
-            {anteCents > 0 && (
-              <p className="text-bw-muted text-xs">
-                Every player antes {formatMoney(anteCents)}; the winner takes the pot. Needs two
-                human players — otherwise the table plays for XP alone.
-              </p>
-            )}
+            {/*
+              WHAT THE STAKE BUYS, said before the table exists — and it is two different sentences
+              now, because there are two counterparties. A table of people plays for each other's
+              money; a lone player plays the house, which funds the pot and prices it under fair
+              odds. Neither sentence names a multiple: the odds are a rule of the GAME (the lobby
+              must not learn one), and the exact pot is on the board the moment it is dealt.
+            */}
+            {anteCents > 0 &&
+              (mode === 'ai' ? (
+                <p className="text-bw-muted text-xs">
+                  You ante {formatMoney(anteCents)} against the house, which banks the pot. The bots
+                  play their best and the odds are the house&rsquo;s — win and it pays out, lose and
+                  it keeps the ante.
+                </p>
+              ) : (
+                <p className="text-bw-muted text-xs">
+                  Every player antes {formatMoney(anteCents)}; the winner takes the pot.{' '}
+                  {houseBanks
+                    ? 'One player against bots is banked by the house instead, at the house’s odds.'
+                    : 'Needs two human players — otherwise the table plays for XP alone.'}
+                </p>
+              ))}
           </div>
         )}
         {/*
@@ -425,6 +448,10 @@ function LobbyRoom({
 }) {
   const { seats, status, meta, isHost, setStatus } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
+  // WHO IS PAYING FOR THIS TABLE — what the stake line says, and whether the options control is
+  // locked. The referee asks the same question of the game's own rulebook when it deals; this is
+  // the OS's copy of it, and the two are asserted to agree (see `tableBacking`).
+  const backing = tableBacking(manifest.betting, meta?.anteCents ?? 0, humanCount(seats));
   // The room's rules, rendered with the LABELS the manifest declares — the room carries ids, and an
   // id is not copy. An id the manifest no longer declares simply drops out, which is the honest
   // rendering of a rule this build of the client does not know about.
@@ -479,11 +506,18 @@ function LobbyRoom({
           */}
           {meta !== null && meta.anteCents > 0 && (
             <p className="text-warning text-sm font-semibold">
-              {formatMoney(meta.anteCents)} a seat · winner takes the pot
-              {humanCount(seats) < 2 && (
+              {formatMoney(meta.anteCents)} a seat ·{' '}
+              {backing === 'house' ? 'the house banks the pot' : 'winner takes the pot'}
+              {backing === 'none' && (
                 <span className="text-bw-muted font-normal">
                   {' '}
                   — needs two human players, or the table plays for XP alone
+                </span>
+              )}
+              {backing === 'house' && (
+                <span className="text-bw-muted font-normal">
+                  {' '}
+                  — you against the bots, at the house&rsquo;s odds
                 </span>
               )}
             </p>
@@ -563,7 +597,15 @@ function LobbyRoom({
                 a tier cannot be retuned mid-game. v1's Chess reached the same place by queueing a
                 difficulty change to the next game; here the shape of the lobby says it instead.
               */}
-              {isHost && <GameOptions className="justify-end" />}
+              {/*
+                `forMoney` when the HOUSE is the counterparty, which is the only arrangement where
+                an option can price itself: the player picks the tier and the house pays the bill,
+                so a game may pin one (`GameOption.pinnedForMoney`) and the control shows the pinned
+                value locked with the game's own reason. A table of people is untouched — nobody
+                there is paying for anybody else's difficulty. The referee pins it either way; this
+                is what stops the screen offering a choice the deal will not honour.
+              */}
+              {isHost && <GameOptions className="justify-end" forMoney={backing === 'house'} />}
               <SeatList allowAi={manifest.modes.includes('ai')} />
             </>
           )}

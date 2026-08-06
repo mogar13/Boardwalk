@@ -115,6 +115,32 @@ describe('every declared spec in the registry', () => {
       }
     }
   });
+
+  it('pins a value it also offers, wherever an option pins one for money', () => {
+    // The `default` guard's twin, and it fails the same silent way: a `pinnedForMoney.value` that
+    // is not one of `choices` renders a locked control with nothing in it, and typechecks, because
+    // both are plain strings. The registry-wide sweep is what makes this true of the SEVENTH game
+    // rather than of the one that happens to declare it today (UNO's bot tier, pinned to the level
+    // the house's odds were measured against).
+    for (const { manifest } of declared) {
+      for (const option of manifest.options ?? []) {
+        const pin = option.pinnedForMoney;
+        if (pin === undefined) continue;
+        expect(
+          option.choices.map((choice) => choice.value),
+          `${manifest.id}/${option.id}: pinned value is not a choice`
+        ).toContain(pin.value);
+        // A lock with no reason on it reads as a broken control. The game writes the sentence
+        // because the lobby must not acquire an opinion about what a value means.
+        expect(pin.why.trim(), `${manifest.id}/${option.id}: pin has no reason`).not.toBe('');
+        // And only a game that puts money on the table can pin anything FOR money.
+        expect(
+          manifest.betting,
+          `${manifest.id}: pins for money but declares no betting`
+        ).toBeDefined();
+      }
+    }
+  });
 });
 
 describe('solitaire reads its own option', () => {
