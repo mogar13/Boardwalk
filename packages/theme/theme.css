@@ -232,6 +232,22 @@
     0 0 12px -1px color-mix(in oklch, var(--color-error) 50%, transparent),
     0 0 34px -4px color-mix(in oklch, var(--color-error) 32%, transparent);
 
+  /* UNO'S CALL. GAME CONTENT, exactly like --color-uno-* above and admitted on the
+     same terms: it is the deck's own drama, not a UI signal, and it has a reader in
+     the commit that adds it (the Call UNO control, and an opponent's badge once they
+     have called). It adds ZERO hues — it is built from --color-warning, the amber
+     already carrying "one card left" everywhere else in that game, so the amber that
+     labels the state now also lights the button that commits to it.
+     It is deliberately NOT accent-gold: gold is money, and calling UNO wins you none.
+     Those two are 24° apart (see the header) and this is the hue that is already
+     UNO's. Tube construction — hard edge, then bloom — because it wraps a control
+     you press, where --shadow-glow-accent is bloom-only for a lit surface. */
+  --shadow-glow-uno:
+    0 0 0 1px color-mix(in oklch, var(--color-warning) 75%, transparent),
+    0 0 14px -1px color-mix(in oklch, var(--color-warning) 62%, transparent),
+    0 0 34px -3px color-mix(in oklch, var(--color-warning) 44%, transparent),
+    0 0 70px -8px color-mix(in oklch, var(--color-warning) 28%, transparent);
+
   /* Ordinary drop shadow, for things that float above the room (modal, toast,
      popover). It exists as a TOKEN so components never spell `shadow-black/60` —
      which is the crack `no-raw-palette` would otherwise have to leave open, and a
@@ -255,6 +271,19 @@
     0 0 6px color-mix(in oklch, var(--color-secondary) 55%, transparent),
     0 0 18px color-mix(in oklch, var(--color-secondary) 35%, transparent),
     0 0 44px color-mix(in oklch, var(--color-secondary) 22%, transparent);
+
+  /* Money, and the only text shadow allowed to be gold — the bankroll, the pot, the
+     payout, which is the accent's whole remit. It arrives late and by discovery:
+     UNO's pot label already spelled `text-shadow-neon-gold`, and an undefined
+     Tailwind utility generates NOTHING, so the pot has been rendering flat since it
+     shipped. That is the failure mode a theme token cannot lint its way out of — the
+     class name is not a raw colour, so `no-raw-palette` has nothing to say about it,
+     and it typechecks because it is a string.
+     Softer and shorter than the two above for the same reason --shadow-glow-accent
+     is bloom-only: gold on this palette is a lit surface, not a gas tube. */
+  --text-shadow-neon-gold:
+    0 0 8px color-mix(in oklch, var(--color-accent) 48%, transparent),
+    0 0 26px color-mix(in oklch, var(--color-accent) 28%, transparent);
 
   /* One easing for everything that lights up. A sign does not ease-in-out; the
      gas strikes fast and settles. */
