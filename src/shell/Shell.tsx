@@ -32,13 +32,13 @@ export function Shell() {
       <AuthGate>
         <div className="flex min-h-dvh flex-col">
           <TopBar />
-          {/* `flex flex-col` so a page can ask to be centred in the leftover height with `my-auto`
-              (the hub does). Behaviour-neutral for every other page: each one's root is a single
-              block-level div, and a lone flex item in a column container stretches to full width
-              exactly as a block child did. It is here rather than in the hub because a percentage
-              `min-h-full` cannot resolve against a `main` whose own height comes from `flex-1` on
-              a `min-h-dvh` parent — the first attempt did that and silently centred nothing. */}
-          <main className="mx-auto flex w-full max-w-[110rem] flex-1 flex-col px-4 py-8 sm:px-6 sm:py-12 lg:px-10">
+          {/* `flex-1` so the main column fills the `min-h-dvh` frame and the page background runs
+              to the bottom of a short page. It briefly also carried `flex flex-col`, added so the
+              hub could centre itself vertically with `my-auto`; the hub no longer does that (a
+              page centred in its viewport reads as broken, not composed — see Hub.tsx), so the
+              affordance went with its only reader rather than staying as a comment nothing uses.
+              Every page root is a block-level div, which is what this was before and after. */}
+          <main className="mx-auto w-full max-w-[110rem] flex-1 px-4 py-8 sm:px-6 sm:py-12 lg:px-10">
             <Outlet />
           </main>
         </div>
