@@ -234,6 +234,66 @@ describe('RoomGateway — over a real socket', () => {
     expect(frame.t === 'room' && frame.snapshot?.meta.anteCents).toBe(0);
   });
 
+  /**
+   * THE HOUSE RULES REACH A GUEST OVER THE WIRE, BEFORE THEY TAKE A CHAIR — the ante test's
+   * sibling, and the assertion this whole slice exists to be able to make.
+   *
+   * It is the same silent failure with the money removed. A rule dropped anywhere between the
+   * `create` frame and the `room` broadcast leaves a guest's board running a DIFFERENT rulebook
+   * from the referee's: `canPlay` greys out a card the dealer would have accepted, and the auto-
+   * draw fires in a position that had a legal answer. Nothing crashes, nothing is refused, and the
+   * table is simply unplayable for one seat — which is exactly why it has to be caught here rather
+   * than noticed later.
+   *
+   * Asserted on BOB's subscription and not on Ada's create reply, because the host already knows
+   * what they chose. Bob holds NO SEAT at this point, which is the point: the rules have to be
+   * readable before the decision to sit, not after.
+   */
+  it('a table’s house rules reach a guest on their own subscription, before they sit down', async () => {
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'uno',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 4,
+      houseRules: { stack: true, playToLast: true },
+    });
+    const roomId = okValue(created) as string;
+
+    const bob = await Client.open(url, 'bob');
+    bob.fire({ t: 'subscribe', gameId: 'uno', roomId });
+    const frame = await bob.waitFor((m) => m.t === 'room');
+    // Bob is a subscriber only — no seat claimed, and none of these frames took one.
+    const seated = frame.t === 'room' && frame.snapshot?.seats.some((s) => s.uid === 'bob');
+    // Closed BEFORE the assertions — a throw here would otherwise skip the close and the server
+    // shutdown hook reports a timeout with the real reason nowhere on screen.
+    ada.close();
+    bob.close();
+    expect(seated).toBe(false);
+    expect(frame.t === 'room' && frame.snapshot?.meta.houseRules).toEqual({
+      stack: true,
+      playToLast: true,
+    });
+  });
+
+  it('rules a client never sent read as a table playing the game as it comes', async () => {
+    // Every client that predates the field, and every game that has no house rules. Absent must be
+    // `{}` rather than `undefined`, or a resolver on the far side has a hole to interpret and a
+    // lobby has nothing to render.
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'chess',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 2,
+    });
+    const roomId = okValue(created) as string;
+    ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+    const frame = await ada.waitFor((m) => m.t === 'room');
+    ada.close();
+    expect(frame.t === 'room' && frame.snapshot?.meta.houseRules).toEqual({});
+  });
+
   it('refuses a forged author on create, claim, and chat', async () => {
     const ada = await Client.open(url, 'ada');
     // create with a host uid ≠ the socket's identity

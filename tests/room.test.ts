@@ -202,7 +202,7 @@ describe('teardownPlan — only the host clears shared state', () => {
     presence: Record<string, true>,
     seats: Seat[]
   ): RoomSnapshot<unknown> => ({
-    meta: { host, status: 'playing', createdAt: 0, seq: 1, anteCents: 0 },
+    meta: { host, status: 'playing', createdAt: 0, seq: 1, anteCents: 0, houseRules: {} },
     seats,
     state: null,
     presence,

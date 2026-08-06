@@ -78,10 +78,16 @@ export function linesFor(event: UnoEvent, names: readonly string[]): LogLine[] {
   const actor = nameOf(names, event.seat);
 
   if (event.action === 'draw') {
+    // TAKING A STACK IS STILL A DRAW, and saying "drew a card" for six is the log lying about the
+    // only thing in a hidden-hand game a player cannot see for themselves. `took` and not the
+    // victim line, because nobody was skipped — the taker spent their own turn.
     out.push({
       key: key(0),
       seat: event.seat,
-      text: `${actor} drew a card.`,
+      text:
+        event.took > 1
+          ? `${actor} took the stack — ${String(event.took)} cards.`
+          : `${actor} drew a card.`,
       card: null,
       system: false,
     });
@@ -116,6 +122,20 @@ export function linesFor(event: UnoEvent, names: readonly string[]): LogLine[] {
     });
   }
 
+  // THE RUNNING TOTAL. Under stacking a +2 deals nobody anything and skips nobody, so every line
+  // above is silent about it and the table would see a card played and six cards appear two turns
+  // later with nothing said in between. Seat-neutral on purpose: the debt is aimed at whoever is on
+  // turn, which the felt already shows, and naming them here would need a field the event does not
+  // carry and could not keep true after the next move.
+  if (event.stacked > 0) {
+    out.push({
+      key: key(6),
+      seat: -1,
+      text: `Stack is now +${String(event.stacked)} — answer it or take it.`,
+      card: null,
+      system: true,
+    });
+  }
   if (event.reversed) {
     out.push({ key: key(2), seat: -1, text: 'Direction reversed!', card: null, system: true });
   }

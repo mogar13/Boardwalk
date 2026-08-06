@@ -44,7 +44,7 @@ import {
 import type { Db } from '../db/db';
 import { loadProfile } from '../domain/profile';
 import type { Profile } from '../domain/types';
-import type { Seat, RoomStatus } from './types';
+import type { Seat, RoomStatus, TableRules } from './types';
 import type { Move, UnoLevel } from '@boardwalk/game-logic/games/uno';
 
 /** How long a bot "thinks". Matches what the client dealer used, so the table's rhythm is unchanged. */
@@ -57,6 +57,12 @@ export interface UnoDealerHost {
   statusOf(gameId: string, roomId: string): RoomStatus | null;
   /** The table's stake, stamped at create. The dealer reads it here and never off a frame. */
   anteOf(gameId: string, roomId: string): number;
+  /**
+   * The table's house rules, stamped at create. Read here for the ante's exact reason: whoever
+   * presses Deal does not get to choose what game everybody else sat down to, so `unoStart` has no
+   * field for one either.
+   */
+  rulesOf(gameId: string, roomId: string): TableRules;
   publish(gameId: string, roomId: string, state: unknown): void;
   deal(gameId: string, roomId: string, index: number, data: unknown): void;
 }
@@ -121,6 +127,8 @@ export class UnoDealer {
         seats,
         // THE STAKE COMES FROM THE ROOM. Not from the frame — there is no such field.
         anteCents: this.host.anteOf(gameId, roomId),
+        // AND SO DO THE RULES, for the same reason and from the same place.
+        houseRules: this.host.rulesOf(gameId, roomId),
         level: parseLevel(level),
       },
       this.clock(),

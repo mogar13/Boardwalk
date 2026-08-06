@@ -73,13 +73,15 @@ describe('RoomStore — create + snapshot', () => {
     const roomId = room(store);
     expect(roomId).toMatch(/^[A-Z2-9]{4}$/);
     const snap = store.snapshot('chess', roomId);
-    // A table created with no stake plays for nothing — which is every game but UNO today.
+    // A table created with no stake plays for nothing, and one that agreed to no house rules plays
+    // the game as it comes — which between them is every table of every game but UNO today.
     expect(snap?.meta).toEqual({
       host: 'ada',
       status: 'waiting',
       createdAt: 1_000,
       seq: 0,
       anteCents: 0,
+      houseRules: {},
     });
     expect(snap?.seats[0]).toEqual({ kind: 'human', name: 'Ada', uid: 'ada' });
     expect(snap?.seats.slice(1)).toEqual([
@@ -145,6 +147,91 @@ describe('RoomStore — create + snapshot', () => {
     store.patchState('uno', roomId, { anything: true });
     store.setStatus('uno', roomId, 'playing');
     expect(store.snapshot('uno', roomId)?.meta.anteCents).toBe(10_000);
+  });
+
+  /**
+   * HOUSE RULES ARE THE ANTE'S SIBLING, and every property asserted for the stake above holds for
+   * them with the money taken out and the fairness left in (plans/UNO_HOUSE_RULES.md §1).
+   *
+   * Slice 1 ships every rule OFF, so none of this changes what a hand does. What it fixes in place
+   * is WHERE a rule lives: on the room, chosen once, readable by everyone, and not the property of
+   * whoever presses Deal.
+   */
+  it('stamps the host-chosen house rules onto the room, where every subscriber can read them', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, { stack: true });
+    if (!res.ok) throw new Error(res.error);
+    expect(store.snapshot('uno', res.roomId)?.meta.houseRules).toEqual({ stack: true });
+    // And the dealer reads them from exactly there — never off a frame.
+    expect(store.rulesOf('uno', res.roomId)).toEqual({ stack: true });
+  });
+
+  it('answers no rules for a room that does not exist, rather than undefined', () => {
+    // `rulesOf` feeds a deal. A missing room reading as anything but "plays it straight" would be a
+    // rule somebody's hand gets played under — the same failure `anteOf` returns `0` to avoid.
+    expect(fixedStore().rulesOf('uno', 'ZZZZ')).toEqual({});
+  });
+
+  it('defaults to no rules for a client that sends none', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0);
+    if (!res.ok) throw new Error(res.error);
+    expect(store.snapshot('uno', res.roomId)?.meta.houseRules).toEqual({});
+  });
+
+  /**
+   * A RULE BAG IS A THING A BROWSER GETS TO CHOOSE, so its SHAPE is bounded at the one moment it
+   * crosses the wire — the same place and for the same reason the stake is floored. The server
+   * still does not interpret a key (that is the game's resolver's job, at the deal); it only
+   * refuses to store, and re-broadcast on a PUBLIC listing, whatever a browser felt like sending.
+   */
+  it('bounds a hostile rule bag: only true booleans, sane ids, and a cap on how many', () => {
+    const store = fixedStore();
+    const stamp = (raw: unknown): Record<string, boolean> => {
+      const res = store.create('uno', ada, 4, 'public', 0, raw);
+      if (!res.ok) throw new Error(res.error);
+      return { ...store.snapshot('uno', res.roomId)?.meta.houseRules };
+    };
+    // Only a literal `true` is on — an "off" rule takes no space, so every reader sees one
+    // spelling of off and `{}` is the only way to say "nothing".
+    expect(stamp({ stack: false, crossStack: 'yes', playToLast: 1 })).toEqual({});
+    expect(stamp({ stack: true })).toEqual({ stack: true });
+    // Not an object at all.
+    for (const junk of [null, undefined, 42, 'stack', [{ stack: true }]]) {
+      expect(stamp(junk)).toEqual({});
+    }
+    // A key cannot be a kilobyte of text, and there cannot be a thousand of them — a listing
+    // frame's size is not a stranger's to choose.
+    expect(stamp({ ['x'.repeat(33)]: true })).toEqual({});
+    const flood = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`r${String(i)}`, true])
+    );
+    expect(Object.keys(stamp(flood))).toHaveLength(16);
+  });
+
+  /**
+   * WRITE-ONCE, exactly as the ante is. This is what makes "nobody can change the game under a
+   * player who already sat down" true by construction rather than by anyone remembering.
+   *
+   * It matters more than it looks: a table advertised as plain UNO that acquires stacking after a
+   * guest takes a chair is a different game than the one they agreed to, and unlike a raised ante
+   * it costs them nothing measurable — so nothing would ever surface it. Falsified by adding a
+   * setter and calling it here.
+   */
+  it('never changes once stamped — seats, status, state and presence all leave them alone', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, { stack: true, playToLast: true });
+    if (!res.ok) throw new Error(res.error);
+    const { roomId } = res;
+    store.claimSeat('uno', roomId, 1, bob);
+    store.setAi('uno', roomId, 2, 'CPU');
+    store.addPresence('uno', roomId, bob.uid);
+    store.patchState('uno', roomId, { anything: true, houseRules: { stack: false } });
+    store.setStatus('uno', roomId, 'playing');
+    expect(store.snapshot('uno', roomId)?.meta.houseRules).toEqual({
+      stack: true,
+      playToLast: true,
+    });
   });
 
   it('refuses a non-positive seat count', () => {
@@ -282,6 +369,7 @@ describe('RoomStore — the open-table index', () => {
         openSeats: 2,
         seatCount: 4,
         anteCents: 0,
+        houseRules: {},
         createdAt: 1_000,
       },
     ]);
@@ -303,6 +391,20 @@ describe('RoomStore — the open-table index', () => {
     expect(listing?.anteCents).toBe(50_000);
     // Still a poster: nothing about who is at the table or what they hold.
     expect(JSON.stringify(listing)).not.toContain('ada');
+  });
+
+  /**
+   * AND SO ARE THE RULES, one step across from the price. "UNO" and "UNO with stacking and places"
+   * are different enough games that it changes whether a stranger wants the chair — a browser that
+   * lists the second as the first is advertising the wrong game, and the player finds out by being
+   * dealt one they did not pick.
+   */
+  it('carries the house rules, so a browser can tell what game a table is playing', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, { stack: true, crossStack: true });
+    if (!res.ok) throw new Error(res.error);
+    store.addPresence('uno', res.roomId, ada.uid);
+    expect(store.listOpen()[0]?.houseRules).toEqual({ stack: true, crossStack: true });
   });
 
   it('drops a table the moment it starts — a listing that outlives the deal sends joiners at a game in progress', () => {

@@ -9,6 +9,7 @@ import {
   type Card,
   type Move,
   type UnoGame,
+  DEFAULT_HOUSE_RULES,
 } from '@boardwalk/game-logic/games/uno';
 import { cardLabel, linesFor } from '@/games/uno/log';
 
@@ -35,6 +36,8 @@ function rigged(hands: readonly (readonly Card[])[], top: Card, turn = 0): UnoGa
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
+    pendingDraw: 0,
+    houseRules: DEFAULT_HOUSE_RULES,
   };
 }
 

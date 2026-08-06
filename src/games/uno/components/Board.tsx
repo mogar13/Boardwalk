@@ -12,6 +12,7 @@ import { formatMoney } from '@boardwalk/game-logic';
 import {
   DEAL_EVENT,
   canPlay,
+  drawDebt,
   mustDraw,
   type Card as UnoCard,
   type Move,
@@ -214,12 +215,15 @@ export function Board() {
   // different conclusions about the same hand. Computed before the early return because the hook
   // that reads it cannot be called conditionally; `mustDraw` is false for an empty hand, which is
   // what makes it safe to ask before the private node has arrived.
+  // `UnoState` IS a `UnoTable`, so the state goes in whole and the board's feel check is literally
+  // the call the referee made — including the stack collapse, which is why nothing here spells a
+  // house rule. A client that read the rules itself would be a second copy of them.
   const stuck =
     state !== null &&
     state.winner < 0 &&
     isMyTurn(state.turn) &&
     pendingWild === null &&
-    mustDraw(myHand, state.top, state.color);
+    mustDraw(myHand, state);
 
   useAutoDraw(
     stuck && state !== null ? `${String(state.round)}:${String(state.lastEvent.seq)}` : null,
@@ -253,10 +257,14 @@ export function Board() {
   const myTurn = state.winner < 0 && isMyTurn(state.turn);
   const finished = state.winner >= 0;
   const event = state.lastEvent;
+  // What the table owes whoever is on turn. Through the rulebook's own reader, never
+  // `state.pendingDraw`: an old referee that has never heard of the field sends nothing at all, and
+  // deciding what that means is exactly what `drawDebt` exists to do once.
+  const owed = drawDebt(state);
 
   const playCard = (card: UnoCard): void => {
-    if (!myTurn || !canPlay(card, state.top, state.color)) {
-      if (!canPlay(card, state.top, state.color)) audio.play('error');
+    if (!myTurn || !canPlay(card, state)) {
+      if (!canPlay(card, state)) audio.play('error');
       return;
     }
     if (card.kind === 'wild' || card.kind === 'wild4') {
@@ -323,6 +331,7 @@ export function Board() {
           color={state.color}
           direction={state.direction}
           deckCount={state.deckCount}
+          pending={owed}
           canDraw={myTurn && pendingWild === null}
           onDraw={() => {
             submit({ type: 'draw' });
@@ -394,7 +403,7 @@ export function Board() {
           <HandView
             cards={myHand}
             myTurn={myTurn && pendingWild === null}
-            isPlayable={(card) => canPlay(card, state.top, state.color)}
+            isPlayable={(card) => canPlay(card, state)}
             onPlay={playCard}
             pendingId={pendingWild}
           />
@@ -406,7 +415,9 @@ export function Board() {
               not want to wait out the beat can still click it and skip ahead. */}
           {stuck && (
             <p className="text-bw-muted text-xs" aria-live="polite">
-              Nothing matches {state.color} — drawing a card…
+              {owed > 0
+                ? `Nothing answers the +${String(owed)} — taking it…`
+                : `Nothing matches ${state.color} — drawing a card…`}
             </p>
           )}
 

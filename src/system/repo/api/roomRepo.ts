@@ -38,6 +38,7 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
         seatCount: init.seatCount,
         visibility: init.visibility,
         anteCents: init.anteCents,
+        houseRules: init.houseRules,
       });
       return asResult<string>(reply);
     },

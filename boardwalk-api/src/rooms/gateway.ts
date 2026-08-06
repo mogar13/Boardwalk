@@ -145,6 +145,7 @@ export class RoomGateway {
       hostOf: (g: string, r: string) => this.store.hostOf(g, r),
       statusOf: (g: string, r: string) => this.store.statusOf(g, r),
       anteOf: (g: string, r: string) => this.store.anteOf(g, r),
+      rulesOf: (g: string, r: string) => this.store.rulesOf(g, r),
       publish: (g: string, r: string, state: unknown) => {
         this.store.patchState(g, r, state);
         this.broadcastRoom(g, r);
@@ -241,7 +242,10 @@ export class RoomGateway {
           asVisibility(msg.visibility),
           // Passed through raw — `store.create` is the one place a wire stake is sanitised, so
           // there is one floor-and-clamp rather than two that can disagree.
-          msg.anteCents
+          msg.anteCents,
+          // Raw for the same reason. The store bounds the SHAPE; the game's own resolver decides
+          // what any of it means, at the deal. The gateway understands neither and must not guess.
+          msg.houseRules
         );
       case 'subscribe':
         return this.onSubscribe(conn, asStr(msg.gameId), asStr(msg.roomId));
@@ -309,13 +313,14 @@ export class RoomGateway {
     host: SeatOccupant | null,
     seatCount: unknown,
     visibility: RoomVisibility,
-    anteCents: unknown
+    anteCents: unknown,
+    houseRules: unknown
   ): void {
     if (host === null) return this.reply(conn, id, { ok: false, error: 'Bad host.' });
     if (host.uid !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Forbidden.' });
     const count = typeof seatCount === 'number' && Number.isInteger(seatCount) ? seatCount : 0;
     const ante = typeof anteCents === 'number' ? anteCents : 0;
-    const res = this.store.create(gameId, host, count, visibility, ante);
+    const res = this.store.create(gameId, host, count, visibility, ante, houseRules);
     this.reply(conn, id, res.ok ? { ok: true, value: res.roomId } : { ok: false, error: res.error });
     // A fresh table is not listed until somebody is AT it (`listOpen` requires presence), so this
     // publishes nothing today — the host's `presence` frame, a beat later, is what puts it on the

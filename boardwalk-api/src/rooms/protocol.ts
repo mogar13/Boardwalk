@@ -53,6 +53,19 @@ export type RequestMsg =
        * ante off the room, so a client cannot name what it is about to be charged. See `RoomMeta`.
        */
       anteCents?: number;
+      /**
+       * WHICH HOUSE RULES THE TABLE PLAYS BY — rule id → on. Absent reads as `{}`, every rule off,
+       * which is what every client predating this field meant and what every non-UNO game means.
+       *
+       * Like the stake, this is the ONLY frame in the game that carries it, and it carries it
+       * exactly once, at create, before anyone has joined. `unoStart` has no such field either:
+       * whoever presses Deal does not get to choose what game the table is playing, any more than
+       * they get to choose what it costs.
+       *
+       * `unknown` rather than a typed record, because it arrives from a browser and the store is
+       * where it is made safe — one boundary, not two that can disagree.
+       */
+      houseRules?: unknown;
     }
   | { t: 'claimSeat'; id: number; gameId: string; roomId: string; index: number; who: SeatOccupant }
   | { t: 'releaseSeat'; id: number; gameId: string; roomId: string; index: number; fallback: 'ai' | 'open' }

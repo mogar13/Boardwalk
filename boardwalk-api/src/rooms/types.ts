@@ -57,7 +57,31 @@ export interface RoomMeta {
    * joined at $25. Unspellable rather than validated, the Money rule one level up.
    */
   readonly anteCents: number;
+  /**
+   * WHAT THIS TABLE AGREED TO PLAY, chosen by the host at CREATE and never afterwards. `{}` — no
+   * rule on — for every table of every game but UNO today, and for any UNO table nobody configured.
+   *
+   * WHY IT IS ON THE ROOM AND NOT IN THE GAME'S STATE. Two reasons, and the second is the one that
+   * matters. A guest must be able to read the rules BEFORE sitting down, and game state is `null`
+   * until the host deals. And the REFEREE has to take them from somewhere no client can name: if a
+   * rule arrived on `unoStart`, whoever pressed Deal would be choosing what game everybody else
+   * just sat down to — the exact property `anteCents` being room state buys for the stake, with the
+   * money swapped for the rules.
+   *
+   * WHY THE SERVER TREATS IT AS AN OPAQUE BAG. Its keys mean something to one game's rulebook and
+   * nothing here, so this file does not name a single rule. The store bounds its SHAPE (below);
+   * the game's own `resolveHouseRules` decides its MEANING, at the deal, from the same shared
+   * module the client reads. There is no server copy of the rules.
+   */
+  readonly houseRules: TableRules;
 }
+
+/**
+ * A table's house rules on the wire: rule id → on. Booleans only, one level deep, and only the
+ * ones that are ON — a rule that is off is simply absent, which every resolver reads identically.
+ * The server never interprets a key; see `RoomMeta.houseRules`.
+ */
+export type TableRules = Readonly<Record<string, boolean>>;
 
 /** The public room, exactly as a subscriber receives it. Private hands are NOT here — owner-only. */
 export interface RoomSnapshot {
@@ -114,6 +138,12 @@ export interface RoomListing {
    * window rather than a poster.
    */
   readonly anteCents: number;
+  /**
+   * WHAT THIS TABLE PLAYS BY. On the poster for the stake's reason, one step across: "UNO" and "UNO
+   * with stacking and places" are different enough games that it changes whether a stranger wants
+   * the chair. Still a poster — the host's own booleans, no uid, no roster, no state.
+   */
+  readonly houseRules: TableRules;
   /** Epoch ms at creation, so the list can be ordered newest-first by the reader too. */
   readonly createdAt: number;
 }
