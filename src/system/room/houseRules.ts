@@ -81,9 +81,20 @@ export function houseRuleChoices(specs?: readonly HouseRuleSpec[]): readonly Hou
   return specs.filter((s) => s.requires === undefined || ids.has(s.requires));
 }
 
-/** Is this rule on? Absent reads as off, which is what every default is. */
-export function isRuleOn(values: TableRules, id: string): boolean {
-  return values[id] === true;
+/**
+ * Is this rule on? Absent reads as off, which is what every default is.
+ *
+ * IT TOLERATES A MISSING BAG, and that is a deploy-ordering property rather than defensiveness for
+ * its own sake. The frontend deploys on push and the Pi deploys by hand, so there is always a
+ * window where a new client is talking to a server that predates a field. An older referee's
+ * snapshot has no `houseRules` at all, and `undefined[id]` is a TypeError that takes the whole
+ * lobby down — for every room game, not just UNO. Reading it as "no rules" is both crash-free and
+ * correct: a server that has never heard of house rules is not running any.
+ *
+ * The Pi still goes first. This just means getting that wrong degrades instead of breaking.
+ */
+export function isRuleOn(values: TableRules | undefined, id: string): boolean {
+  return values?.[id] === true;
 }
 
 /**
@@ -91,7 +102,7 @@ export function isRuleOn(values: TableRules, id: string): boolean {
  * prerequisite is off is drawn disabled rather than hidden, so the relationship is visible —
  * "cross-stacking" appearing out of nowhere the moment you tick "stacking" reads as a bug.
  */
-export function isRuleAvailable(values: TableRules, spec: HouseRuleSpec): boolean {
+export function isRuleAvailable(values: TableRules | undefined, spec: HouseRuleSpec): boolean {
   return spec.requires === undefined || isRuleOn(values, spec.requires);
 }
 
@@ -143,8 +154,11 @@ export function setTableRule(
  * cannot smuggle a key into a room record — the server bounds it again on arrival, because that is
  * the boundary that is not optional.
  */
-export function tableRulesFor(values: TableRules, specs: readonly HouseRuleSpec[]): TableRules {
+export function tableRulesFor(
+  values: TableRules | undefined,
+  specs: readonly HouseRuleSpec[]
+): TableRules {
   const out: Record<string, boolean> = {};
-  for (const spec of specs) if (values[spec.id] === true) out[spec.id] = true;
+  for (const spec of specs) if (isRuleOn(values, spec.id)) out[spec.id] = true;
   return out;
 }

@@ -176,6 +176,20 @@ describe('the OS bag of booleans', () => {
     expect(isRuleOn({ stack: true }, 'stack')).toBe(true);
   });
 
+  it('SURVIVES A SNAPSHOT FROM A SERVER THAT PREDATES THE FIELD', () => {
+    /**
+     * The deploy-ordering guard. The frontend deploys on push and the Pi deploys by hand, so a new
+     * client WILL at some point read a snapshot from a referee that has never heard of house rules
+     * — its `meta.houseRules` is `undefined`, and `undefined[id]` is a TypeError that takes down
+     * the lobby for EVERY room game, not just UNO. The Pi still goes first; this is what makes
+     * getting that wrong degrade instead of break. Falsified by dropping the `?.`.
+     */
+    const fromOldServer = undefined as unknown as TableRules;
+    expect(isRuleOn(fromOldServer, 'stack')).toBe(false);
+    expect(isRuleAvailable(fromOldServer, SPECS[1] as HouseRuleSpec)).toBe(false);
+    expect(tableRulesFor(fromOldServer, SPECS)).toEqual({});
+  });
+
   it('will not turn on a rule whose prerequisite is off', () => {
     const next = setTableRule(NO_TABLE_RULES, SPECS, 'crossStack', true);
     expect(next).toBe(NO_TABLE_RULES); // same object — a no-op click must not re-render
