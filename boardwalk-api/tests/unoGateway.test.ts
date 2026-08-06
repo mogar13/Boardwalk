@@ -132,7 +132,10 @@ describe('the UNO dealer, over a real socket', () => {
   });
 
   /** Ada hosts a started 2-seat table with Bob, at `ante`. Both present and subscribed. */
-  async function table(ante = ANTE): Promise<{ ada: Client; bob: Client; roomId: string }> {
+  async function table(
+    ante = ANTE,
+    houseRules: unknown = {}
+  ): Promise<{ ada: Client; bob: Client; roomId: string }> {
     const ada = await Client.open(url, 'ada');
     const created = await ada.request({
       t: 'create',
@@ -140,6 +143,7 @@ describe('the UNO dealer, over a real socket', () => {
       host: { uid: 'ada', name: 'Ada' },
       seatCount: 2,
       anteCents: ante,
+      houseRules,
     });
     const roomId = created.value as string;
     const bob = await Client.open(url, 'bob');
@@ -231,6 +235,45 @@ describe('the UNO dealer, over a real socket', () => {
     expect(ada.lastState()?.potCents).toBe(ANTE * 2);
     expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
     expect(balanceOf(db, 'bob')).toBe(STARTING_BANKROLL_CENTS - ANTE);
+
+    ada.close();
+    bob.close();
+  });
+
+  /**
+   * AND THE RULES ARE THE ROOM'S, NOT THE SENDER'S — the stake test one step across.
+   *
+   * `unoStart` has no field for a house rule, exactly as it has none for a stake, and for a reason
+   * that survives the money being removed: whoever presses Deal must not get to choose what game
+   * the other six people sat down to. A hostile host naming `houseRules` on the start frame gets
+   * the table's own — which here means the ones Bob could read before he took his chair.
+   *
+   * The failure this closes is quieter than the stake's and therefore worse: nobody is charged
+   * anything, so nothing surfaces it. The table simply plays a different game than the one it
+   * advertised, and the only tell is a card that will not go down.
+   */
+  it('ignores house rules a client tries to name, and deals the table’s own', async () => {
+    const { ada, bob, roomId } = await table(0, { stack: true });
+    const started = await ada.request({
+      t: 'unoStart',
+      gameId: GAME_ID,
+      roomId,
+      nonce: 'n1',
+      level: 'sharp',
+      houseRules: { stack: false, playToLast: true }, // not a field; nowhere for this to go
+    });
+    expect(started.ok).toBe(true);
+    await sleep(120);
+
+    // The dealt round carries what the ROOM said, not what the frame said — `playToLast` was never
+    // agreed to, and `stack` was, however the host phrased the start.
+    for (const client of [ada, bob]) {
+      expect(client.lastState()?.houseRules).toEqual({
+        stack: true,
+        crossStack: false,
+        playToLast: false,
+      });
+    }
 
     ada.close();
     bob.close();

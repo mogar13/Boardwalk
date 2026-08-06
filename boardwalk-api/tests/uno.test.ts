@@ -80,13 +80,14 @@ function dealTable(
   db: Db,
   seats: SeatSpec[] = [human('ada'), human('bob')],
   ante = ANTE,
-  nonce = 'n-start'
+  nonce = 'n-start',
+  houseRules: unknown = {}
 ): StartOk {
   return ok(
     startMatch(
       db,
       'ada',
-      { nonce, gameId: GAME_ID, roomId: ROOM, seats, anteCents: ante, level: 'sharp' },
+      { nonce, gameId: GAME_ID, roomId: ROOM, seats, anteCents: ante, level: 'sharp', houseRules },
       1_000
     )
   );
@@ -165,6 +166,7 @@ describe('startMatch — the deal, and the antes', () => {
         roomId: ROOM,
         seats: [human('ada'), human('bob')],
         anteCents: STARTING_BANKROLL_CENTS + 1,
+        houseRules: {},
         level: 'sharp',
       },
       1_000
@@ -196,6 +198,7 @@ describe('startMatch — the deal, and the antes', () => {
         roomId: ROOM,
         seats: [human('ada'), human('bob')],
         anteCents: STARTING_BANKROLL_CENTS + 1,
+        houseRules: {},
         level: 'sharp',
       },
       1_000
@@ -227,6 +230,7 @@ describe('startMatch — the deal, and the antes', () => {
         roomId: ROOM,
         seats: [human('ada'), human('bob')],
         anteCents: ANTE,
+        houseRules: {},
         level: 'sharp',
       },
       1_000
@@ -478,6 +482,67 @@ describe('void and the boot sweep — a restart must refund, never strand', () =
       { uid: 'ada', seat: 0, ante_cents: ANTE },
       { uid: 'bob', seat: 1, ante_cents: ANTE },
     ]);
+  });
+});
+
+describe('house rules — the table decides, and the match remembers', () => {
+  /**
+   * SLICE 1 of plans/UNO_HOUSE_RULES.md. Every rule ships OFF, so nothing here asserts what
+   * stacking or ranked places DO — they are not built. What it pins is the road they will travel:
+   * the rules come off the ROOM (never a frame), are stamped onto the round at the deal, and stay
+   * with that round for the whole of its life.
+   */
+  it("stamps the room's rules onto the dealt match, RESOLVED", () => {
+    const db = seeded();
+    const res = dealTable(db, [human('ada'), human('bob')], ANTE, 'n1', {
+      stack: true,
+      playToLast: true,
+      nonsense: true,
+    });
+    // Through the SHARED resolver rather than stored raw: an id the rulebook does not read is gone
+    // by the time it reaches the game, and every id it does read is present as a real boolean.
+    expect(res.match.game.houseRules).toEqual({
+      stack: true,
+      crossStack: false,
+      playToLast: true,
+    });
+  });
+
+  it('SURVIVES THE ROW — a round is played under the rules it was dealt with', () => {
+    /**
+     * The rules live in `uno_matches.state_json`, which makes this the restart property too: the
+     * process can die between two moves and the round comes back playing the same game. Had they
+     * been left on the ROOM instead, a restart — which clears every room, since rooms are in
+     * memory and matches are not — would resume a stacking match with stacking off.
+     */
+    const db = seeded();
+    const res = dealTable(db, [human('ada'), human('bob')], ANTE, 'n1', { stack: true });
+    expect(stored(db, res.matchId).game.houseRules).toEqual({
+      stack: true,
+      crossStack: false,
+      playToLast: false,
+    });
+  });
+
+  it('a table that agreed to nothing is exactly the table that already existed', () => {
+    const db = seeded();
+    expect(dealTable(db).match.game.houseRules).toEqual({
+      stack: false,
+      crossStack: false,
+      playToLast: false,
+    });
+  });
+
+  it('never throws on a rule bag from the wire, whatever it turns out to be', () => {
+    // `StartInput.houseRules` is `unknown` because that is honestly what arrives — a bag the room
+    // store bounded but did not interpret. A deal that THROWS takes the table down; a deal that
+    // resolves garbage to defaults plays UNO.
+    const db = seeded();
+    const junk: unknown[] = [null, undefined, 42, 'stack', [], { stack: 'yes' }];
+    junk.forEach((raw, i) => {
+      const res = dealTable(db, [human('ada'), human('bob')], 0, `j${String(i)}`, raw);
+      expect(res.match.game.houseRules.stack).toBe(false);
+    });
   });
 });
 

@@ -21,6 +21,7 @@ import {
   mustDraw,
   shuffle,
   toPublic,
+  DEFAULT_HOUSE_RULES,
 } from '@boardwalk/game-logic/games/uno';
 
 // A tiny seeded PRNG so a shuffle is deterministic in a test without stubbing Math.random.
@@ -54,6 +55,7 @@ function game(hands: Card[][], topCard: Card, over: Partial<UnoGame> = {}): UnoG
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
+    houseRules: DEFAULT_HOUSE_RULES,
     ...over,
   };
 }

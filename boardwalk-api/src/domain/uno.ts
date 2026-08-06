@@ -215,6 +215,17 @@ export interface StartInput {
   readonly anteCents: number;
   /** How hard the bots play. A difficulty, not money — see `StoredMatch.level`. */
   readonly level: UnoLevel;
+  /**
+   * WHAT THE TABLE AGREED TO PLAY, read off the ROOM by the caller — never off a client frame, for
+   * the ante's reason with the money taken out: whoever presses Deal must not get to choose what
+   * game the other six people just sat down to. `unoStart` has no field for it.
+   *
+   * `unknown` because that is what it is at this point — a bag the room store bounded but did not
+   * interpret. `deal` resolves it through the shared `resolveHouseRules`, which is the one place
+   * the ids acquire meaning, and stamps the result INTO the match: from there on the round carries
+   * its own rules in `state_json` and no later read has to ask the room again.
+   */
+  readonly houseRules: unknown;
 }
 
 export interface StartOk {
@@ -283,7 +294,9 @@ export function startMatch(
     const leader = previous === undefined ? 0 : Math.max(0, stateOf(previous).game.winner);
     const round = previous === undefined ? 0 : previous.round + 1;
 
-    const game = deal(input.seats.length, rng, leader);
+    // The table's rules are stamped onto the round HERE, once, so the match is played under what it
+    // was dealt with and there is no second copy on the room to drift from it.
+    const game = deal(input.seats.length, rng, leader, input.houseRules);
     const match: StoredMatch = {
       game,
       eventSeq: 0,

@@ -28,6 +28,8 @@
  * chair and a bot chair are the same claimable thing. A `mode: 'ai' | 'online'` field would
  * have re-created the `"local"`-vs-`"hotseat"` split this project deletes.
  */
+import type { TableRules } from '@/system/room/houseRules';
+
 export type SeatKind = 'open' | 'human' | 'ai';
 
 export interface Seat {
@@ -95,6 +97,27 @@ export interface RoomMeta {
    * "needs the game server" branch.
    */
   readonly anteCents: number;
+
+  /**
+   * WHAT THIS TABLE AGREED TO PLAY, chosen by the host at CREATE and never written again — the
+   * ante's sibling, riding the same road for the same reasons (`@/system/room/houseRules`).
+   *
+   * IT IS ROOM META AND NOT GAME STATE because a guest's board has to agree with the referee about
+   * the rules, and `state` is `null` until the host deals — by the time a projection could carry
+   * them, somebody has already been offered a chair under rules they could not read. Here it rides
+   * the snapshot the lobby already subscribes to.
+   *
+   * IT IS CREATE-TIME for `anteCents`'s reason with the money taken out and the fairness left in: a
+   * table must not change what game it is playing under someone who already sat down.
+   *
+   * AN OPAQUE BAG OF BOOLEANS, deliberately — the OS carries it and the GAME narrows it through its
+   * own resolver. See `TableRules`.
+   *
+   * The RTDB fallback always reports `{}` — every rule off, which is the honest answer rather than
+   * a degradation: no game is DEALT on that path, so no table there is played under house rules at
+   * all. It also means `database.rules.json` needs no new field and no hand-run deploy.
+   */
+  readonly houseRules: TableRules;
 }
 
 /**
@@ -132,6 +155,13 @@ export interface OpenTable {
    * uid, no roster, no state.
    */
   readonly anteCents: number;
+  /**
+   * WHAT THIS TABLE PLAYS BY, on the poster for the stake's reason one step over: "UNO" and "UNO
+   * with stacking and places" are different enough games that a stranger deciding whether to sit
+   * down wants to know which one it is. Still a poster and not a window — booleans the host chose,
+   * no uid, no roster, no state.
+   */
+  readonly houseRules: TableRules;
   readonly createdAt: number;
 }
 

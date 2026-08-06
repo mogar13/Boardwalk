@@ -23,6 +23,7 @@ import type {
   Seat,
   SeatOccupant,
 } from '@/system/room/types';
+import type { TableRules } from '@/system/room/houseRules';
 
 /**
  * The seam. Everything above this line talks to these interfaces; exactly one
@@ -568,6 +569,17 @@ export interface RoomRepo {
        * the price off the snapshot before taking a chair. See `RoomMeta.anteCents`.
        */
       anteCents: number;
+      /**
+       * WHICH HOUSE RULES THIS TABLE PLAYS BY — an opaque bag of booleans the OS transports and the
+       * game narrows (`@/system/room/houseRules`). `{}` is a table playing the game as it comes,
+       * which is every table of every game but UNO today.
+       *
+       * REQUIRED for `visibility`'s and `anteCents`' reason: what game a table is playing is a
+       * decision, and a default is how a caller makes one without noticing. Stamped onto the room
+       * here and never written again, so a joiner reads the rules off the snapshot before taking a
+       * chair — and so nobody can change the game under a player who already sat down.
+       */
+      houseRules: TableRules;
     }
   ): Promise<RepoResult<string>>;
 

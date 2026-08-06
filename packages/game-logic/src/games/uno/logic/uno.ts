@@ -22,6 +22,8 @@
  * `seat: -1`, and every array is dense.
  */
 
+import { DEFAULT_HOUSE_RULES, resolveHouseRules, type UnoHouseRules } from './houseRules';
+
 // ── Cards ────────────────────────────────────────────────────────────────────────────────────────
 
 export type UnoColor = 'red' | 'blue' | 'green' | 'yellow';
@@ -141,6 +143,17 @@ export interface UnoGame {
   readonly calledUno: readonly boolean[];
   /** The seat that emptied its hand, or `-1` while play continues (sentinel, never null). */
   readonly winner: number;
+  /**
+   * THE RULES THIS ROUND WAS DEALT UNDER, stamped once by `deal` and never written again.
+   *
+   * On the GAME rather than looked up per move, and that is what makes a match played under the
+   * rules it was dealt with: the object is inside `uno_matches.state_json`, so it survives a
+   * restart, and there is no second copy on the room for it to drift from. A rule cannot change
+   * under a hand in progress because nothing after the deal has anywhere to write one.
+   *
+   * Every read site takes it complete — see `resolveHouseRules` for why that is the whole point.
+   */
+  readonly houseRules: UnoHouseRules;
 }
 
 const top = (g: UnoGame): Card => {
@@ -210,8 +223,17 @@ function seatAfter(turn: number, steps: number, direction: 1 | -1, seatCount: nu
  * that has just read a `winner` off its own reducer, so it should always be in range — but a deal
  * that throws takes the whole table down, and a deal that starts on the wrong seat merely starts on
  * the wrong seat.
+ *
+ * `rules` is WHAT THIS TABLE AGREED TO PLAY, read off the room by the referee and stamped onto the
+ * round here — the one moment they enter the game. It is last and defaulted so every existing call
+ * site means "the rules as they have always been", which is also what the default IS.
  */
-export function deal(seatCount: number, rng: () => number = Math.random, firstSeat = 0): UnoGame {
+export function deal(
+  seatCount: number,
+  rng: () => number = Math.random,
+  firstSeat = 0,
+  rules: unknown = DEFAULT_HOUSE_RULES
+): UnoGame {
   let deck = shuffle(freshDeck(), rng);
   const hands: Card[][] = [];
   for (let s = 0; s < seatCount; s += 1) {
@@ -242,6 +264,7 @@ export function deal(seatCount: number, rng: () => number = Math.random, firstSe
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
+    houseRules: resolveHouseRules(rules),
   };
 }
 
@@ -362,6 +385,12 @@ export function applyMove(
     direction,
     calledUno,
     winner,
+    // CARRIED, because this branch rebuilds the game field by field rather than spreading it. A
+    // field added to `UnoGame` and not added here is not a type error (the literal is complete
+    // either way once it is written) and not a visible bug on move one — the rules would simply be
+    // `undefined` from the first play onward, which `resolveHouseRules` then reads as all-false, so
+    // a stacking table would quietly stop stacking the moment anybody played a card. Guarded.
+    houseRules: game.houseRules,
   };
 }
 
@@ -577,6 +606,21 @@ export interface UnoState {
    */
   readonly potCents: number;
   /**
+   * THE RULES THIS ROUND IS BEING PLAYED UNDER, so every client's feel check reads the same
+   * booleans the referee enforced.
+   *
+   * `canPlay`/`mustDraw` are what dim a card and what arm the auto-draw, and they are advisory —
+   * the referee decides. That is exactly why they must not disagree: a client that thought stacking
+   * was off would grey out the +2 the rules would have accepted, and one that thought it was on
+   * would offer a click the dealer refuses. Neither is a crash and both are unplayable.
+   *
+   * ON THE PROJECTION AND NOT DERIVED FROM `RoomMeta`, for the reason `potCents` is: the room says
+   * what the table was created with, the match says what it was DEALT with, and after a re-size, a
+   * refused ante or a rematch those are answers to different questions. A dealt game's numbers come
+   * from the dealer.
+   */
+  readonly houseRules: UnoHouseRules;
+  /**
    * The last transition, as facts (see `UnoEvent`). ONE event, not a list: the log is per-client
    * scrollback, so each client appends this to its own and a late joiner simply starts from now —
    * which is the same answer chat gives, and it keeps the room node from growing without bound over
@@ -603,6 +647,12 @@ export function toPublic(
     winner: game.winner,
     round,
     potCents,
+    // RESOLVED, NOT PASSED THROUGH. `game` here has usually just come back out of
+    // `uno_matches.state_json`, and a row written before this field existed carries no rules at
+    // all — `undefined` would then be dropped by the wire and every client would read the field as
+    // missing rather than as off. Resolving projects an old match as all-false, which is not a
+    // fallback: a match dealt before house rules existed was dealt under exactly these rules.
+    houseRules: resolveHouseRules(game.houseRules),
     lastEvent,
   };
 }

@@ -11,6 +11,15 @@ import { RoomProvider } from '@/system/room/RoomProvider';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
 import { SeatList } from '@/system/room/SeatList';
 import { anteChoices, DEFAULT_ANTE_CENTS } from '@/system/room/ante';
+import {
+  houseRuleChoices,
+  isRuleAvailable,
+  isRuleOn,
+  NO_TABLE_RULES,
+  setTableRule,
+  tableRulesFor,
+  type TableRules,
+} from '@/system/room/houseRules';
 import { humanCount, tableIsFull, tableSizeChoices } from '@/system/room/seats';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
@@ -71,6 +80,12 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   // unnoticed.
   const anteOptions = anteChoices(manifest.betting);
   const [anteCents, setAnteCents] = useState(DEFAULT_ANTE_CENTS);
+  // WHAT GAME THIS TABLE IS PLAYING. The ante's sibling, and create-time for the same reason with
+  // the money taken out: a table must not change the rules under a player who already sat down.
+  // Defaults to nothing on — every house rule off IS the game as it already plays, so a host who
+  // does not touch this gets exactly the table that existed before the control did.
+  const ruleSpecs = houseRuleChoices(manifest.houseRules);
+  const [houseRules, setHouseRules] = useState<TableRules>(NO_TABLE_RULES);
   /**
    * WHICH TABLE YOU ARE AT LIVES IN THE URL, and it is the ONLY place it lives.
    *
@@ -165,6 +180,11 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         // charging a stake that can only ever be refunded to the person who paid it is worse than
         // not offering it. The control is hidden in that mode too.
         anteCents: mode === 'online' ? anteCents : 0,
+        // NOT mode-gated, unlike the two above, and the difference is the point: those are both
+        // about other PEOPLE (who may join, who can be charged), so an AI table zeroes them. A
+        // house rule is about the GAME, and a table of bots plays the same game a table of humans
+        // does. `tableRulesFor` sends only what is on and only what this game declares.
+        houseRules: tableRulesFor(houseRules, ruleSpecs),
       });
       setBusy(false);
       if (result.ok) enterTable(result.value);
@@ -268,6 +288,52 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
           </div>
         )}
         {/*
+          HOUSE RULES (plans/UNO_HOUSE_RULES.md §1) — how this TABLE plays, as opposed to
+          `<GameOptions>` below, which is how one client does. Drawn only for a game that declares
+          any, so the lobby is unchanged for the other five.
+
+          NOT online-only, unlike the ante and the visibility toggle above. Those two are about
+          other people; a house rule is about the game, and a table of bots plays the same game.
+
+          CREATE-TIME ONLY — there is no counterpart in the in-room view, and that is the control
+          doing its job rather than a gap in it: the rules are stamped on the room and read by the
+          referee at the deal, so a mid-lobby retune would change the game under somebody who
+          already took a chair. Same shape as the seat count and the stake, same reason.
+        */}
+        {ruleSpecs.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
+              House rules
+            </span>
+            <div className="flex flex-col gap-2" role="group" aria-label="House rules">
+              {ruleSpecs.map((spec) => {
+                const on = isRuleOn(houseRules, spec.id);
+                const available = isRuleAvailable(houseRules, spec);
+                return (
+                  <div key={spec.id} className="flex flex-col gap-0.5">
+                    <Button
+                      size="sm"
+                      className="self-start"
+                      variant={on ? 'secondary' : 'ghost'}
+                      aria-pressed={on}
+                      disabled={!available}
+                      onClick={() => {
+                        setHouseRules((prev) => setTableRule(prev, ruleSpecs, spec.id, !on));
+                      }}
+                    >
+                      {on ? '✓ ' : ''}
+                      {spec.label}
+                    </Button>
+                    {spec.hint !== undefined && (
+                      <p className="text-bw-muted text-xs">{spec.hint}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/*
           PUBLIC vs PRIVATE, chosen before the table exists (V1_FEATURE_GAPS #9). This is the one
           control the room browser adds to the lobby, and it is here rather than inside the room
           because a table that is briefly public is public: somebody can already have joined by the
@@ -359,6 +425,12 @@ function LobbyRoom({
 }) {
   const { seats, status, meta, isHost, setStatus } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
+  // The room's rules, rendered with the LABELS the manifest declares — the room carries ids, and an
+  // id is not copy. An id the manifest no longer declares simply drops out, which is the honest
+  // rendering of a rule this build of the client does not know about.
+  const ruleLabels = houseRuleChoices(manifest.houseRules)
+    .filter((spec) => meta !== null && isRuleOn(meta.houseRules, spec.id))
+    .map((spec) => spec.label);
 
   if (status === 'gone') {
     return (
@@ -414,6 +486,25 @@ function LobbyRoom({
                   — needs two human players, or the table plays for XP alone
                 </span>
               )}
+            </p>
+          )}
+          {/*
+            WHAT GAME THIS TABLE IS PLAYING, said before anybody sits down — the ante line's
+            sibling, and it exists for the identical reason. The rules reach a guest on their own
+            room subscription (the gateway test asserts exactly that, over a real socket, from a
+            socket holding no seat), and plumbing them there and then not drawing them would be
+            worse than not plumbing them, because it looks done. That is not hypothetical: the ante
+            shipped in precisely that state for one browser pass, and a guest was offered a SIT
+            button on a $25 table with nothing on screen saying so.
+
+            Reads the ROOM's rules and not the game's projection, because this line has to be true
+            before the deal — there is no projection yet. Once dealt, the board reads the rules off
+            `UnoState`, which is the match's own copy. Absent/empty draws nothing, so every table
+            that agreed to nothing looks exactly as it did.
+          */}
+          {meta !== null && ruleLabels.length > 0 && (
+            <p className="text-secondary text-sm font-semibold">
+              House rules: {ruleLabels.join(' · ')}
             </p>
           )}
         </div>

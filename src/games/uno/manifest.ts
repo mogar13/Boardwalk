@@ -75,6 +75,38 @@ export const unoManifest = {
       ],
     },
   ],
+  /**
+   * HOUSE RULES (plans/UNO_HOUSE_RULES.md) — the ways a TABLE agrees to play differently, as
+   * opposed to `options` above, which is how one client does. The ids are the keys
+   * `resolveHouseRules` reads, asserted as a bijection in `tests/uno-house-rules.test.ts`.
+   *
+   * EVERY ONE DEFAULTS OFF, and none of them is enforced yet: this slice is the SEAM — the type,
+   * the resolver, the create-time room parameter, the toggles — and the rulebook changes land on
+   * top of it. Shipping the toggles now with the rules off is deliberate and not a stub: the seam
+   * is independently useful, independently green, and the thing most likely to be got wrong (a
+   * rule a guest reads differently from the referee) is exactly what it exists to make impossible.
+   * A table nobody configures is the table that already exists.
+   */
+  houseRules: [
+    {
+      id: 'stack',
+      label: 'Stacking',
+      hint: 'Answer a +2 with a +2, a +4 with a +4 — the debt runs until somebody takes it.',
+    },
+    {
+      id: 'crossStack',
+      label: 'Cross-stacking',
+      hint: '…and a +4 answers a +2.',
+      // Meaningless on its own — there is no stack to cross. The lobby will not offer it until
+      // stacking is on, and `resolveHouseRules` normalises it away if it arrives set anyway.
+      requires: 'stack',
+    },
+    {
+      id: 'playToLast',
+      label: 'Play for places',
+      hint: 'Keep playing after 1st: 2nd, then 3rd. Last player standing is last.',
+    },
+  ],
 } as const satisfies GameManifest;
 
 /** The chosen `bots` option as the level the pure chooser takes. See `ticTacToeHouseLevel`. */

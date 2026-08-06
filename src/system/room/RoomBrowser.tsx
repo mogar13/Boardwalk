@@ -2,6 +2,7 @@ import { Button, Card } from '@/ui';
 import { findGame, gameIconSrc } from '@/games/registry';
 import { useOpenTables } from '@/system/room/useOpenTables';
 import type { OpenTable } from '@/system/room/types';
+import { houseRuleChoices, isRuleOn } from '@/system/room/houseRules';
 
 /**
  * ACTIVE TABLES — the room browser (V1_FEATURE_GAPS #9), the OS's answer to "multiplayer is
@@ -76,6 +77,21 @@ function TableRow({
   // through is honest; hiding it would make the hub disagree with the server about what exists.
   const game = findGame(table.gameId);
   const icon = gameIconSrc(game?.manifest.icon);
+  /**
+   * WHAT GAME THIS TABLE IS PLAYING, on the poster (plans/UNO_HOUSE_RULES.md §1).
+   *
+   * "UNO" and "UNO with stacking and places" are different enough that it changes whether a
+   * stranger wants the chair, so a browser that lists the second as the first advertises the wrong
+   * game — and the player finds out by being dealt one they did not choose.
+   *
+   * Rendered from THIS client's manifest labels against the room's ids, exactly as the lobby does:
+   * a room carries ids and an id is not copy. A rule this bundle does not know about drops out
+   * rather than rendering a raw key, which is the honest thing for a listing to say about a table
+   * created by a newer client.
+   */
+  const rules = houseRuleChoices(game?.manifest.houseRules)
+    .filter((spec) => isRuleOn(table.houseRules, spec.id))
+    .map((spec) => spec.label);
 
   return (
     <li className="border-bw-line bg-base-300/40 rounded-field flex flex-wrap items-center gap-3 border px-3 py-2">
@@ -96,6 +112,9 @@ function TableRow({
           {table.hostName}&apos;s table · {table.players}/{table.seatCount} seated ·{' '}
           {table.openSeats} open
         </span>
+        {rules.length > 0 && (
+          <span className="text-secondary truncate text-xs">{rules.join(' · ')}</span>
+        )}
       </div>
       <Button
         size="sm"

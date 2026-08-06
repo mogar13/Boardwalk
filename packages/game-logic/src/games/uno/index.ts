@@ -9,3 +9,4 @@
 export * from './logic/uno';
 export * from './logic/events';
 export * from './logic/pot';
+export * from './logic/houseRules';

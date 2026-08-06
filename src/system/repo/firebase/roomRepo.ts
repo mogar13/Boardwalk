@@ -18,6 +18,7 @@ import { nextSeq } from '@/system/room/ordering';
 import { teardownPlan } from '@/system/room/lifecycle';
 import { CHAT } from '@/system/repo/firebase/chatRepo';
 import type { RoomMeta, RoomSnapshot, Seat } from '@/system/room/types';
+import { NO_TABLE_RULES } from '@/system/room/houseRules';
 import type { RepoResult, RoomRepo, Unsubscribe } from '@/system/repo/types';
 
 /**
@@ -182,6 +183,18 @@ function readMeta(wire: RoomWire): RoomMeta {
      * does not touch the rules at all.
      */
     anteCents: 0,
+    /**
+     * ALWAYS EMPTY ON THIS PATH, and — like the stake above — that is the honest answer rather than
+     * a degraded one.
+     *
+     * A house rule is a rule the DEALER enforces, and this path has no dealer. UNO does not run
+     * here at all (`repos.uno === null` renders "needs the game server"), so there is no table on
+     * the RTDB fallback that could be played under one. Reporting every rule off is what is true.
+     *
+     * It is also why this build touches `database.rules.json` not at all: nothing writes a house
+     * rule here, so there is no new field to pin and no hand-run rules deploy to forget.
+     */
+    houseRules: NO_TABLE_RULES,
   };
 }
 

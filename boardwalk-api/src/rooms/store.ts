@@ -23,6 +23,7 @@ import type {
   RoomVisibility,
   Seat,
   SeatOccupant,
+  TableRules,
 } from './types';
 
 /** The full record the server holds — the public snapshot plus the hidden and transient parts. */
@@ -41,6 +42,8 @@ interface RoomRecord {
   visibility: RoomVisibility;
   /** The stake every seat pays, stamped at create and never written again. See `RoomMeta`. */
   anteCents: number;
+  /** What the table plays by, stamped at create and never written again. See `RoomMeta`. */
+  houseRules: TableRules;
   status: RoomStatus;
   createdAt: number;
   seq: number;
@@ -69,6 +72,34 @@ const CHAT_CAP = 200;
 const LISTING_CAP = 60;
 /** The unambiguous code alphabet — no O/0, I/1 — because a join code gets dictated aloud. */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/**
+ * Bound a table's house rules. The server does not know what any rule MEANS — that is the game's
+ * resolver's job, at the deal — so all it can do is make sure what it stores and re-broadcasts is
+ * a small, flat bag of booleans and not whatever a browser felt like sending.
+ *
+ * Three limits, each closing something a room record and the PUBLIC listing quoting it would
+ * otherwise carry: only `true` values are kept (so an "off" rule takes no space and every reader
+ * sees one spelling of off), only plausible ids (so a key cannot be a kilobyte of text), and a cap
+ * on how many (so a listing frame's size is not a stranger's to choose). Nothing here rejects the
+ * whole create — a table with an unusable rule bag is still a table, and the game's resolver reads
+ * anything it does not recognise as off anyway.
+ */
+const MAX_RULES = 16;
+const MAX_RULE_ID = 32;
+function sanitizeRules(raw: unknown): TableRules {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, boolean> = {};
+  let n = 0;
+  for (const [id, on] of Object.entries(raw as Record<string, unknown>)) {
+    if (on !== true) continue;
+    if (id.length === 0 || id.length > MAX_RULE_ID) continue;
+    if (n >= MAX_RULES) break;
+    out[id] = true;
+    n += 1;
+  }
+  return out;
+}
 
 const TS_WIDTH = 15;
 const COUNTER_WIDTH = 6;
@@ -123,6 +154,18 @@ export class RoomStore {
   }
 
   /**
+   * The table's house rules. What a DEALT game is played under, read from the room rather than from
+   * whoever pressed Deal — `anteOf`'s sibling, and the reason `unoStart` carries no rules field.
+   *
+   * `{}` for a room that does not exist, which is the same answer as "plays it straight": a start
+   * against a vanished room refuses anyway, and the failure mode to avoid is a missing room reading
+   * as a rule somebody's hand gets played under.
+   */
+  rulesOf(gameId: string, roomId: string): TableRules {
+    return this.get(gameId, roomId)?.houseRules ?? {};
+  }
+
+  /**
    * Every room where `uid` holds a seat. The disconnect path asks the STORE which seats a leaver
    * holds rather than trusting a per-connection mirror: a socket that claimed a seat and never
    * declared presence used to leak that seat forever on close, because the close path walked the
@@ -151,17 +194,22 @@ export class RoomStore {
    * infinite or NaN stake becomes `0` — a table that plays for nothing — rather than reaching the
    * ledger. Money is integer cents everywhere in this repo for the reason v1's `parseInt` gave, and
    * a stake is the one number here a browser gets to choose.
+   *
+   * `houseRules` is BOUNDED here for the same reason and in the same place — see `sanitizeRules`.
+   * Its keys are not the server's to understand; its shape and size are.
    */
   create(
     gameId: string,
     host: SeatOccupant,
     seatCount: number,
     visibility: RoomVisibility = 'public',
-    anteCents = 0
+    anteCents = 0,
+    houseRules: unknown = undefined
   ): { ok: true; roomId: string } | { ok: false; error: string } {
     const claimed = claimSeatPure(emptyTable(seatCount), 0, host);
     if (!claimed.ok) return { ok: false, error: 'Could not seat the host.' };
     const ante = Number.isFinite(anteCents) ? Math.max(0, Math.floor(anteCents)) : 0;
+    const rules = sanitizeRules(houseRules);
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const roomId = this.makeCode();
@@ -173,6 +221,7 @@ export class RoomStore {
         hostName: host.name,
         visibility,
         anteCents: ante,
+        houseRules: rules,
         status: 'waiting',
         createdAt: this.now(),
         seq: 0,
@@ -219,6 +268,7 @@ export class RoomStore {
         openSeats,
         seatCount: room.seats.length,
         anteCents: room.anteCents,
+        houseRules: room.houseRules,
         createdAt: room.createdAt,
       });
     }
@@ -239,6 +289,7 @@ export class RoomStore {
         createdAt: room.createdAt,
         seq: room.seq,
         anteCents: room.anteCents,
+        houseRules: room.houseRules,
       },
       seats: room.seats.map((s) => ({ ...s })),
       state: room.state,
