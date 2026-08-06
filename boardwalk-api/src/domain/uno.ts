@@ -33,15 +33,20 @@
  * resync could not double-charge; the nonce does that job here.
  */
 import {
+  HOUSE_TABLE_LEVEL,
   applyMove,
   chooseAiMove,
   deal,
   dealEvent,
   describeMove,
+  maxRoundPayout,
   placesOf,
+  potBacking,
   potFor,
   potSplit,
+  rankedPayees,
   roundOver,
+  stakePerSeat,
   toPublic,
   winnerOf,
   type Move,
@@ -97,11 +102,13 @@ interface StoredMatch {
   /**
    * How hard the bots play, stamped at the deal.
    *
-   * IT IS THE ONE THING `unoStart` STILL CARRIES FROM A CLIENT, and the distinction is worth being
-   * precise about: a difficulty is not money. It cannot move a chip, cannot name an outcome, and
-   * the worst a hostile value could do is make the house play badly against the person who chose
-   * it. The ante is the opposite on every count, which is exactly why that one is read off the room
-   * and not off this frame.
+   * IT IS THE ONE THING `unoStart` STILL CARRIES FROM A CLIENT — **and only while nobody is paying
+   * for it.** The distinction used to be clean: a difficulty is not money, it cannot move a chip or
+   * name an outcome, and the worst a hostile value could do is make the house play badly against
+   * the person who chose it. That last clause is exactly what a HOUSE table inverts, because there
+   * the house pays the bill and `HOUSE_RETURN` was measured against `sharp` alone. So the value
+   * below is the client's at a table of people and `HOUSE_TABLE_LEVEL` at a table the house banks —
+   * pinned in `startMatch`, in the transaction that takes the ante.
    *
    * Stored rather than passed per turn because the referee drives bots on its own timer, long after
    * whoever picked it may have closed their tab — and because a level that changed mid-round would
@@ -217,7 +224,7 @@ export interface StartInput {
    * `RoomMeta.anteCents`.
    */
   readonly anteCents: number;
-  /** How hard the bots play. A difficulty, not money — see `StoredMatch.level`. */
+  /** How hard the bots play — a REQUEST, honoured only when the house is not paying for it. */
   readonly level: UnoLevel;
   /**
    * WHAT THE TABLE AGREED TO PLAY, read off the ROOM by the caller — never off a client frame, for
@@ -265,9 +272,23 @@ export function startMatch(
 
   // The stake and the pot both come from the SHARED rule, so the number the board draws and the
   // number the ledger takes cannot be two different pieces of arithmetic. It is also where the
-  // two-humans rule lives — below that the table plays for XP and stats alone.
-  const stake = potFor(input.seats, input.anteCents) === 0 ? 0 : Math.floor(input.anteCents);
+  // question of WHO FUNDS THE POT lives: two or more humans build it out of their own antes, one
+  // human is banked by the house at `HOUSE_RETURN` of fair odds, and nobody with an account plays
+  // for XP and stats alone.
+  const backing = potBacking(input.seats, input.anteCents);
+  const stake = stakePerSeat(input.seats, input.anteCents);
   const pot = potFor(input.seats, input.anteCents);
+
+  // THE TIER IS PINNED WHEN THE HOUSE IS THE COUNTERPARTY, and it is pinned HERE — in the one
+  // transaction that both takes the ante and stamps the level — rather than at the transport.
+  //
+  // `StoredMatch.level` says a difficulty "cannot move a chip, cannot name an outcome, and the
+  // worst a hostile value could do is make the house play badly against the person who chose it".
+  // That was true of every UNO table ever dealt until this slice, and it is exactly false at a
+  // house table: the odds were measured against `sharp`, the player picks the tier, and the house
+  // pays the bill. So the one field `unoStart` still carries from a client stops being trusted at
+  // precisely the moment it starts being worth something.
+  const level = backing === 'house' ? HOUSE_TABLE_LEVEL : input.level;
 
   const run = db.transaction((): Decision<StartOk> => {
     if (!claimNonce(db, host, input.nonce, 'uno-start', now)) {
@@ -305,7 +326,7 @@ export function startMatch(
       game,
       eventSeq: 0,
       lastEvent: dealEvent(game, previous === undefined),
-      level: input.level,
+      level,
     };
 
     const info = db
@@ -503,6 +524,13 @@ export function playAiTurn(
  * seat placed, so nobody is paid and the humans simply lose their antes — which is what this game
  * already did, now a consequence of the rule rather than a case of its own.
  *
+ * A HOUSE-FUNDED POT IS THE ONE PLACE THIS SYSTEM MINTS MONEY, so it gets the two guards nothing
+ * else here needs. It pays FIRST PLACE only (`rankedPayees` — with one payer the ordinary filter
+ * would pay them for finishing last), and every share is bounded by `maxRoundPayout`, computed from
+ * the match's OWN ante and seat count. Whether the house is in it is DERIVED and never stored: it
+ * is whatever the pot holds beyond what the players put in, which two numbers already on the row
+ * determine between them, so there is no third copy for a migration to miss or a bug to desync.
+ *
  * `recordOutcome` is the shared one, so stats/XP/achievements cannot drift from the generic path.
  * ONLY FIRST PLACE IS A `win`: placing 2nd of 4 is not a win, and inventing a half-win would put a
  * second meaning into a number four leaderboards already rank. A bot gets nothing, having no account
@@ -521,12 +549,28 @@ export function settleMatch(db: Db, matchId: number, match: StoredMatch, now: nu
 
   // The paying seats, in the order they went out. A bot on the podium is simply not here: it staked
   // nothing, so it takes nothing, and it does not consume a share that would have to go somewhere.
-  const paid = new Set(players.map((p) => p.seat));
-  const ranked = placesOf(match.game).filter((seat) => paid.has(seat));
+  // At a HOUSE table there is one payer, so this collapses to "did that player come first".
+  const staked = players.reduce((total, player) => total + player.ante_cents, 0);
+  const houseFunded = pot > staked;
+  const ranked = rankedPayees(
+    placesOf(match.game),
+    players.map((p) => p.seat),
+    houseFunded
+  );
   const split = potSplit(pot, ranked.length);
+
+  // THE PER-MATCH CEILING, from the match's own facts and not from a constant — `hands` is one
+  // entry per chair, and every human at a table pays the same ante. It never binds on an honest
+  // round (see `maxRoundPayout`), which is the point: it is what stops a mistake in the pot
+  // arithmetic writing an unbounded ledger row, and it clamps rather than throwing because a
+  // settle that threw would roll itself back and strand the antes in an unsettled round forever.
+  const ceiling = maxRoundPayout(
+    players.reduce((most, player) => Math.max(most, player.ante_cents), 0),
+    match.game.hands.length
+  );
   const payoutOf = (seat: number): number => {
     const place = ranked.indexOf(seat);
-    return place < 0 ? 0 : (split[place] ?? 0);
+    return place < 0 ? 0 : Math.min(split[place] ?? 0, ceiling);
   };
 
   db.prepare('UPDATE uno_matches SET settled = 1, state_json = ?, updated_at = ? WHERE id = ?').run(

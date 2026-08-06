@@ -54,6 +54,28 @@ export interface GameOption {
   readonly type: 'select';
   readonly default: string;
   readonly choices: readonly GameOptionChoice[];
+  /**
+   * WHAT THIS OPTION IS FIXED AT WHEN THE TABLE IS PLAYING FOR MONEY, and one line saying why.
+   *
+   * Absent on every option but one, and the one is UNO's bot tier at a house-banked table: the
+   * odds were priced against `sharp`, so leaving `casual` selectable at a `sharp` price is not an
+   * exploit to be discovered later, it is the feature paying out on demand. `value` must be one of
+   * `choices` (asserted in `tests/game-options.test.ts`, the same guard `default` has, and for the
+   * same failure — a pin outside the set renders a control with nothing selected).
+   *
+   * It is DATA rather than a rule the OS knows, exactly like `manifest.houseRules`: the game says
+   * what it pins and why, the shell draws a locked control and prints the sentence, and neither
+   * one learns what the other means. The `why` rides here rather than in the lobby because the
+   * lobby must not acquire an opinion about a value called `sharp`.
+   *
+   * IT IS NOT THE ENFORCEMENT. The referee pins the tier inside the transaction that takes the
+   * ante; this is what stops the UI showing a choice the table is not honouring, which is the same
+   * split as `canPlay` being a feel check over rules the dealer enforces.
+   */
+  readonly pinnedForMoney?: {
+    readonly value: string;
+    readonly why: string;
+  };
 }
 
 /** What a manifest declares. Absent on a game with nothing to configure — most of them. */
@@ -110,4 +132,33 @@ export function setOptionValue(
   if (option === undefined || !isChoice(option, value)) return values;
   if (values[id] === value) return values;
   return { ...values, [id]: value };
+}
+
+/**
+ * The values as the table will actually be played, with every `pinnedForMoney` option forced when
+ * money is on the table.
+ *
+ * ONE FUNCTION SO THE CONTROL AND THE GAME CANNOT DISAGREE. `<GameOptions>` renders what this
+ * returns and the game sends what this returns, so the tier a player is shown facing is the tier
+ * the client asks for. A second implementation on either side is a lobby that says `sharp` while
+ * the deal says `casual` — which nothing would surface, because the referee pins it anyway and the
+ * game would play correctly while the screen lied.
+ *
+ * Unpinned (or nothing declared) returns the SAME OBJECT by identity, `setOptionValue`'s rule for
+ * its reason: it is read in render, and a fresh object every pass is a re-render on every keystroke
+ * anywhere in the lobby.
+ */
+export function pinnedOptionValues(
+  spec: GameOptionsSpec,
+  values: OptionValues,
+  forMoney: boolean
+): OptionValues {
+  if (!forMoney) return values;
+  return spec.reduce(
+    (acc, option) =>
+      option.pinnedForMoney === undefined
+        ? acc
+        : setOptionValue(spec, acc, option.id, option.pinnedForMoney.value),
+    values
+  );
 }

@@ -60,3 +60,52 @@ export function anteChoices(betting?: { readonly min: number; readonly max: numb
  * control. Opting IN to stakes is a decision; opting out of them must not have to be.
  */
 export const DEFAULT_ANTE_CENTS = 0;
+
+/** What a game declares about money. The OS's view of `manifest.betting` — a range and one flag. */
+export interface BettingSpec {
+  readonly min: number;
+  readonly max: number;
+  /** A lone player may bet: the house banks the pot. See `GameManifest.betting`. */
+  readonly house?: boolean;
+}
+
+/**
+ * WHO WOULD FUND THIS TABLE'S POT, as far as the OS can tell — which is only ever enough to decide
+ * what to SAY and which controls to lock.
+ *
+ * `'players'` two or more humans anteing into a pot of their own money; `'house'` one human banked
+ * by a game that declared `betting.house`; `'none'` no usable stake, or a lone player at a game
+ * that never measured what its bots are worth.
+ *
+ * **THIS IS NOT THE AUTHORITY AND MUST NOT BECOME ONE.** The rule that decides what leaves the
+ * ledger is the game's own (`potBacking` in UNO's rulebook, run by the referee); this is the same
+ * question asked from the one place that cannot import a rulebook, because `src/system/room` moving
+ * a bag it must not interpret is what keeps a second game's house rules from having to work around
+ * UNO's. Two mechanisms for one rule is a thing this repo permits only with an assertion attached,
+ * so `tests/uno-house-bet.test.ts` drives both over every table shape off the REAL manifest and
+ * asserts they agree. Getting it wrong here costs a wrong sentence, never a wrong payout — but a
+ * wrong sentence about money is what the ante line was already fixed once for.
+ */
+export type TableBacking = 'none' | 'players' | 'house';
+
+/**
+ * Two, and it is the game's number rather than the OS's — `MIN_HUMANS_TO_BET` in UNO's `pot.ts`,
+ * restated here because the OS may not import a rulebook and asserted equal to it in the test named
+ * above. It is the threshold between a pot made of players' money and one the house banks, not
+ * between betting and not; below it there is still a game to play for money, just not one where
+ * anybody's ante is somebody else's winnings.
+ */
+const MIN_HUMANS_FOR_A_PLAYER_POT = 2;
+
+export function tableBacking(
+  betting: BettingSpec | undefined,
+  anteCents: number,
+  humans: number
+): TableBacking {
+  if (betting === undefined) return 'none';
+  if (!Number.isFinite(anteCents) || Math.floor(anteCents) <= 0) return 'none';
+  if (!Number.isFinite(humans)) return 'none';
+  if (humans >= MIN_HUMANS_FOR_A_PLAYER_POT) return 'players';
+  if (humans === 1 && betting.house === true) return 'house';
+  return 'none';
+}

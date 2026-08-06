@@ -15,6 +15,7 @@ import {
   drawDebt,
   mustDraw,
   placesOf,
+  potBacking,
   type Card as UnoCard,
   type Move,
   type UnoColor,
@@ -30,6 +31,7 @@ import { TableCentre } from '@/games/uno/components/TableCentre';
 import { PenaltyFlash, RoundResult, TurnCue, UnoShout } from '@/games/uno/components/UnoOverlays';
 import { opponentSlots, slotsOn, type UnoSeatSide } from '@/games/uno/seatLayout';
 import { ordinal } from '@/games/uno/log';
+import { pinnedOptionValues } from '@/system/options/options';
 import { useGameOptions } from '@/system/options/useGameOptions';
 import { unoBotLevel } from '@/games/uno/manifest';
 
@@ -83,12 +85,25 @@ const RING: Record<UnoColor, string> = {
 };
 
 export function Board() {
-  const { state, seats, status, isHost, gameId, roomId, myId } = useRoom<UnoState>();
+  const { state, seats, status, meta, isHost, gameId, roomId, myId } = useRoom<UnoState>();
   // The table's difficulty, chosen in the lobby before the deal. The OS holds the value
   // (`<GameShell>`) and draws the control; turning it into a level the rulebook understands is the
   // game's job, and `unoBotLevel` is where that meaning lives. It rides the DEAL to the referee,
   // which is what drives the bots now — the client that picked it may have closed its tab by then.
-  const botLevel = unoBotLevel(useGameOptions().values);
+  //
+  // PINNED WHEN THE HOUSE IS BANKING THE POT, off this game's own rule rather than off the lobby's
+  // reading of it — `potBacking` is what the referee runs, so the client asks the same question of
+  // the same function. The referee pins it regardless, and that is the authority; sending a level
+  // we know will be overridden would leave the one field `unoStart` still carries from a client
+  // saying something untrue.
+  const options = useGameOptions();
+  const botLevel = unoBotLevel(
+    pinnedOptionValues(
+      options.spec,
+      options.values,
+      potBacking(seats, meta?.anteCents ?? 0) === 'house'
+    )
+  );
   const { mySeatIndex, isMyTurn } = useSeats();
   const adoptProfile = useAuthStore((s) => s.adoptProfile);
   const felt = useEquippedFelt();

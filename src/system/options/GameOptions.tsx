@@ -1,4 +1,5 @@
 import { Button, cx } from '@/ui';
+import { pinnedOptionValues } from '@/system/options/options';
 import { useGameOptions } from '@/system/options/useGameOptions';
 
 /**
@@ -26,41 +27,66 @@ export interface GameOptionsProps {
   readonly className?: string;
   /** Locks the control (a game in flight, or a guest in a room the host configures). */
   readonly disabled?: boolean;
+  /**
+   * This table is playing for money, so every option declaring `pinnedForMoney` shows its pinned
+   * value, locked, with the game's own one-line reason under it. See `GameOption.pinnedForMoney`.
+   */
+  readonly forMoney?: boolean;
 }
 
-export function GameOptions({ className, disabled = false }: GameOptionsProps) {
+export function GameOptions({ className, disabled = false, forMoney = false }: GameOptionsProps) {
   const { spec, values, setOption } = useGameOptions();
   if (spec.length === 0) return null;
+  // Rendered from the SAME function the game sends from, so the control cannot show a tier the
+  // table is not being played at.
+  const shown = pinnedOptionValues(spec, values, forMoney);
 
   return (
-    <div className={cx('flex flex-wrap items-center gap-3', className)}>
-      {spec.map((option) => (
-        <div key={option.id} className="flex items-center gap-2">
-          <span className="text-bw-muted font-display text-xs tracking-[0.12em] uppercase">
-            {option.label}
-          </span>
-          <div className="flex overflow-hidden rounded-md" role="group" aria-label={option.label}>
-            {option.choices.map((choice) => {
-              const selected = values[option.id] === choice.value;
-              return (
-                <Button
-                  key={choice.value}
-                  variant={selected ? 'secondary' : 'quiet'}
-                  size="sm"
-                  disabled={disabled}
-                  aria-pressed={selected}
-                  onClick={() => {
-                    setOption(option.id, choice.value);
-                  }}
-                  className="rounded-none"
-                >
-                  {choice.label}
-                </Button>
-              );
-            })}
+    <div className={cx('flex flex-wrap items-start gap-3', className)}>
+      {spec.map((option) => {
+        const pin = forMoney ? option.pinnedForMoney : undefined;
+        return (
+          <div key={option.id} className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-bw-muted font-display text-xs tracking-[0.12em] uppercase">
+                {option.label}
+              </span>
+              <div
+                className="flex overflow-hidden rounded-md"
+                role="group"
+                aria-label={option.label}
+              >
+                {option.choices.map((choice) => {
+                  const selected = shown[option.id] === choice.value;
+                  // A PINNED OPTION DRAWS ONE BUTTON, not four greyed ones. A disabled row of
+                  // choices reads as "broken", where a single locked value reads as "this is what
+                  // you are facing" — and it is the accurate picture, since the referee will play
+                  // that value whatever this control last said.
+                  if (pin !== undefined && !selected) return null;
+                  return (
+                    <Button
+                      key={choice.value}
+                      variant={selected ? 'secondary' : 'quiet'}
+                      size="sm"
+                      disabled={disabled || pin !== undefined}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setOption(option.id, choice.value);
+                      }}
+                      className="rounded-none"
+                    >
+                      {choice.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            {pin !== undefined && (
+              <p className="text-bw-muted max-w-64 text-right text-xs">{pin.why}</p>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -29,10 +29,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  HOUSE_RETURN,
+  HOUSE_TABLE_LEVEL,
   applyMove,
   canPlay,
   chooseAiMove,
   deal,
+  housePayout,
   resolveHouseRules,
   roundOver,
   tableOf,
@@ -59,10 +62,16 @@ function seeded(seed: number): () => number {
 const SEAT_COUNTS = [2, 3, 4, 5, 6, 7] as const;
 
 /**
- * THE MULTIPLE §4 MAY PAY, as a fraction of fair odds: the house returns `N × HOUSE_RETURN` times
- * the ante to a winner, so a table of N pays strictly less than the `N×` that would be EV-neutral.
+ * THE MULTIPLE §4 PAYS, as a fraction of fair odds: the house returns `N × HOUSE_RETURN` times the
+ * ante to a winner, so a table of N pays strictly less than the `N×` that would be EV-neutral.
  *
- * **2/3, where the measurements alone would carry 0.81**, and the gap is bought deliberately. The
+ * **IT IS IMPORTED, NOT RESTATED — and that is slice 5's doing.** While the number lived here it
+ * was a measurement with no consumer; it is now the constant the referee actually pays at, so this
+ * harness asserts a bound on the money that moves rather than on a number that resembles it. §4.2
+ * left it in the test on purpose ("a constant landing before its reader is `loadout.color`"), and
+ * the reader arrived with slice 5.
+ *
+ * **2/3, where the measurements alone would carry 0.813**, and the gap is bought deliberately. The
  * challenger below is a LOWER bound (see the header), so the margin is not padding around a known
  * number — it is the only protection against the player this harness cannot play. At 3/4 the
  * measured break-even is cleared by 8%; at 2/3 it is cleared by 22%, which is the difference between
@@ -73,7 +82,6 @@ const SEAT_COUNTS = [2, 3, 4, 5, 6, 7] as const;
  * Blackjack's edge is computed against a rulebook that is fully known, and this one is computed
  * against an opponent nobody has measured.
  */
-const HOUSE_RETURN = 2 / 3;
 
 /**
  * The most a player may win, as a multiple of fair, before the house starts losing money:
@@ -437,5 +445,28 @@ describe('the pricing bound — what the house may safely pay', () => {
     // which is where the house actually starts losing, and it fires while the multiple is a decision
     // rather than a ledger row. If it goes red: re-read the table in the plan, do not widen the band.
     expect(MAX_SAFE_LIFT / worstChallengerLift()).toBeGreaterThan(1.15);
+  });
+
+  it('prices the payout the referee ACTUALLY pays, at the tier it actually deals', () => {
+    // WHAT MAKES THIS A GUARD ON MONEY RATHER THAN A MEASUREMENT. Everything above is phrased in
+    // lift, which is a ratio and could stay green while the cents diverged; this is the line that
+    // ties it to the ledger. `housePayout` is the shared function the settle pays from, so it is
+    // asserted to BE `ante × N × HOUSE_RETURN` — falsified by re-pricing the payout without moving
+    // `HOUSE_RETURN`, which every assertion above would otherwise sail through.
+    for (let n = 2; n <= 7; n += 1) {
+      for (const ante of [100, 2_500, 100_000]) {
+        expect(housePayout(ante, n)).toBe(Math.floor(ante * n * HOUSE_RETURN));
+        // Sub-fair at every size, which is the entire distinction from v1's version.
+        expect(housePayout(ante, n)).toBeLessThan(ante * n);
+      }
+    }
+    // AND THE TIER. Every rate in this file was measured against `sharp` opponents; the referee
+    // pins a house table to `HOUSE_TABLE_LEVEL`, and if that ever stops being the level measured
+    // here the whole table above is priced against a game nobody is playing.
+    expect(oneAgainstSharp(4, 'challenger').slice(1)).toEqual([
+      HOUSE_TABLE_LEVEL,
+      HOUSE_TABLE_LEVEL,
+      HOUSE_TABLE_LEVEL,
+    ]);
   });
 });
