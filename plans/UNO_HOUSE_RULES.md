@@ -358,9 +358,11 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    reach that branch (the first draft played a number, entered nothing, and passed while the bug was
    live). And `mustDraw`/`chooseAiMove` both came out unchanged, which is the evidence that a house
    rule belongs inside `canPlay` rather than beside it.
-3. ~~**Ranked places**~~ — **BUILT.** `finished[]`, the live-seat rotation, `potSplit` and its
-   conservation property, the podium in the result panel, the log's placement lines. **The Pi deploy
-   is owed** — see below.
+3. ~~**Ranked places**~~ — **DONE and DEPLOYED (2026-08-06).** `finished[]`, the live-seat rotation,
+   `potSplit` and its conservation property, the podium in the result panel, the log's placement
+   lines. It is the first house rule that needed a Pi deploy to mean anything at all — stacking
+   reached the referee entirely through the shared package, and this one carries a `settleMatch`
+   change that does not.
    **Three things worth carrying into slice 4.** `winner !== -1` was never one question (see §3), and
    the two it split into are now the vocabulary the rest of this plan should use. `uno.ts` reached
    the 800-line ceiling, so the AI moved to `ai.ts` — mechanical, re-exported by `index.ts`, no
@@ -377,7 +379,9 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    removing the field would blank the result panel for every one of them during the window between
    the two deploys.
 4. **The house-odds simulation** — a test that reports `sharp`'s true win rate per seat count, with
-   and without stacking. Read the number, then decide whether §4 ships and at what multiple.
+   and without stacking. Read the number, then decide whether §4 ships and at what multiple. It
+   imports from `ai.ts` now rather than `uno.ts`; slice 3 moved the bots out when the rulebook's
+   front door reached the 800-line ceiling.
 5. **Betting the house** — only if step 4 says the edge is real.
 
 Every slice ends green, and each of 2 and 3 is a **shared-rulebook change**, which means the Pi
