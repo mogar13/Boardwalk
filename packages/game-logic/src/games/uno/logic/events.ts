@@ -17,7 +17,8 @@
  * renders its own prose from these facts.
  */
 
-import { DEAL_EVENT, type Card, type Move, type UnoEvent, type UnoGame } from './uno';
+import { DEAL_EVENT, tableOf, type Card, type Move, type UnoEvent, type UnoGame } from './uno';
+import { drawDebt } from './stacking';
 
 /** Seats whose hand grew, and by how much — the only way to see a draw-2/4 without re-deriving it. */
 function grewBy(before: UnoGame, after: UnoGame, seat: number): number {
@@ -73,6 +74,12 @@ export function describeMove(
   const calledUno = after.calledUno[seat] === true && before.calledUno[seat] !== true;
   const penalty = move.type === 'play' && actorGrew > -1;
 
+  // HOW MANY THE ACTOR DREW, recovered from the same net diff. A play always spends one card, so
+  // its net change is `took - 1` and a plain play comes out at zero; a draw's net IS what it drew.
+  // Floored at zero rather than trusted, since a diff is arithmetic on two states and a negative
+  // number of cards drawn is not a fact the log should ever be able to state.
+  const took = Math.max(0, move.type === 'play' ? actorGrew + 1 : actorGrew);
+
   return {
     seq,
     seat,
@@ -86,6 +93,10 @@ export function describeMove(
     calledUno,
     penalty,
     winner: after.winner,
+    // READ OFF THE RESULT, like the victim and the skip above: the log says what the debt IS, not
+    // what this card added to it, so a rule change to what a +4 contributes needs no edit here.
+    stacked: drawDebt(tableOf(after)),
+    took,
     leads: -1, // a move is not a deal; only `dealEvent` ever sets this
   };
 }

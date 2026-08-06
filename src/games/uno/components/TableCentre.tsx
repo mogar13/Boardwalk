@@ -63,6 +63,8 @@ export interface TableCentreProps {
   readonly color: UnoColor;
   readonly direction: 1 | -1;
   readonly deckCount: number;
+  /** Cards a live stack owes whoever is on turn; `0` at a table not playing that house rule. */
+  readonly pending: number;
   readonly canDraw: boolean;
   readonly onDraw: () => void;
 }
@@ -72,6 +74,7 @@ export function TableCentre({
   color,
   direction,
   deckCount,
+  pending,
   canDraw,
   onDraw,
 }: TableCentreProps) {
@@ -99,7 +102,11 @@ export function TableCentre({
           type="button"
           disabled={!canDraw}
           onClick={onDraw}
-          aria-label={`Draw a card — ${String(deckCount)} left in the deck`}
+          aria-label={
+            pending > 0
+              ? `Take the stack — ${String(pending)} cards`
+              : `Draw a card — ${String(deckCount)} left in the deck`
+          }
           className={cx(
             'group relative rounded-box transition',
             canDraw
@@ -134,6 +141,17 @@ export function TableCentre({
           <span className="bg-base-100/90 border-bw-line text-bw-muted absolute -right-2 -bottom-2 rounded-full border px-1.5 py-0.5 text-[0.65rem] tabular-nums">
             {deckCount}
           </span>
+          {/* WHAT THE PILE OWES YOU. The deck-count badge's own treatment mirrored to the opposite
+              corner, because it is the same kind of fact about the same object — how many cards are
+              coming off it. FLAT `warning` and no glow: the budget is blue=act, cyan=here,
+              gold=money, and a stack is a threat rather than any of the three. It is also the one
+              number on the felt that makes the dimmed fan legible — without it, a hand where only
+              the +2s light up reads as a bug. */}
+          {pending > 0 && (
+            <span className="bg-base-100/90 border-warning text-warning absolute -top-2 -left-2 rounded-full border px-1.5 py-0.5 text-[0.7rem] font-bold tabular-nums">
+              +{pending}
+            </span>
+          )}
         </button>
 
         {/* DISCARD — keyed on the card's id so a new top card MOUNTS and plays `pitch` once. */}

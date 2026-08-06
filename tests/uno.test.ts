@@ -12,6 +12,7 @@ import {
   type Card,
   type UnoColor,
   type UnoGame,
+  type UnoTable,
   applyMove,
   canPlay,
   chooseAiMove,
@@ -20,6 +21,7 @@ import {
   freshDeck,
   mustDraw,
   shuffle,
+  tableOf,
   toPublic,
   DEFAULT_HOUSE_RULES,
 } from '@boardwalk/game-logic/games/uno';
@@ -55,10 +57,24 @@ function game(hands: Card[][], topCard: Card, over: Partial<UnoGame> = {}): UnoG
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
+    pendingDraw: 0,
     houseRules: DEFAULT_HOUSE_RULES,
     ...over,
   };
 }
+
+/**
+ * The POSITION a card is played into, for the rule tests that have no whole game to hand. Stacking
+ * is off and nothing is owed — which is what every assertion below was written against, so the two
+ * new facts are stated once here rather than defaulted inside `canPlay`, where "no stack" would
+ * become the silent meaning of a short call. Stacking's own tests are in `tests/uno-stacking.test.ts`.
+ */
+const at = (top: Card, color: UnoColor): UnoTable => ({
+  top,
+  color,
+  pendingDraw: 0,
+  houseRules: DEFAULT_HOUSE_RULES,
+});
 
 describe('deck', () => {
   it('is 108 cards with the right composition and unique ids', () => {
@@ -88,18 +104,18 @@ describe('deck', () => {
 describe('canPlay', () => {
   const top = c('red', 'number', 5);
   it('matches on colour, on value, and on action-of-any-colour; wild always plays', () => {
-    expect(canPlay(c('red', 'number', 9), top, 'red')).toBe(true); // colour
-    expect(canPlay(c('blue', 'number', 5), top, 'red')).toBe(true); // value
-    expect(canPlay(c('blue', 'number', 9), top, 'red')).toBe(false); // neither
-    expect(canPlay(c('wild', 'wild'), top, 'red')).toBe(true);
+    expect(canPlay(c('red', 'number', 9), at(top, 'red'))).toBe(true); // colour
+    expect(canPlay(c('blue', 'number', 5), at(top, 'red'))).toBe(true); // value
+    expect(canPlay(c('blue', 'number', 9), at(top, 'red'))).toBe(false); // neither
+    expect(canPlay(c('wild', 'wild'), at(top, 'red'))).toBe(true);
     const skipTop = c('red', 'skip');
-    expect(canPlay(c('blue', 'skip'), skipTop, 'red')).toBe(true); // skip on skip, any colour
-    expect(canPlay(c('blue', 'number', 5), skipTop, 'red')).toBe(false);
+    expect(canPlay(c('blue', 'skip'), at(skipTop, 'red'))).toBe(true); // skip on skip, any colour
+    expect(canPlay(c('blue', 'number', 5), at(skipTop, 'red'))).toBe(false);
   });
   it('respects the active colour a wild set, not the top card colour', () => {
     const wildTop = c('wild', 'wild4');
-    expect(canPlay(c('green', 'number', 2), wildTop, 'green')).toBe(true);
-    expect(canPlay(c('red', 'number', 2), wildTop, 'green')).toBe(false);
+    expect(canPlay(c('green', 'number', 2), at(wildTop, 'green'))).toBe(true);
+    expect(canPlay(c('red', 'number', 2), at(wildTop, 'green'))).toBe(false);
   });
 });
 
@@ -107,24 +123,24 @@ describe('mustDraw — the position where the board draws for you', () => {
   const top = c('red', 'number', 5);
 
   it('is true only when NOTHING in the hand plays', () => {
-    expect(mustDraw([c('blue', 'number', 9), c('green', 'skip')], top, 'red')).toBe(true);
-    expect(mustDraw([c('blue', 'number', 9), c('red', 'number', 1)], top, 'red')).toBe(false); // colour
-    expect(mustDraw([c('blue', 'number', 5)], top, 'red')).toBe(false); // value
-    expect(mustDraw([c('wild', 'wild4')], top, 'red')).toBe(false); // a wild always plays
+    expect(mustDraw([c('blue', 'number', 9), c('green', 'skip')], at(top, 'red'))).toBe(true);
+    expect(mustDraw([c('blue', 'number', 9), c('red', 'number', 1)], at(top, 'red'))).toBe(false); // colour
+    expect(mustDraw([c('blue', 'number', 5)], at(top, 'red'))).toBe(false); // value
+    expect(mustDraw([c('wild', 'wild4')], at(top, 'red'))).toBe(false); // a wild always plays
   });
 
   it('reads the ACTIVE colour, not the top card — a wild changes the answer', () => {
     const wildTop = c('wild', 'wild');
     const hand = [c('green', 'number', 2)];
-    expect(mustDraw(hand, wildTop, 'green')).toBe(false);
-    expect(mustDraw(hand, wildTop, 'red')).toBe(true);
+    expect(mustDraw(hand, at(wildTop, 'green'))).toBe(false);
+    expect(mustDraw(hand, at(wildTop, 'red'))).toBe(true);
   });
 
   it('is FALSE for an empty hand — a won hand and an unloaded one look identical', () => {
     // The trap this function exists to close. `![].some(…)` is `true`, so an inline check reads a
     // hand whose private node has not arrived yet as "you must draw" and draws for a player who has
     // not been dealt in. Both callers (the hint and the auto-draw) go through here instead.
-    expect(mustDraw([], top, 'red')).toBe(false);
+    expect(mustDraw([], at(top, 'red'))).toBe(false);
   });
 
   it('agrees with the REDUCER: every play refused, and draw the one move that changes anything', () => {
@@ -136,7 +152,7 @@ describe('mustDraw — the position where the board draws for you', () => {
       [[c('blue', 'number', 9), c('green', 'skip')], [c('red', 'number', 1)]],
       top
     );
-    expect(mustDraw(stuck.hands[0] ?? [], top, stuck.color)).toBe(true);
+    expect(mustDraw(stuck.hands[0] ?? [], tableOf(stuck))).toBe(true);
     for (const card of stuck.hands[0] ?? []) {
       expect(applyMove(stuck, 0, { type: 'play', cardId: card.id })).toBe(stuck); // refused
     }
@@ -146,7 +162,7 @@ describe('mustDraw — the position where the board draws for you', () => {
       [[c('blue', 'number', 9), c('red', 'number', 1)], [c('red', 'skip')]],
       top
     );
-    expect(mustDraw(playable.hands[0] ?? [], top, playable.color)).toBe(false);
+    expect(mustDraw(playable.hands[0] ?? [], tableOf(playable))).toBe(false);
     const id = playable.hands[0]?.[1]?.id ?? '';
     expect(applyMove(playable, 0, { type: 'play', cardId: id })).not.toBe(playable);
   });

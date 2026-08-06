@@ -89,6 +89,11 @@ a seam with no boolean-typed option in it.
 
 ## 2. Stacking
 
+**Status: BUILT (slice 2).** `packages/game-logic/src/games/uno/logic/stacking.ts` +
+`tests/uno-stacking.test.ts` (37). Four things the design got right and two it did not, recorded
+below at the point each one is claimed. **`boardwalk-api` needed ZERO changes** — stacking reaches
+the referee entirely through the shared package, which is the Phase-D seam paying for itself.
+
 The rule everybody actually plays: a +2 played at you can be answered with your own +2, and the
 debt accumulates until somebody cannot answer and takes the lot.
 
@@ -115,6 +120,18 @@ interface UnoGame { readonly pendingDraw: number; /* 0 = nothing owed */ }
   point: every call site is forced to decide, rather than a default silently meaning "no stack".
   `mustDraw` becomes "there is a debt and nothing in hand answers it" **or** today's condition.
 
+  **As built, one argument rather than two.** They take a `UnoTable` — `{top, color, pendingDraw,
+  houseRules}` — because three loose arguments growing to five is how a call site ends up passing
+  most of the position. `UnoState` **extends** it, so a board hands its own projection in whole and
+  the feel check is literally the referee's call. And `mustDraw` needed **no stacking logic at
+  all**: "a debt nothing answers" is not a second condition, it is the first one read against a
+  position where `canPlay` has already collapsed the legal set. One rule, one place.
+
+  **`pendingDraw` is never read directly.** `drawDebt(table)` is the only reader, because the raw
+  field lies in two directions: a debt at a table whose `stack` is off (the flags are the authority,
+  the counter subordinate), and a referee that predates the field — which is the deploy order
+  reaching real players, where an absent `houseRules` is `undefined.stack` and takes the board down.
+
 ### The trap that has to be tested
 
 `drawCards` already stops early when the deck is dry and the discard cannot be recycled — that is a
@@ -124,6 +141,14 @@ the next player is owed a stack nobody can pay, cannot play anything else, and t
 forever on a turn only they can take — which is the same failure mode as an illegal bot move, one
 step removed. The test asserts the debt clears even when the draw comes up short.
 
+**As built, the trap was one word worse than this describes.** The short-draw case is real, but the
+sharp edge is the draw that yields **nothing at all**: `applyMove` answered that with `return game`,
+and with a debt outstanding an unchanged game is a victim who can neither answer nor draw, forever.
+So the no-op is now conditional on `owed === 0` — and it has to STAY a no-op there, because the
+board arms its auto-draw on a key built from the event seq and a dry deck that returned a changed
+state would move the seq and re-arm the timer. Both directions are asserted; the asymmetry is the
+rule.
+
 ### The bots
 
 `chooseAiMove` must answer a stack when it can. Both tiers stack — `sharp` deterministically,
@@ -132,6 +157,14 @@ tier that eats every +4, and CLAUDE.md's rule is that **a tier must never make t
 unwinnable**. That rule was paid for by UNO's own first `casual` draft. The guard is the same one:
 play whole dealt games to a WINNER at both tiers with `stack` on, asserting every move changes the
 state.
+
+**As built: neither tier needed a line of code**, and that is the single-predicate factoring
+earning its keep rather than luck. `canPlay` has already collapsed `playable` to the cards that
+answer the debt, so `sharp`'s "play a non-wild first" ranks +2 above +4 (saving the wild, which is
+what it was always doing) and `casual` picks at random among the answers — and both tiers' existing
+"nothing playable → draw" IS "cannot answer → take it". The alternative was a stacking branch in
+each tier, which is two more places for `casual` to acquire a rule that makes the game unwinnable.
+The guard ran as specified, over `stack` and `crossStack`, and stayed green.
 
 ### The board
 
@@ -257,8 +290,16 @@ check the running PID postdates it ([pi-deploy-procedure]).
    `create` frame, `RoomMeta`, `RoomListing`, the lobby toggles, the RTDB repo answering defaults.
    Ships with every rule OFF and therefore changes nothing observable: a pure seam, green, and
    independent of the three rules that will use it.
-2. **Stacking** — the rulebook, its tests (including the dry-deck debt), the bots, the projection,
-   the log, the board. Pi first, then merge.
+2. ~~**Stacking**~~ — **DONE.** The rulebook, its tests (including the dry-deck debt), the bots, the
+   projection, the log, the board. **The Pi deploy is still owed** — see §2's status note and the
+   CLAUDE.md row; the frontend degrades to "the toggle does nothing" against an old referee rather
+   than breaking, which is by construction and tested, but it is still a control that lies.
+   **Two things worth carrying into slice 3.** The reducer's read of `game.houseRules` is the first
+   one there has ever been, so a match row written before slice 1 can now reach a line that indexes
+   the bag — it is resolved rather than indexed, and the totality test has to PLAY A DRAW CARD to
+   reach that branch (the first draft played a number, entered nothing, and passed while the bug was
+   live). And `mustDraw`/`chooseAiMove` both came out unchanged, which is the evidence that a house
+   rule belongs inside `canPlay` rather than beside it.
 3. **Ranked places** — `finished[]`, the live-seat rotation, `potSplit` and its conservation
    property, the result UI. Pi first, then merge. Makes the pot's slice 2 cheaper.
 4. **The house-odds simulation** — a test that reports `sharp`'s true win rate per seat count, with

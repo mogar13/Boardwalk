@@ -23,6 +23,7 @@
  */
 
 import { DEFAULT_HOUSE_RULES, resolveHouseRules, type UnoHouseRules } from './houseRules';
+import { answersStack, drawDebt, type UnoTable } from './stacking';
 
 // ── Cards ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -107,26 +108,44 @@ function matchKey(card: Card): string {
   return card.kind === 'number' ? `n${String(card.value)}` : card.kind;
 }
 
-/** Whether `card` may be played on `top` given the active `color` (which a wild may have set). */
-export function canPlay(card: Card, top: Card, color: UnoColor): boolean {
+/**
+ * Whether `card` may be played into this position.
+ *
+ * IT TAKES THE WHOLE TABLE rather than `(top, color)`, and the signature change IS the feature: a
+ * live stack suspends colour and value matching entirely, so a call site that could still pass two
+ * of the four facts would be one that silently means "and no stack" — which is a client greying out
+ * the +2 the referee would have accepted. See `UnoTable`.
+ *
+ * The stack branch comes FIRST and returns, rather than widening the ordinary rules: while a debt
+ * stands, the ordinary rules do not apply at all. In particular a plain wild — which plays on
+ * anything below — is refused, because answering a draw card means drawing somebody something.
+ */
+export function canPlay(card: Card, table: UnoTable): boolean {
+  if (drawDebt(table) > 0)
+    return answersStack(card, table.top, resolveHouseRules(table.houseRules));
   if (isWild(card)) return true;
-  if (card.color === color) return true;
-  return matchKey(card) === matchKey(top);
+  if (card.color === table.color) return true;
+  return matchKey(card) === matchKey(table.top);
 }
 
 /**
- * Is `draw` this seat's ONLY legal move — a hand holding nothing that plays on the current top?
+ * Is `draw` this seat's ONLY legal move — a hand holding nothing this position accepts?
  * `applyMove` refuses every play from such a hand and accepts exactly one action, so a client that
  * takes it automatically removes a mandatory click rather than a decision. (Drawing here also ENDS
  * the turn — this rulebook has no play-what-you-drew — so there is nothing after it to choose.)
+ *
+ * IT NEEDED NO STACKING LOGIC OF ITS OWN, which is the factoring working: "there is a debt and
+ * nothing in hand answers it" is not a second condition, it is the first one read against a
+ * position where `canPlay` has collapsed the legal set. So the auto-draw takes the stack for you
+ * with no new mechanism, and the rule about what answers a stack lives in exactly one place.
  *
  * AN EMPTY HAND IS `false`, NOT `true`, and that is the whole reason this is a function rather than
  * an inline `!hand.some(…)`: a hand is `[]` both when a player has won and — the case that bites —
  * while their private `hands/` node is still loading, and `![].some(…)` is `true` for both. A caller
  * reading that as "you must draw" auto-draws on behalf of a player who has not been dealt yet.
  */
-export function mustDraw(hand: readonly Card[], top: Card, color: UnoColor): boolean {
-  return hand.length > 0 && !hand.some((card) => canPlay(card, top, color));
+export function mustDraw(hand: readonly Card[], table: UnoTable): boolean {
+  return hand.length > 0 && !hand.some((card) => canPlay(card, table));
 }
 
 // ── The complete game (host memory + the reducer's unit) ─────────────────────────────────────────
@@ -143,6 +162,11 @@ export interface UnoGame {
   readonly calledUno: readonly boolean[];
   /** The seat that emptied its hand, or `-1` while play continues (sentinel, never null). */
   readonly winner: number;
+  /**
+   * CARDS OWED to the seat on turn by a stack that has not been taken yet; `0` when nothing is
+   * owed, which is every position at a table not playing `stack`. Read it through `drawDebt`.
+   */
+  readonly pendingDraw: number;
   /**
    * THE RULES THIS ROUND WAS DEALT UNDER, stamped once by `deal` and never written again.
    *
@@ -163,6 +187,21 @@ const top = (g: UnoGame): Card => {
   if (c === undefined) throw new Error('uno: empty discard');
   return c;
 };
+
+/**
+ * The complete game as the POSITION a card is played into — the four facts `canPlay` reads, lifted
+ * off the state that holds twenty. It is the reducer's and the AI's bridge to the same predicate a
+ * client calls on `UnoState` directly (which extends `UnoTable`), so there is one legality rule and
+ * not a host copy and a client copy.
+ */
+export function tableOf(game: UnoGame): UnoTable {
+  return {
+    top: top(game),
+    color: game.color,
+    pendingDraw: game.pendingDraw,
+    houseRules: game.houseRules,
+  };
+}
 
 /** The active colour of a card as PLAYED — a wild takes the chosen colour, anything else its own. */
 function playedColor(card: Card, chosen: UnoColor): UnoColor {
@@ -264,6 +303,9 @@ export function deal(
     direction: 1,
     calledUno: hands.map(() => false),
     winner: -1,
+    // A fresh round owes nobody anything, whatever the last one ended holding. It is stated rather
+    // than inherited because a round is dealt from scratch — there is no state to carry over.
+    pendingDraw: 0,
     houseRules: resolveHouseRules(rules),
   };
 }
@@ -302,15 +344,35 @@ export function applyMove(
   if (hand === undefined) return game;
   const seatCount = game.hands.length;
 
+  const table = tableOf(game);
+  const owed = drawDebt(table);
+  // RESOLVED rather than read off the field, for the reason `toPublic` resolves: this is the first
+  // line in the reducer that ever ASKS what a rule says, and `game` can arrive from
+  // `uno_matches.state_json` — where a row written before house rules existed carries no bag at
+  // all, and `undefined.stack` is a TypeError that takes the dealer down mid-round rather than
+  // playing that match under the rules it was actually dealt with (none).
+  const rules = resolveHouseRules(game.houseRules);
+
   if (move.type === 'draw') {
-    const { drawn, deck, discard } = drawCards(game.deck, game.discard, 1, rng);
-    if (drawn.length === 0) return game;
+    // TAKING THE STACK IS THE `draw` MOVE — it pulls what is owed, clears the debt and ends the
+    // turn, which IS the skip the non-stacking version applies up front. Nothing owed is the
+    // ordinary one card.
+    const { drawn, deck, discard } = drawCards(game.deck, game.discard, Math.max(1, owed), rng);
+    // A DRY DECK STOPS A FRIENDLY GAME AND MUST NOT STOP A STACKED ONE, and the asymmetry is the
+    // trap this rule has to be tested for. With nothing owed, drawing nothing is a genuine no-op:
+    // the game is unchanged, the event seq does not move, and the board's auto-draw fires once and
+    // stops rather than spinning on a pile that cannot serve it. With a debt outstanding the same
+    // return would HANG THE TABLE FOREVER — the legal set has collapsed to cards that answer the
+    // stack, so a victim who can neither answer nor draw has no legal move at all, on a turn only
+    // they can take. So the debt clears on any take, including one the deck came up short on.
+    if (drawn.length === 0 && owed === 0) return game;
     return {
       ...game,
       deck,
       discard,
       hands: setAt(game.hands, seat, hand.concat(drawn)),
       calledUno: setAt(game.calledUno, seat, false),
+      pendingDraw: 0,
       turn: seatAfter(game.turn, 1, game.direction, seatCount),
     };
   }
@@ -319,7 +381,7 @@ export function applyMove(
   const idx = hand.findIndex((c) => c.id === move.cardId);
   const card = hand[idx];
   if (card === undefined) return game;
-  if (!canPlay(card, top(game), game.color)) return game;
+  if (!canPlay(card, table)) return game;
   if (isWild(card) && move.chosenColor === undefined) return game;
 
   const chosen = move.chosenColor ?? (card.color as UnoColor);
@@ -337,21 +399,31 @@ export function applyMove(
 
   // Resolve the action: how far the turn advances, and any victim draw.
   let steps = 1;
+  let pendingDraw = owed;
   if (card.kind === 'skip') {
     steps = 2;
   } else if (card.kind === 'reverse') {
     direction = (game.direction * -1) as 1 | -1;
     steps = seatCount === 2 ? 2 : 1; // heads-up reverse acts as a skip
   } else if (card.kind === 'draw2' || card.kind === 'wild4') {
-    const victim = seatAfter(game.turn, 1, game.direction, seatCount);
     const n = card.kind === 'draw2' ? 2 : 4;
-    const pulled = drawCards(deck, discardPile, n, rng);
-    deck = pulled.deck;
-    discardPile = pulled.discard;
-    const vHand = hands[victim];
-    if (vHand !== undefined) hands = setAt(hands, victim, vHand.concat(pulled.drawn));
-    calledUno = setAt(calledUno, victim, false);
-    steps = 2; // the victim is skipped
+    if (rules.stack) {
+      // STACKING: the card deals NOTHING and the turn advances ONE seat, because the victim has to
+      // be given the chance to answer. The skip has not vanished — it is deferred into the take
+      // (`draw` ends the turn), so a debt nobody answers rotates the table exactly as the immediate
+      // version does. `owed` rather than the raw field: a debt only exists where the rule does.
+      pendingDraw = owed + n;
+      steps = 1;
+    } else {
+      const victim = seatAfter(game.turn, 1, game.direction, seatCount);
+      const pulled = drawCards(deck, discardPile, n, rng);
+      deck = pulled.deck;
+      discardPile = pulled.discard;
+      const vHand = hands[victim];
+      if (vHand !== undefined) hands = setAt(hands, victim, vHand.concat(pulled.drawn));
+      calledUno = setAt(calledUno, victim, false);
+      steps = 2; // the victim is skipped
+    }
   }
 
   // UNO call + penalty, and win detection, on the player's NEW hand size.
@@ -385,6 +457,11 @@ export function applyMove(
     direction,
     calledUno,
     winner,
+    // A WON ROUND OWES NOBODY. Going out on a +2 with a stack live leaves a debt no seat will ever
+    // be asked to pay — the turn has stopped and the round is over — so carrying it would leave the
+    // board announcing "+6" over a finished hand. Clearing it is not a rules decision; it is
+    // refusing to state a fact that has stopped being one.
+    pendingDraw: winner === -1 ? pendingDraw : 0,
     // CARRIED, because this branch rebuilds the game field by field rather than spreading it. A
     // field added to `UnoGame` and not added here is not a type error (the literal is complete
     // either way once it is written) and not a visible bug on move one — the rules would simply be
@@ -452,7 +529,13 @@ export function chooseAiMove(
 ): Move {
   const hand = game.hands[seat];
   if (hand === undefined) return { type: 'draw' };
-  const playable = hand.filter((c) => canPlay(c, top(game), game.color));
+  // BOTH TIERS ANSWER A STACK, and neither needed a line of code for it: `canPlay` has already
+  // collapsed the legal set to the cards that answer the debt, so `playable` IS the set of answers
+  // and "nothing playable → draw" is "cannot answer → take it". That is the factoring earning its
+  // keep — the alternative was a stacking branch in each tier, which is two more places for
+  // `casual` to acquire a rule that makes the game unwinnable. Guarded by playing whole dealt games
+  // to a WINNER at both tiers with `stack` on.
+  const playable = hand.filter((c) => canPlay(c, tableOf(game)));
   if (playable.length === 0) return { type: 'draw' };
 
   if (level === 'casual') {
@@ -548,6 +631,22 @@ export interface UnoEvent {
   /** The seat that emptied its hand on this move, or `-1`. */
   readonly winner: number;
   /**
+   * CARDS NOW OWED to whoever is on turn, after this move; `0` when nothing is. The running total
+   * a stacking table needs said out loud — under stacking a +2 deals nobody anything and skips
+   * nobody, so `victim`/`drew`/`skipped` are all empty and the log would otherwise report a played
+   * card and nothing about the six coming at somebody.
+   */
+  readonly stacked: number;
+  /**
+   * HOW MANY CARDS THE ACTOR DREW on this move — a stack taken, the UNO penalty, or the ordinary
+   * one. `0` when they drew none.
+   *
+   * Separate from `victim`/`drew` rather than folded into them, because that pair means "somebody
+   * ELSE was made to draw" and its line reads "…and is skipped!" — which is true of a draw-two's
+   * victim and false of a player taking a stack, who is simply spending their own turn.
+   */
+  readonly took: number;
+  /**
    * DEAL EVENTS ONLY: the seat leading this round because it won the last one, or `-1` when nobody
    * has (the opening deal). It is on the event rather than derived from `UnoState.turn` because
    * `turn` at the deal answers "who plays first", which is the same seat but a different fact — a
@@ -575,6 +674,8 @@ export const DEAL_EVENT: UnoEvent = {
   calledUno: false,
   penalty: false,
   winner: -1,
+  stacked: 0,
+  took: 0,
   leads: -1,
 };
 
@@ -583,10 +684,14 @@ export const DEAL_EVENT: UnoEvent = {
  * top discard, the active colour, per-seat COUNTS, and whose turn it is. This is the `TPublic` the
  * host writes to `state/data`; the deck and every hand stay off the wire. All wire-safe: `winner` is
  * a `-1` sentinel, `pending` is the sentinel above rather than null, every array is dense.
+ *
+ * IT EXTENDS `UnoTable` rather than restating those four fields, and the inheritance is load-bearing
+ * rather than tidy: it is what lets a client hand its own state straight to `canPlay`/`mustDraw`, so
+ * the feel check a board runs is literally the call the referee made. Two independent copies of
+ * `{top, color, pendingDraw, houseRules}` would typecheck perfectly right up until one of them
+ * gained a field.
  */
-export interface UnoState {
-  readonly top: Card;
-  readonly color: UnoColor;
+export interface UnoState extends UnoTable {
   readonly turn: number;
   readonly direction: 1 | -1;
   readonly counts: readonly number[];
@@ -606,21 +711,6 @@ export interface UnoState {
    */
   readonly potCents: number;
   /**
-   * THE RULES THIS ROUND IS BEING PLAYED UNDER, so every client's feel check reads the same
-   * booleans the referee enforced.
-   *
-   * `canPlay`/`mustDraw` are what dim a card and what arm the auto-draw, and they are advisory —
-   * the referee decides. That is exactly why they must not disagree: a client that thought stacking
-   * was off would grey out the +2 the rules would have accepted, and one that thought it was on
-   * would offer a click the dealer refuses. Neither is a crash and both are unplayable.
-   *
-   * ON THE PROJECTION AND NOT DERIVED FROM `RoomMeta`, for the reason `potCents` is: the room says
-   * what the table was created with, the match says what it was DEALT with, and after a re-size, a
-   * refused ante or a rematch those are answers to different questions. A dealt game's numbers come
-   * from the dealer.
-   */
-  readonly houseRules: UnoHouseRules;
-  /**
    * The last transition, as facts (see `UnoEvent`). ONE event, not a list: the log is per-client
    * scrollback, so each client appends this to its own and a late joiner simply starts from now —
    * which is the same answer chat gives, and it keeps the room node from growing without bound over
@@ -636,6 +726,7 @@ export function toPublic(
   potCents = 0,
   lastEvent: UnoEvent = DEAL_EVENT
 ): UnoState {
+  const houseRules = resolveHouseRules(game.houseRules);
   return {
     top: top(game),
     color: game.color,
@@ -652,7 +743,16 @@ export function toPublic(
     // all — `undefined` would then be dropped by the wire and every client would read the field as
     // missing rather than as off. Resolving projects an old match as all-false, which is not a
     // fallback: a match dealt before house rules existed was dealt under exactly these rules.
-    houseRules: resolveHouseRules(game.houseRules),
+    houseRules,
+    // NORMALISED for the same reason and through the same reader every rules site uses, so the wire
+    // carries a real `0` rather than the `undefined` a pre-stacking match row holds — which RTDB
+    // would drop and a client would then have to decide about on its own.
+    pendingDraw: drawDebt({
+      top: top(game),
+      color: game.color,
+      pendingDraw: game.pendingDraw,
+      houseRules,
+    }),
     lastEvent,
   };
 }
