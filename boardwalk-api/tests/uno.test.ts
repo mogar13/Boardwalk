@@ -389,10 +389,8 @@ describe('settling — the pot is paid, and the board never claims it', () => {
   it('checkSettle refuses uno outright — the dealer settles it', () => {
     const res = checkSettle({
       gameId: 'uno',
-      wagerCents: ANTE,
-      payoutCents: ANTE * 4,
-      outcome: 'win',
-      nonce: 'n',
+      payoutCents: ANTE * 4, // a 4-seat table's honest pot, which is already 4× the 3× ceiling
+      openWagerCents: ANTE,
     });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('dealer');
