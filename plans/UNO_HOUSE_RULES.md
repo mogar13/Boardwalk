@@ -1,8 +1,9 @@
 # UNO house rules — stacking, ranked places, and betting the house
 
-**Status:** ALL FIVE SLICES BUILT — the seam, stacking, ranked places, the house-odds simulation,
-and betting a bot table. **Slice 5 owes a Pi deploy** (it is a money change in `boardwalk-api`, so
-the Pi goes first — see [§5](#5-slices-and-the-deploy-that-comes-first)). Written after
+**Status:** ALL FIVE SLICES SHIPPED AND DEPLOYED — the seam, stacking, ranked places, the
+house-odds simulation, and betting a bot table. Slice 5 reached the Pi on 2026-08-06, **before its
+own PR merged**, which is the ordering rule ("the Pi goes first") honoured literally rather than
+closed a few hours later. Written after
 [UNO_POT.md](done/UNO_POT.md) shipped, and it changes what every one of these costs: the referee
 deals UNO now, so **three of the four items below are rulebook changes that land on the Pi**, and
 the Pi goes first.
@@ -510,11 +511,16 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    manifest. Nothing there can pay the wrong amount, which is why it needs a test at all: a wrong
    payout announces itself in a ledger, and a lobby saying "winner takes the pot" at a table the
    house is banking is wrong forever and looks fine.
-   **It is a money change in `boardwalk-api`, so the Pi goes first** — unlike slices 2 and 4, and
-   like slice 3. The window is benign and named rather than hoped for: a new client at an old
-   referee sends `anteCents` on an AI table, the old `potFor` floors a lone player to zero, and the
-   lobby promises a pot nobody is charged for and nobody is paid. A UI that lies, and not a chip
-   moved — which is precisely the argument for the ordering rather than against it.
+   **It is a money change in `boardwalk-api`, so the Pi went first** — unlike slices 2 and 4, and
+   like slice 3, except that this one was deployed before its PR merged rather than after. The
+   window it avoided is benign and named rather than hoped for: a new client at an old referee
+   sends `anteCents` on an AI table, the old `potFor` floors a lone player to zero, and the lobby
+   promises a pot nobody is charged for and nobody is paid. A UI that lies, and not a chip moved —
+   which is precisely the argument for the ordering rather than against it. The currency check
+   earned its keep in a new way too: comparing per-FILE hashes rather than one rolled-up digest
+   said in a single step both that the Pi was behind by this slice and that it was otherwise
+   current with `main`, where a single digest only ever says "different". Full evidence is in
+   CLAUDE.md's Enforcement table.
 
 Every slice ends green, and each of 2 and 3 is a **shared-rulebook change**, which means the Pi
 carries it before the frontend that depends on it — the ordering rule Phase D paid ten minutes of
