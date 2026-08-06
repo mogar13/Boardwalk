@@ -118,6 +118,7 @@
             "felt": { ".validate": "newData.isString() && newData.val().length <= 64" },
             "frame": { ".validate": "newData.isString() && newData.val().length <= 64" },
             "dice": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "chessset": { ".validate": "newData.isString() && newData.val().length <= 64" },
             "$other": { ".validate": false }
           },
 

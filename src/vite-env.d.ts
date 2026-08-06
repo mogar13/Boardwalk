@@ -65,3 +65,17 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/**
+ * The build stamp, substituted by Vite's `define` (see `vite.config.ts`). Declared as `const`
+ * globals rather than added to `ImportMetaEnv` on purpose: these are NOT environment variables and
+ * must not look like ones. An `import.meta.env.VITE_*` is something a deploy has to remember to
+ * inject — the failure `tests/deploy-env.test.ts` was written for — whereas these are computed by
+ * the build itself and cannot be set wrong from outside it.
+ */
+/** Short commit this bundle was built from: CI's `GITHUB_SHA`, else local git, else `'unknown'`. */
+declare const __BUILD_COMMIT__: string;
+/** Was the working tree dirty at build time? Always `false` for a CI build. */
+declare const __BUILD_DIRTY__: boolean;
+/** Vite's mode (`'production'` / `'development'`). */
+declare const __BUILD_MODE__: string;

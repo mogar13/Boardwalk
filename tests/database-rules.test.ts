@@ -399,7 +399,47 @@ describe('users/<uid>/profile — the Phase 4 progress fields', () => {
     );
   });
 
-  it('still refuses a stray key in equipped — $other is false, so a SIXTH kind is a rules change', async () => {
+  it('accepts chessset in equipped (the sixth kind)', async () => {
+    // The kind arrives WITH its reader — `@/system/chess/useEquippedChessSet`, read by Chess's
+    // board for both the men and the squares. Note what this test being NEEDED proves: `$other:
+    // false` means every new cosmetic kind is a rules change, hand-deployed, and an account cannot
+    // wear one until that deploy lands. The refusal below is the mechanism working, not a bug.
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: {
+          cardback: 'cb_red3',
+          title: 'ttl_rookie',
+          felt: 'ft_green',
+          frame: 'fr_gold',
+          dice: 'dc_ember',
+          chessset: 'cs_carved_brown',
+        },
+      })
+    );
+    await assertSucceeds(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { chessset: 'cs_classic' },
+      })
+    );
+  });
+
+  it('refuses a wrong-typed or over-long chessset id, like every other slot', async () => {
+    // Per key, for the same reason as dice: "chessset is bounded because felt is" is exactly the
+    // reasoning that leaves one slot unbounded.
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), { ...validProfile, equipped: { chessset: 42 } })
+    );
+    await assertFails(
+      set(ref(asUser(ME), `users/${ME}/profile`), {
+        ...validProfile,
+        equipped: { chessset: 'x'.repeat(65) },
+      })
+    );
+  });
+
+  it('still refuses a stray key in equipped — $other is false, so a SEVENTH kind is a rules change', async () => {
     // The pin keeps its teeth through Phase E. `chip` is the honest example now that `dice` has
     // landed: a chip skin is the remaining kind `catalog.ts` deliberately withholds for want of a
     // reader, and this is the enforcement half of that decision — the field cannot appear ahead of

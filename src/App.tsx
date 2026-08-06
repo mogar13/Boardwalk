@@ -5,6 +5,8 @@ import { Store } from '@/shell/pages/Store';
 import { Leaderboard } from '@/shell/pages/Leaderboard';
 import { Profile } from '@/shell/pages/Profile';
 import { Play } from '@/shell/pages/Play';
+import { Settings } from '@/shell/pages/Settings';
+import { Dev } from '@/shell/pages/Dev';
 import { NotFound } from '@/shell/pages/NotFound';
 import { LobbyHarness } from '@/shell/pages/LobbyHarness';
 
@@ -42,6 +44,15 @@ export default function App() {
           <Route path="store" element={<Store />} />
           <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="settings" element={<Settings />} />
+          {/* SHIPPED IN PROD, gated at RUNTIME on `admins/<uid>` rather than tree-shaken like the
+              harness below. The difference is deliberate: `_dev/lobby` is a test harness with no
+              meaning to a player, so it should not exist in the bundle; `/dev` is a readout ABOUT
+              the production build, which makes "only reachable from a dev build" precisely
+              backwards — the questions it answers (what commit is this, is the Pi up, which
+              economy did this bundle compose) are only ever asked of production. It shows nothing
+              privileged, so a cosmetic gate is the right strength. */}
+          <Route path="dev" element={<Dev />} />
           {/* DEV ONLY: the Phase 5 multiplayer verification surface. `import.meta.env.DEV` is
               statically false in a production build, so Vite tree-shakes this route and the
               harness page out of the bundle entirely — it cannot be reached in prod. */}

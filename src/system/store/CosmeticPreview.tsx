@@ -28,6 +28,7 @@ import { frameTone } from '@/system/frame/frames';
 import { RARITY_RING } from '@/system/store/rarity';
 import { cx } from '@/ui';
 import { diceSrc } from '@/system/dice/dice';
+import { CHESS_GLYPH, chessPieceSrc, chessSet } from '@/system/chess/chessSets';
 import type { ReactElement } from 'react';
 
 export function CosmeticPreview({
@@ -119,6 +120,58 @@ export function CosmeticPreview({
               className={cx('drop-shadow', large ? 'size-12' : 'size-8')}
             />
           ))}
+        </span>
+      );
+    }
+    case 'chessset': {
+      // FOUR SQUARES AND TWO MEN — a miniature of the actual board, because this cosmetic is two
+      // things at once and a preview of either half alone would misrepresent it. Showing a piece
+      // on both a light and a dark square is also the only preview that answers the question that
+      // decides the purchase: can I see the white pieces on this board? (The contrast note in
+      // `theme.css` is why every colourway's light square sits well above its dark one.)
+      const set = chessSet(item.id);
+      const sq = (dark: boolean) =>
+        set.squares === null
+          ? dark
+            ? 'bg-base-300'
+            : 'bg-base-200'
+          : dark
+            ? set.squares.dark
+            : set.squares.light;
+      // White king on a dark square, black knight on a light one — the two hardest pairings.
+      const men = [
+        { dark: false, color: 'w' as const, type: 'k' as const },
+        { dark: true, color: 'b' as const, type: 'n' as const },
+        { dark: true, color: 'w' as const, type: 'p' as const },
+        { dark: false, color: 'b' as const, type: 'q' as const },
+      ];
+      return (
+        <span
+          className={cx(
+            'border-bw-line grid grid-cols-2 overflow-hidden rounded-md border shadow-md',
+            large ? 'h-36 w-36' : 'h-24 w-24'
+          )}
+          aria-hidden
+        >
+          {men.map((m, i) => {
+            const src = chessPieceSrc(set, m.color, m.type);
+            return (
+              <span key={i} className={cx('flex items-center justify-center', sq(m.dark))}>
+                {src === null ? (
+                  <span
+                    className={cx(
+                      m.color === 'w' ? 'text-primary' : 'text-secondary',
+                      large ? 'text-3xl' : 'text-xl'
+                    )}
+                  >
+                    {CHESS_GLYPH[m.type]}
+                  </span>
+                ) : (
+                  <img src={src} alt="" className={large ? 'size-12' : 'size-8'} />
+                )}
+              </span>
+            );
+          })}
         </span>
       );
     }

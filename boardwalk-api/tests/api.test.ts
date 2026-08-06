@@ -163,7 +163,7 @@ describe('profile routes', () => {
     expect(profileOf(res).equipped).toEqual({ cardback: 'cb_red3', title: 'ttl_regular' });
   });
 
-  it('stores a felt, a frame and dice too — all five equipped slots round-trip', async () => {
+  it('stores a felt, a frame, dice and a chess set too — all six equipped slots round-trip', async () => {
     // The P5 kinds get their own case rather than riding on the one above, because the failure
     // this guards is PER-COLUMN and silent: an `Equipped` field with no column is dropped on write
     // and reads back absent, so the cosmetic appears to equip and is gone on reload. Nothing about
@@ -175,6 +175,7 @@ describe('profile routes', () => {
       felt: 'ft_blue',
       frame: 'fr_ember',
       dice: 'dc_crimson',
+      chessset: 'cs_carved_brown',
     };
     const res = await request(server)
       .put('/profile')
@@ -347,5 +348,71 @@ describe('leaderboard route', () => {
       played: 1,
       bankrollCents: STARTING_BANKROLL_CENTS,
     });
+  });
+
+  /**
+   * THE SIGNED-OUT READ. This is the half that made the standings page look broken to everyone who
+   * was not logged in: `leaderboardRouter` was mounted after `authMiddleware`, so a token-less GET
+   * answered 401 and `useLeaderboard` fell into its error branch forever. A signed-in developer
+   * never sees it, which is why it survived from the Phase B cutover — so the guard has to assert
+   * the ABSENCE of a header, not the presence of a good one.
+   *
+   * Falsified by moving the `app.use(leaderboardRouter(db))` line back below `authMiddleware`:
+   * this goes red and nothing else in the suite does.
+   */
+  it('serves the standings with NO bearer token at all', async () => {
+    const server = app();
+    await request(server).put('/profile').set('Authorization', 'Bearer u1').send(profile).expect(200);
+
+    const res = await request(server).get('/leaderboard?limit=5').expect(200);
+    expect(bodyOf<{ entries: LeaderboardEntry[] }>(res).entries).toHaveLength(1);
+  });
+
+  /**
+   * A bad token must not be WORSE than no token on a public route. `authMiddleware` is what rejects
+   * garbage credentials, and this route no longer runs it — so a stale/expired token from an old
+   * session still reads the standings instead of 401ing a page that works fine logged out.
+   */
+  it('ignores a rubbish token rather than refusing the read', async () => {
+    const server = app();
+    await request(server).put('/profile').set('Authorization', 'Bearer u1').send(profile).expect(200);
+
+    await request(server)
+      .get('/leaderboard?limit=5')
+      .set('Authorization', 'Bearer bad-token')
+      .expect(200);
+  });
+
+  /**
+   * The route's own half of the board fix — `domain/profile.test.ts` proves the ranking, this
+   * proves the query param reaches it. `?board=` was not read at all before, so a request naming a
+   * board got the wins board and a 200, which is the failure that looks like success.
+   */
+  it('honours ?board= and takes only the string arm of a repeated param', async () => {
+    const server = app();
+    await request(server).put('/profile').set('Authorization', 'Bearer u1').send(profile).expect(200);
+    await request(server).put('/profile').set('Authorization', 'Bearer u2').send(profile).expect(200);
+    // u2 wins once, so the two boards must order them differently: u2 leads on wins, and the two
+    // are tied on bankroll (both hold the opening stake) where the tiebreak is wins — so `richest`
+    // agrees. Assert the SHAPE reaches the ranker rather than inventing a fixture the route owns.
+    await request(server)
+      .post('/settle')
+      .set('Authorization', 'Bearer u2')
+      .send({ nonce: 'n1', gameId: 'chess', outcome: 'win' })
+      .expect(200);
+
+    const byWins = await request(server).get('/leaderboard?board=wins').expect(200);
+    expect(bodyOf<{ entries: LeaderboardEntry[] }>(byWins).entries[0]?.uid).toBe('u2');
+
+    // A board that genuinely filters proves the param is READ and not merely accepted: neither
+    // player is near the 10-game floor, so `winRate` must come back empty where `wins` did not.
+    const skill = await request(server).get('/leaderboard?board=winRate').expect(200);
+    expect(bodyOf<{ entries: LeaderboardEntry[] }>(skill).entries).toEqual([]);
+
+    // `?board=winRate&board=wins` arrives as an ARRAY, not a string. It degrades to the DEFAULT
+    // board — the same answer `boardById` gives any unrecognised id — rather than throwing, or
+    // matching on a `String()`-joined 'winRate,wins' that is not a board id in any spelling.
+    const repeated = await request(server).get('/leaderboard?board=winRate&board=wins').expect(200);
+    expect(bodyOf<{ entries: LeaderboardEntry[] }>(repeated).entries[0]?.uid).toBe('u2');
   });
 });

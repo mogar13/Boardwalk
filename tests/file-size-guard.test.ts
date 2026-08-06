@@ -148,4 +148,25 @@ describe('file-size ratchet', () => {
     expect(runGuard().code).toBe(0);
     rmSync(abs);
   });
+
+  /**
+   * A TRACKED FILE DELETED BUT NOT YET COMMITTED — the normal state of any refactor that MOVES a
+   * module, and the guard used to die on it. `git ls-files` reads the index, so the old path is
+   * still listed while the working tree no longer has it; `readFileSync` threw ENOENT and the
+   * guard crashed with a stack trace instead of reporting anything. Because it runs on `prebuild`,
+   * that took `npm run build` down for a reason with nothing to do with file size — found by
+   * moving `boards.ts` into `packages/game-logic`.
+   *
+   * Skipping is unambiguously safe: a file that does not exist has no lines and can hide nothing.
+   */
+  it('survives a tracked file that was deleted but not yet committed', () => {
+    writeTracked('src/system/doomed.ts', 10);
+    // Delete from the WORKING TREE while leaving it in the index — `removeTracked` would stage
+    // the deletion too, which is the state that already worked.
+    rmSync(join(sandbox, 'src', 'system', 'doomed.ts'));
+    const r = runGuard();
+    expect(r.out).not.toContain('ENOENT');
+    expect(r.code).toBe(0);
+    removeTracked('src/system/doomed.ts');
+  });
 });

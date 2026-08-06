@@ -61,6 +61,12 @@ const SECTIONS: readonly { kind: CosmeticKind; title: string; blurb: string }[] 
     blurb: 'A ring around your avatar, coloured by how rare it is.',
   },
   {
+    kind: 'chessset',
+    title: 'Chess Sets',
+    blurb:
+      'Pieces and board together, the way a chess set is sold. The Classic set is already yours.',
+  },
+  {
     kind: 'title',
     title: 'Titles',
     blurb: 'A flex under your name. The best ones are earned, not bought.',

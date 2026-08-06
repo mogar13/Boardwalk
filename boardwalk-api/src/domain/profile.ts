@@ -1,3 +1,4 @@
+import { boardById, rankFor } from '@boardwalk/game-logic';
 import type { Db } from '../db/db';
 import { STARTING_BANKROLL_CENTS } from './economy';
 import type { DailyState, Equipped, GameStat, LeaderboardEntry, Profile } from './types';
@@ -31,6 +32,7 @@ interface ProfileRow {
   equipped_felt: string | null;
   equipped_frame: string | null;
   equipped_dice: string | null;
+  equipped_chessset: string | null;
 }
 interface StatRow {
   game_id: string;
@@ -71,7 +73,8 @@ export function loadProfile(db: Db, uid: string): Profile | null {
   const p = db
     .prepare(
       `SELECT name, avatar, xp, daily_last_claim_day, daily_streak,
-              equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice
+              equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice,
+              equipped_chessset
        FROM profiles WHERE uid = ?`
     )
     .get(uid) as ProfileRow | undefined;
@@ -115,6 +118,7 @@ export function loadProfile(db: Db, uid: string): Profile | null {
     ...(p.equipped_felt ? { felt: p.equipped_felt } : {}),
     ...(p.equipped_frame ? { frame: p.equipped_frame } : {}),
     ...(p.equipped_dice ? { dice: p.equipped_dice } : {}),
+    ...(p.equipped_chessset ? { chessset: p.equipped_chessset } : {}),
   };
 
   return {
@@ -181,8 +185,9 @@ export function upsertProfile(
     db.prepare(
       `INSERT INTO profiles (uid, name, avatar, xp, daily_last_claim_day, daily_streak,
                              equipped_cardback, equipped_title, equipped_felt, equipped_frame, equipped_dice,
+                             equipped_chessset,
                              updated_at)
-       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @felt, @frame, @dice, @now)
+       VALUES (@uid, @name, @avatar, 0, 0, 0, @cardback, @title, @felt, @frame, @dice, @chessset, @now)
        ON CONFLICT(uid) DO UPDATE SET
          name = excluded.name,
          avatar = excluded.avatar,
@@ -191,6 +196,7 @@ export function upsertProfile(
          equipped_felt = excluded.equipped_felt,
          equipped_frame = excluded.equipped_frame,
          equipped_dice = excluded.equipped_dice,
+         equipped_chessset = excluded.equipped_chessset,
          updated_at = excluded.updated_at`
     ).run({
       uid,
@@ -201,6 +207,7 @@ export function upsertProfile(
       felt: input.equipped.felt ?? null,
       frame: input.equipped.frame ?? null,
       dice: input.equipped.dice ?? null,
+      chessset: input.equipped.chessset ?? null,
       now,
     });
 
@@ -216,11 +223,38 @@ export function upsertProfile(
 }
 
 /**
- * The public standings, ranked by wins — computed, never stored. `wins` is the sum of each
- * player's per-game `stats.won`; `bankrollCents` is their ledger sum. Both are LEFT JOINs so a
- * player with no stats and no ledger rows still ranks (at zero) rather than vanishing.
+ * How many rows we are willing to rank in memory. A bound on this process's memory, not a feature:
+ * every board's ORDER is a JS comparator (see below), so the candidate set has to be materialised
+ * before it can be sorted. At 10k profiles this is a few MB and a sort that costs microseconds; the
+ * day it stops being, the fix is a per-board SQL index, not a second copy of the ranking rules.
+ *
+ * Stated honestly because a silent cap is the thing CLAUDE.md's "no silent caps" note is about:
+ * ABOVE this many profiles the standings are computed over the 10,000 most recently created and
+ * the tail is not consulted. With prod holding single-digit profiles that is not reachable today.
  */
-export function leaderboard(db: Db, limit: number): LeaderboardEntry[] {
+const CANDIDATE_CAP = 10_000;
+
+/**
+ * The public standings for ONE board — computed, never stored. `wins` is the sum of each player's
+ * per-game `stats.won`; `played` the sum of `stats.played`; `bankrollCents` their ledger sum. All
+ * three are correlated subqueries so a player with no stats and no ledger rows still ranks (at
+ * zero) rather than vanishing.
+ *
+ * THE ORDER IS NOT SQL'S, AND THAT IS THE WHOLE FIX. This function used to end in
+ * `ORDER BY wins DESC, p.xp DESC LIMIT ?` and take no `board` argument at all, while the frontend
+ * offered four tabs — so Richest, Highest Level and Best Win Rate were the wins board with a
+ * different column header, and win-rate's `WIN_RATE_MIN_GAMES` floor applied to nobody. Ranking
+ * now goes through the SHARED `rankFor`/`boardById` in `@boardwalk/game-logic`, the same functions
+ * the page and the Firebase fallback repo call. There is no server copy of a board to drift.
+ *
+ * ORDER OF OPERATIONS MATTERS AND IT USED TO BE WRONG: filter → sort → slice, never slice first.
+ * The old query applied `LIMIT` inside the wins-ordered SQL, so the candidate set handed to any
+ * later ranking was already the top-N BY WINS — re-sorting that by bankroll answers "who is richest
+ * among the 25 winningest", which is a different and wrong question. `rankFor` drops the ineligible
+ * (the win-rate floor) before sorting, so a board can legitimately return FEWER than `limit` rows,
+ * and an empty win-rate board is the correct answer on a young database rather than a bug.
+ */
+export function leaderboard(db: Db, limit: number, board = 'wins'): LeaderboardEntry[] {
   const rows = db
     .prepare(
       `SELECT p.uid AS uid, p.name AS name, p.avatar AS avatar, p.xp AS xp,
@@ -228,12 +262,14 @@ export function leaderboard(db: Db, limit: number): LeaderboardEntry[] {
               (SELECT COALESCE(SUM(s.played), 0) FROM stats s WHERE s.uid = p.uid) AS played,
               (SELECT COALESCE(SUM(l.delta_cents), 0) FROM ledger l WHERE l.uid = p.uid) AS bal
        FROM profiles p
-       ORDER BY wins DESC, p.xp DESC
        LIMIT ?`
     )
-    .all(Math.max(0, Math.floor(limit))) as LeaderRow[];
+    .all(CANDIDATE_CAP) as LeaderRow[];
 
-  return rows.map((r) => ({
+  // Normalise BEFORE ranking. `COALESCE` already covers the no-rows case, but the row type admits
+  // null and a comparator subtracting null silently yields NaN — which `Array.sort` treats as "keep
+  // going", producing an order that is neither wrong-in-an-obvious-way nor right.
+  const entries: LeaderboardEntry[] = rows.map((r) => ({
     uid: r.uid,
     name: r.name,
     avatar: r.avatar,
@@ -242,4 +278,6 @@ export function leaderboard(db: Db, limit: number): LeaderboardEntry[] {
     wins: r.wins ?? 0,
     played: r.played ?? 0,
   }));
+
+  return rankFor(boardById(board), entries).slice(0, Math.max(0, Math.floor(limit)));
 }

@@ -157,6 +157,27 @@
   --color-uno-green: oklch(62% 0.16 150);
   --color-uno-yellow: oklch(82% 0.16 90);
 
+  /* CHESS BOARD COLOURWAYS. GAME CONTENT, exactly like --color-uno-* above and admitted on the
+     same grounds: a chessboard's squares are the board's identity, not a UI signal, and this is
+     the one file permitted to name a colour. FLAT, no glow — the budget stays blue/cyan/gold.
+
+     There is no `classic` pair here on purpose. The default set keeps drawing `bg-base-300` /
+     `bg-base-200`, the surfaces the board has always used, so an account that buys nothing sees
+     a board that has not moved by one pixel — the same "absence is the default" call `felt` makes
+     with `feltSrc(undefined) === null`. Adding a `--color-chess-classic-*` pair would be a second
+     spelling of two surfaces the theme already defines, free to drift from them.
+
+     Converted from the source SVGs' sRGB hexes (#de925a/#fff2d4 brown, #96dbff/#fff blue,
+     #8cc936/#fff2d4 green). Every LIGHT square is deliberately well above the dark one in
+     lightness: the piece art is a fixed two-tone set that cannot re-tint per board, so a
+     colourway whose two squares sit close together makes white pieces vanish on the light half. */
+  --color-chess-brown-dark: oklch(70% 0.093 55);
+  --color-chess-brown-light: oklch(96% 0.028 85);
+  --color-chess-blue-dark: oklch(85% 0.077 230);
+  --color-chess-blue-light: oklch(100% 0 0);
+  --color-chess-green-dark: oklch(76% 0.152 130);
+  --color-chess-green-light: oklch(96% 0.028 85);
+
   /* Cosmetic RARITY tiers (P2 store). GAME CONTENT like the UNO suits, not chrome — a scarcity
      LABEL on a store card, so it is FLAT and does NOT touch the glow budget (blue=act, cyan=here,
      gold=money stay the only three that glow). Four hues chosen to read as a rising ladder and to

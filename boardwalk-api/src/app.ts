@@ -55,6 +55,18 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   const keys = ticketKeys(cfg.ticketSecret, cfg.ticketSecretPrevious);
   app.use(healthRouter(db, ticketsEnabled(keys)));
 
+  // PUBLIC, DELIBERATELY, and mounted here rather than below with the rest. The standings are the
+  // one read with no owner: `useLeaderboard` is a signed-out surface, and the Firebase node this
+  // replaced (`leaderboard/`) was world-readable by rule. Mounted after `authMiddleware` it 401'd
+  // every logged-out visitor — a real regression at the Phase B cutover, invisible because a
+  // signed-in developer never sees it. The docblock in `routes/leaderboard.ts` has the full note.
+  //
+  // This is the ONLY authenticated-by-default exception besides `/health` and `/`, and it is safe
+  // for the reason those are: it reads a projection and mutates nothing. Adding a route below the
+  // middleware keeps it authenticated by default; adding one HERE is a decision, so keep this block
+  // small and argued.
+  app.use(leaderboardRouter(db));
+
   const tokenVerifier =
     verifier ??
     (cfg.authMode === 'insecure-dev' ? insecureDevVerifier : firebaseVerifier(cfg.firebaseProjectId));
@@ -69,7 +81,6 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   app.post('/settle', ticketGate(db, keys));
   app.use(economyRouter(db));
   app.use(blackjackRouter(db));
-  app.use(leaderboardRouter(db));
 
   return app;
 }

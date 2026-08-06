@@ -95,12 +95,16 @@ describe('additive column migrations', () => {
     db.exec(PRE_P5_PROFILES);
     expect(columnsOf(db, 'profiles')).not.toContain('equipped_felt');
     expect(columnsOf(db, 'profiles')).not.toContain('equipped_dice');
+    expect(columnsOf(db, 'profiles')).not.toContain('equipped_chessset');
 
     migrateColumns(db);
 
     expect(columnsOf(db, 'profiles')).toContain('equipped_felt');
     expect(columnsOf(db, 'profiles')).toContain('equipped_dice');
     expect(columnsOf(db, 'profiles')).toContain('equipped_frame');
+    // The sixth slot. Without its COLUMN_MIGRATIONS entry this column exists only on databases the
+    // test suite creates fresh — never on the Pi's, which is the whole asymmetry this file guards.
+    expect(columnsOf(db, 'profiles')).toContain('equipped_chessset');
     // The columns it already had are untouched — a migration that rebuilt the table would be a
     // migration that could lose rows.
     expect(columnsOf(db, 'profiles')).toContain('equipped_cardback');
