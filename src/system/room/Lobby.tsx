@@ -392,6 +392,30 @@ function LobbyRoom({
             Table <span className="text-secondary font-display tracking-[0.3em]">{roomIdView}</span>{' '}
             · {status} · {humanCount(seats)} player{humanCount(seats) === 1 ? '' : 's'}
           </p>
+          {/*
+            WHAT THIS CHAIR COSTS, said before anybody sits in it.
+
+            The whole reason the ante is room META rather than a create-time value the host keeps to
+            itself: a joiner arriving by code or from the browser has to know the stake BEFORE they
+            take a seat. Plumbing it to their snapshot and then not drawing it is worse than not
+            plumbing it, because it looks done — and it WAS, for one browser pass: the guest was
+            offered a SIT button on a $25 table with nothing on screen saying so, which is exactly
+            the consent problem this design was built to close.
+
+            The "needs two players" half is said here too, because the stake is otherwise a promise
+            the table cannot keep — a bot has no bankroll, so below two humans nothing is charged.
+          */}
+          {meta !== null && meta.anteCents > 0 && (
+            <p className="text-warning text-sm font-semibold">
+              {formatMoney(meta.anteCents)} a seat · winner takes the pot
+              {humanCount(seats) < 2 && (
+                <span className="text-bw-muted font-normal">
+                  {' '}
+                  — needs two human players, or the table plays for XP alone
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {canStart && (

@@ -227,7 +227,49 @@ no Firebase deploy in this build.
 
 ---
 
-## 9. Follow-ups
+## 9. What was verified, and how
+
+Static green was not evidence: 787 frontend and 350 API tests passed while a guest could be offered a
+seat at a $25 table with nothing on screen saying so. Driven against the emulator and the real
+referee in two real browsers, two accounts, one table.
+
+| Claim | Evidence |
+|---|---|
+| The host picks a stake, and the ladder is v1's | Ante picker renders NONE/$25/$100/$500/$1K; $25 chosen |
+| **A guest knows the price before sitting** | **Found FALSE on the first pass** — the lobby offered a SIT button with no stake anywhere. Fixed, re-driven: "$25.00 a seat · winner takes the pot" now sits above the seat list |
+| The referee takes every ante | Both top bars $5,000 → **$4,975**, including the guest, who never sent `unoStart` — which is the profile-sync effect doing the job it exists for |
+| The ledger agrees to the cent | Two `bet` rows of −2500, `uno_matches.pot_cents` 5000, two wagers OPEN |
+| The pot is on the table | `POT $50.00` on **both** boards, from the server's number |
+| Hands stay hidden | Each page renders its own 7 and the opponent's as face-down backs |
+| The pot is paid | Winner **$5,025.00**, loser $4,975.00 — one `settle` row of **+5000**, wagers closed, match `settled=1` |
+| The referee records the outcome | `stats` played 1/won 1 against played 1/lost 0 — with **no** `reportResult` call and **no** "settled by the dealer" toast |
+| A restart refunds rather than strands | Killed the API on 9 abandoned rounds: `[uno] voided 9 abandoned round(s), refunded 45000 cents`, 0 unsettled, 0 open wagers, every account back to $5,000 except the one real settle |
+| Nothing else broke | Zero console errors beyond the pre-existing `GET /profile` 404 at signup; no dead scroll |
+
+**The finish was set up, not played out**, and that is said plainly because it is the one row above
+that did not come from playing the whole game: a full round is a few hundred browser clicks, so the
+table and both antes were real and then the winning seat's hand was shortened to a single wild
+directly in SQLite. The referee re-reads the match row on every action, so the winning move itself
+was ordinary and fully refereed — the same technique, and the same disclosure, as
+[LIARS_DICE.md §10](done/LIARS_DICE.md).
+
+Three failed attempts at that fixture are worth recording, because each is a real property of the
+design asserting itself:
+
+1. **A direct DB write is not a broadcast.** The referee re-deals every hand on each broadcast, so
+   the browser kept showing the seven cards it was dealt and every click sent a card id the server
+   no longer had.
+2. **The board's `canPlay` is a feel check against the projection it last received.** Rewriting the
+   active colour underneath it made the client believe its own card was unplayable and swallow the
+   click before it was ever sent.
+3. **Moving the turn left nobody able to act** — the opponent's draw pile is disabled whenever their
+   projection says it is not their turn, and the projection is exactly what the write did not update.
+
+The fix that worked keeps the turn where the client already believes it is, gives that seat a WILD
+(playable on any top card, so the feel check cannot disagree), and resyncs with a **page reload** —
+which re-subscribes and is re-sent the current hand, the same way a real player recovers.
+
+## 10. Follow-ups
 
 - **Raise / call / fold** — slice 2, the poker layer. The reducer change is the real work.
 - **`ldStart` should stop carrying `anteCents`** for the reason in §4. One frame, one field, and
