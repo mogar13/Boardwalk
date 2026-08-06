@@ -26,17 +26,19 @@ import { RoomBrowser } from '@/system/room/RoomBrowser';
  * "centred", it reads as a page that failed to load the rest of itself. Nothing could catch
  * this — it typechecked, it fit, it needed a screenshot (the Phase 1 war story, again).
  *
- * So the constraint stayed and the two levers changed. The hub is TOP-ALIGNED like every other
+ * So the constraint stayed and the levers changed. The hub is TOP-ALIGNED like every other
  * page, and it is WIDE enough that three cards across are cards rather than chips. Leftover
  * height falls at the bottom, which is what every ordinary page does and nobody reads as broken.
  * Empty space below the content is the absence of more content; empty space ABOVE it is a
- * missing header.
+ * missing header. And the fit is bought PER VIEWPORT rather than once for all of them — see the
+ * short-viewport tier at the layout root, which is what lets a desktop keep its full size while a
+ * 768px laptop still lands the Arcade above the fold.
  *
- * NOT `h-screen overflow-hidden`, deliberately. "Fits" is a property of a desktop viewport,
- * not a promise the layout can keep at every size: a phone, a short laptop or a browser at
- * 200% zoom must still reach the Arcade, and clipping it to the viewport would hide the last
- * pier ABSOLUTELY rather than one scroll away. So this is a tight column that happens to fit —
- * and degrades to an ordinary scroll when it cannot.
+ * NOT `h-screen overflow-hidden`, deliberately. "Fits" is a property of a viewport, not a promise
+ * the layout can keep at every size: a phone, a very short window or a browser at 200% zoom must
+ * still reach the Arcade, and clipping it to the viewport would hide the last pier ABSOLUTELY
+ * rather than one scroll away. The tier moves the height at which that happens a long way down; it
+ * does not abolish it, and nothing here should try to.
  */
 
 function GameCard({ game }: { game: RegisteredGame }) {
@@ -50,7 +52,10 @@ function GameCard({ game }: { game: RegisteredGame }) {
       {/* The icon sits BESIDE the text rather than above it, which is most of where a row of
           vertical space went. `h-full` keeps every card in a pier the same height however long
           its blurb runs, so the grid stays a grid. */}
-      <Card interactive className="flex h-full items-center gap-4 p-6">
+      <Card
+        interactive
+        className="flex h-full items-center gap-4 p-6 [@media(max-height:900px)]:p-4"
+      >
         {iconSrc !== undefined ? (
           // The art is furniture, not a sign — no glow (CLAUDE.md's card rule). `alt=""` +
           // aria-hidden because the heading right beside it already names the card.
@@ -103,7 +108,27 @@ export function Hub() {
     // 1080p display that put ~200px of empty between the top bar and the word "BOARDWALK" — which
     // does not read as composed, it reads as broken. Leftover height goes at the bottom, where
     // every other page on the web puts it.
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    //
+    // THE SHORT-VIEWPORT TIER (`max-height: 900px`) is what stops "fits one screen" from being a
+    // tax on the screens that already fit. The constraint is viewport-dependent, so its solution
+    // has to be too: a fixed size can satisfy the 768px laptop or look right on the 1080p monitor,
+    // and tuning one number for both is what produced the stamp this file's header describes —
+    // everything was `text-xs` because the shortest laptop set the budget for everybody.
+    //
+    // So the budget is only spent where it is scarce. Above 900px tall nothing here applies and the
+    // layout is exactly what a desktop sees. At or below it the WHITESPACE tightens — the outer
+    // rhythm, the pier heading gap, the card padding — and the art, the type and the column width
+    // do not move. Whitespace is the right currency: a 16px gap costs a reader nothing to lose,
+    // where a type step costs them the text. Three tightenings buy ~120px, which is what a 1366×768
+    // laptop needs to land the Arcade pier above the fold.
+    //
+    // It is a MEDIA QUERY, not a hook, so there is no resize listener, no state and no second
+    // render — and it is an arbitrary variant rather than a named one because a named variant is a
+    // theme token, and a theme token with one reader owes a guard that it resolves (see
+    // tests/theme-tokens.test.ts, and `loadout.color` for why). Verified in a browser at 768 and
+    // 800, which is also the only way to catch a media query Tailwind failed to generate: an
+    // unmatched variant emits no CSS at all, silently, exactly like an undefined token.
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 [@media(max-height:900px)]:gap-3">
       <header className="flex flex-col gap-1">
         <h1 className="font-display text-base-content text-3xl font-bold tracking-[0.08em] uppercase">
           The Boardwalk
@@ -140,7 +165,7 @@ export function Hub() {
       {PIERS.map((pier) => {
         const games = gamesOnPier(pier.id);
         return (
-          <section key={pier.id} className="flex flex-col gap-4">
+          <section key={pier.id} className="flex flex-col gap-4 [@media(max-height:900px)]:gap-2">
             {/* Name and tagline on ONE row on wide screens: three piers each spending a second
                 line on a sentence nobody re-reads is three lines of the budget. It wraps back to
                 two lines when the row is too narrow, which is the normal flex-wrap behaviour and
