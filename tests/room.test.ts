@@ -19,6 +19,8 @@ import {
   tableSizeChoices,
 } from '@/system/room/seats';
 import { registry } from '@/games/registry';
+import { ANTE_RUNGS_CENTS, anteChoices, DEFAULT_ANTE_CENTS } from '@/system/room/ante';
+import { STARTING_BANKROLL_CENTS } from '@boardwalk/game-logic';
 import { applyIfFresh, isFresh, nextSeq } from '@/system/room/ordering';
 import { teardownPlan } from '@/system/room/lifecycle';
 import type { RoomSnapshot, Seat } from '@/system/room/types';
@@ -200,7 +202,7 @@ describe('teardownPlan — only the host clears shared state', () => {
     presence: Record<string, true>,
     seats: Seat[]
   ): RoomSnapshot<unknown> => ({
-    meta: { host, status: 'playing', createdAt: 0, seq: 1 },
+    meta: { host, status: 'playing', createdAt: 0, seq: 1, anteCents: 0 },
     seats,
     state: null,
     presence,
@@ -275,6 +277,60 @@ describe('tableSizeChoices', () => {
         expect(n).toBeGreaterThanOrEqual(manifest.seats.min);
         expect(n).toBeLessThanOrEqual(manifest.seats.max);
         expect(tableIsFull(emptyTable(n).map(() => human(ME)))).toBe(true);
+      }
+    }
+  });
+});
+
+describe('anteChoices — what a chair may cost', () => {
+  it('always offers "nothing", and offers it first', () => {
+    // `betting` on a manifest means a game CAN be played for money, never that it must be. A picker
+    // with no zero rung turns a betting game into a gambling-only one — and zero is also the
+    // default, because money must never leave an account because a control went unnoticed.
+    expect(anteChoices({ min: 100, max: 100_000 })[0]).toBe(0);
+    expect(anteChoices(undefined)).toEqual([0]);
+    expect(DEFAULT_ANTE_CENTS).toBe(0);
+  });
+
+  it('offers exactly the rungs inside the range, ascending', () => {
+    // UNO's declared range reproduces v1's own ladder: NONE / $25 / $100 / $500 / $1K.
+    expect(anteChoices({ min: 2_500, max: 100_000 })).toEqual([0, 2_500, 10_000, 50_000, 100_000]);
+    expect(anteChoices({ min: 100, max: 2_500 })).toEqual([0, 100, 500, 2_500]);
+  });
+
+  it('collapses to a control that draws nothing when the range admits no rung', () => {
+    // `tableSizeChoices`'s rule: one option is a control that cannot change the outcome. The lobby
+    // gates on `length > 1`, so this is what "draw no ante picker at all" looks like.
+    expect(anteChoices({ min: 1, max: 99 })).toEqual([0]);
+    expect(anteChoices({ min: 200_000, max: 300_000 })).toEqual([0]);
+  });
+
+  it('collapses garbage rather than rendering a broken picker', () => {
+    expect(anteChoices({ min: 50_000, max: 100 })).toEqual([0]); // reversed
+    expect(anteChoices({ min: Number.NaN, max: 100_000 })).toEqual([0]);
+    expect(anteChoices({ min: 100, max: Number.POSITIVE_INFINITY })).toEqual([0]);
+  });
+
+  it('the rungs ascend and never repeat, which is the whole of a readable picker', () => {
+    // A ladder out of order does not throw — it renders its buttons in the wrong order forever.
+    // The same shape of rot `rankForLevel`'s ascending-ladder invariant exists to catch.
+    for (let i = 1; i < ANTE_RUNGS_CENTS.length; i += 1) {
+      expect(ANTE_RUNGS_CENTS[i]).toBeGreaterThan(ANTE_RUNGS_CENTS[i - 1] as number);
+    }
+  });
+
+  it('every stake it offers is integer cents a fresh account could cover — read off the REAL registry', () => {
+    // Two failures, both of which typecheck and neither of which throws:
+    //   • a fractional rung — `validateBet` REFUSES a fractional bet rather than rounding it (v1's
+    //     `parseInt` dropped blackjack's 3:2 chip), so the Create button would fail at the exact
+    //     moment money moved;
+    //   • a rung above the opening bankroll — a betting mode nobody can ever open, which is the
+    //     seat-picker rule ("every size it offers is one the lobby can actually start") in money.
+    for (const { manifest } of Object.values(registry)) {
+      for (const cents of anteChoices(manifest.betting)) {
+        expect(Number.isInteger(cents)).toBe(true);
+        expect(cents).toBeGreaterThanOrEqual(0);
+        expect(cents).toBeLessThanOrEqual(STARTING_BANKROLL_CENTS);
       }
     }
   });

@@ -5,10 +5,12 @@ import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
 import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
+import { formatMoney } from '@boardwalk/game-logic';
 import { repos } from '@/system/repo';
 import { RoomProvider } from '@/system/room/RoomProvider';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
 import { SeatList } from '@/system/room/SeatList';
+import { anteChoices, DEFAULT_ANTE_CENTS } from '@/system/room/ante';
 import { humanCount, tableIsFull, tableSizeChoices } from '@/system/room/seats';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
@@ -62,6 +64,13 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   // game alone is trying to do; anybody who wants a full house is one tap away.
   const sizeChoices = tableSizeChoices(manifest.seats);
   const [seatCount, setSeatCount] = useState(manifest.seats.min);
+  // WHAT A CHAIR COSTS. Chosen here, at create, because it is stamped onto the room and every
+  // joiner is bound by it — the seat-count argument, with money behind it: a table cannot grow a
+  // chair under someone who joined by code, and it must certainly not raise the stakes on them.
+  // Defaults to nothing (`DEFAULT_ANTE_CENTS`), so no chip ever moves because a control went
+  // unnoticed.
+  const anteOptions = anteChoices(manifest.betting);
+  const [anteCents, setAnteCents] = useState(DEFAULT_ANTE_CENTS);
   /**
    * WHICH TABLE YOU ARE AT LIVES IN THE URL, and it is the ONLY place it lives.
    *
@@ -150,6 +159,12 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         // that mode for the same reason — a visible toggle that cannot change the outcome is
         // worse than none.
         visibility: mode === 'online' ? visibility : 'private',
+        // AN 'AI' TABLE NEVER ANTES, whatever the picker last said — the same shape as the
+        // visibility line above and for a sharper reason. Betting needs two humans (one human's
+        // pot is their own ante handed back), an AI table has exactly one by construction, and
+        // charging a stake that can only ever be refunded to the person who paid it is worse than
+        // not offering it. The control is hidden in that mode too.
+        anteCents: mode === 'online' ? anteCents : 0,
       });
       setBusy(false);
       if (result.ok) enterTable(result.value);
@@ -212,6 +227,44 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
                 </Button>
               ))}
             </div>
+          </div>
+        )}
+        {/*
+          WHAT A CHAIR COSTS (v1's "ANTE: NONE / $25 / $100 / $500 / $1K"). Drawn only when the game
+          declares `betting` AND the ladder holds more than one stake — `anteChoices` collapses to
+          `[0]` otherwise, and a stake picker offering only "None" is a control that cannot change
+          the outcome.
+
+          ONLINE ONLY, for the reason `createTable` zeroes it: betting needs two humans, and an AI
+          table has one. A visible ante on a table that can never pay one out is the same lie as a
+          visibility toggle on a table that is never listed.
+        */}
+        {mode === 'online' && anteOptions.length > 1 && (
+          <div className="flex flex-col gap-2">
+            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
+              Ante
+            </span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="What a seat costs">
+              {anteOptions.map((cents) => (
+                <Button
+                  key={cents}
+                  size="sm"
+                  variant={cents === anteCents ? 'secondary' : 'ghost'}
+                  aria-pressed={cents === anteCents}
+                  onClick={() => {
+                    setAnteCents(cents);
+                  }}
+                >
+                  {cents === 0 ? 'None' : formatMoney(cents)}
+                </Button>
+              ))}
+            </div>
+            {anteCents > 0 && (
+              <p className="text-bw-muted text-xs">
+                Every player antes {formatMoney(anteCents)}; the winner takes the pot. Needs two
+                human players — otherwise the table plays for XP alone.
+              </p>
+            )}
           </div>
         )}
         {/*
@@ -339,6 +392,30 @@ function LobbyRoom({
             Table <span className="text-secondary font-display tracking-[0.3em]">{roomIdView}</span>{' '}
             · {status} · {humanCount(seats)} player{humanCount(seats) === 1 ? '' : 's'}
           </p>
+          {/*
+            WHAT THIS CHAIR COSTS, said before anybody sits in it.
+
+            The whole reason the ante is room META rather than a create-time value the host keeps to
+            itself: a joiner arriving by code or from the browser has to know the stake BEFORE they
+            take a seat. Plumbing it to their snapshot and then not drawing it is worse than not
+            plumbing it, because it looks done — and it WAS, for one browser pass: the guest was
+            offered a SIT button on a $25 table with nothing on screen saying so, which is exactly
+            the consent problem this design was built to close.
+
+            The "needs two players" half is said here too, because the stake is otherwise a promise
+            the table cannot keep — a bot has no bankroll, so below two humans nothing is charged.
+          */}
+          {meta !== null && meta.anteCents > 0 && (
+            <p className="text-warning text-sm font-semibold">
+              {formatMoney(meta.anteCents)} a seat · winner takes the pot
+              {humanCount(seats) < 2 && (
+                <span className="text-bw-muted font-normal">
+                  {' '}
+                  — needs two human players, or the table plays for XP alone
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {canStart && (

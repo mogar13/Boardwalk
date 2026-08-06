@@ -462,14 +462,21 @@ function bestColor(hand: readonly Card[], playingId: string): UnoColor {
 
 // ── The public projection (the `TPublic` on the wire) ────────────────────────────────────────────
 
-/** A submitted-but-unprocessed intent. The sentinel (`seat: -1`) means "nothing pending". */
-export interface PendingMove {
-  readonly seat: number;
-  readonly nonce: number;
-  readonly move: Move;
-}
-
-export const NO_PENDING: PendingMove = { seat: -1, nonce: 0, move: { type: 'draw' } };
+/*
+ * THE INTENT/ACK PAIR IS GONE, and its absence is the shape of this game's cutover.
+ *
+ * Until the referee dealt UNO, a non-host could not apply its own move: the host held every hand, so
+ * a guest wrote a `pending` intent into the shared state and waited for the host to `applyMove` it
+ * and bump `ackNonce`. That is a whole consensus protocol, and it existed only because the dealer
+ * was a player.
+ *
+ * Now a move is a message to the referee (`unoAction`), so there is nothing to submit and nothing to
+ * acknowledge. `PendingMove`, `NO_PENDING` and `submitMove` were deleted rather than left dangling —
+ * a field with no reader is `loadout.color`, and leaving the intent lane open beside the new one is
+ * the mistake the Blackjack and Liar's Dice cutovers each named: "the cheapest way to defeat a
+ * cutover is to leave the road it replaced standing." Here it would be worse than dead weight, since
+ * `pending` is a client-authored field on a state the client is no longer allowed to author.
+ */
 
 /**
  * WHAT JUST HAPPENED, as facts rather than prose — the table's move log (v1's `#move-log`, the
@@ -558,9 +565,17 @@ export interface UnoState {
   readonly calledUno: readonly boolean[];
   readonly winner: number;
   readonly round: number;
-  /** The intent a non-host has submitted for the host to apply; `ackNonce` is the last one applied. */
-  readonly pending: PendingMove;
-  readonly ackNonce: number;
+  /**
+   * WHAT IS IN THE POT, in integer cents; `0` for a table not playing for money.
+   *
+   * The SERVER's number, read off the match row rather than recomputed here, and that is the whole
+   * reason it is on the wire at all. A board could derive it — `potFor(seats, meta.anteCents)` is
+   * the same shared function the referee used — and it would be right until the moment it was not:
+   * a seat that changed hands after the deal, a player whose ante was refused, a match settled
+   * under a table that has since been re-sized. Then the UI quotes a pot nobody staked and nobody
+   * will be paid. A dealt game's numbers come from the dealer.
+   */
+  readonly potCents: number;
   /**
    * The last transition, as facts (see `UnoEvent`). ONE event, not a list: the log is per-client
    * scrollback, so each client appends this to its own and a late joiner simply starts from now —
@@ -574,8 +589,7 @@ export interface UnoState {
 export function toPublic(
   game: UnoGame,
   round: number,
-  pending: PendingMove = NO_PENDING,
-  ackNonce = 0,
+  potCents = 0,
   lastEvent: UnoEvent = DEAL_EVENT
 ): UnoState {
   return {
@@ -588,17 +602,7 @@ export function toPublic(
     calledUno: game.calledUno,
     winner: game.winner,
     round,
-    pending,
-    ackNonce,
+    potCents,
     lastEvent,
   };
-}
-
-/**
- * Fold a submitted intent into the public state, minting the next nonce (monotonic, so the host acks
- * in order). Non-hosts call this in their `patch` producer; it copies `prev` and replaces only
- * `pending`, so it never clobbers the host-authored derived fields.
- */
-export function submitMove(prev: UnoState, seat: number, move: Move): UnoState {
-  return { ...prev, pending: { seat, nonce: prev.pending.nonce + 1, move } };
 }

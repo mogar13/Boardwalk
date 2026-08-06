@@ -375,6 +375,8 @@ import type { HandView } from '@boardwalk/game-logic/games/blackjack';
 export type { HandView };
 import type { Action as LiarsDiceAction } from '@boardwalk/game-logic/games/liars-dice';
 export type { LiarsDiceAction };
+import type { Move as UnoMove, UnoLevel } from '@boardwalk/game-logic/games/uno';
+export type { UnoMove, UnoLevel };
 
 export interface BlackjackDealInput {
   readonly nonce: string;
@@ -451,6 +453,48 @@ export interface LiarsDiceRepo {
 }
 
 /**
+ * UNO'S SEAM TO THE REFEREE — the same shape as Liar's Dice's, with the stake taken out.
+ *
+ * `UnoStartInput` has no `anteCents` and that is the whole difference. The table's stake is stamped
+ * on the ROOM at create (`RoomMeta.anteCents`), agreed to by everybody who then sat down, and read
+ * from there by the referee — so a client cannot name what it is about to be charged. A hostile
+ * host that could would play a perfectly FAIR game at a price nobody consented to, which validation
+ * cannot fix because there is no wrong number to reject: the number is simply not the client's to
+ * say. (`LiarsDiceStartInput` above still carries one; closing that is a follow-up.)
+ *
+ * `level` IS a client's choice, and the distinction is the point: a difficulty cannot move a chip,
+ * cannot name an outcome, and the worst a hostile value does is make the house play badly against
+ * whoever sent it.
+ *
+ * NEITHER INPUT HAS A FIELD FOR A CARD, A HAND, A WINNER OR A PAYOUT. Absent, not validated.
+ */
+export interface UnoStartInput {
+  readonly nonce: string;
+  /** How hard the bots play. Not money — see above. */
+  readonly level: UnoLevel;
+}
+
+export interface UnoMoveInput {
+  readonly nonce: string;
+  readonly move: UnoMove;
+}
+
+export interface UnoRepo {
+  /**
+   * Deal a round: shuffle, take every human's ante, hand out the cards. HOST ONLY, and idempotent
+   * through the nonce so a double-fire is a replay rather than a second round and a second ante.
+   */
+  start(gameId: string, roomId: string, input: UnoStartInput): Promise<RepoResult<Profile>>;
+  /**
+   * Play a card or draw one. The resulting GAME STATE reaches this client through the room
+   * subscription and its own private node, exactly as it reaches everyone else — so there is one
+   * code path for "the table moved", and the host's own moves take it too. What comes back HERE is
+   * the PROFILE, because a settling move pays the pot and no subscription carries a balance.
+   */
+  move(gameId: string, roomId: string, input: UnoMoveInput): Promise<RepoResult<Profile>>;
+}
+
+/**
  * One row of the public standings, read from `leaderboard/<uid>`. This is the public
  * projection — the five fields the rules pin, plus the uid the node is keyed by — and nothing
  * private: the leaderboard cannot show what `users/` holds, because it never reads it.
@@ -513,7 +557,18 @@ export interface RoomRepo {
    */
   create(
     gameId: string,
-    init: { seatCount: number; host: SeatOccupant; visibility: RoomVisibility }
+    init: {
+      seatCount: number;
+      host: SeatOccupant;
+      visibility: RoomVisibility;
+      /**
+       * What every seat pays to play, in cents; `0` for a table not playing for money. REQUIRED
+       * for `visibility`'s reason — a stake is a decision, and a default is how a caller makes one
+       * without noticing. Stamped onto the room here and never written again, so a joiner reads
+       * the price off the snapshot before taking a chair. See `RoomMeta.anteCents`.
+       */
+      anteCents: number;
+    }
   ): Promise<RepoResult<string>>;
 
   /**
@@ -707,6 +762,8 @@ export interface Repos {
    * local twin would be one player's browser holding everyone's dice.
    */
   readonly liarsDice: LiarsDiceRepo | null;
+  /** `null` without the game server — UNO cannot be dealt by a client. See `UnoRepo`. */
+  readonly uno: UnoRepo | null;
 }
 
 /** Re-exported so a consumer never needs a second import to type an error branch. */

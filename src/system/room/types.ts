@@ -75,6 +75,26 @@ export interface RoomMeta {
    * is enforced at the server, not merely observed by the client.
    */
   readonly seq: number;
+
+  /**
+   * THE STAKE EVERY SEAT PAYS, in cents, chosen by the host at CREATE and never written again.
+   * `0` for a table not playing for money — which is every table of every game but UNO today.
+   *
+   * IT IS ROOM META AND NOT GAME STATE because a guest has to know what a chair costs BEFORE
+   * sitting in it, and `state` is `null` until the host deals: by the time a projection could
+   * carry the number, the money has already moved. Here it rides the snapshot the lobby already
+   * subscribes to, so a joiner can price the table.
+   *
+   * IT IS CHOSEN AT CREATE for the reason `seatCount` is, with more force. A table cannot grow a
+   * chair under someone who joined by code, and it must certainly not raise the stakes on them.
+   * (v1 let the host retune the ante in the lobby and pushed it to the room on change, so the
+   * number you agreed to was not necessarily the number you paid.)
+   *
+   * On the WS path the server stamps and sanitises it. The RTDB fallback always reports `0`: it
+   * has no referee, so no game can be dealt for money there at all — see the UNO board's
+   * "needs the game server" branch.
+   */
+  readonly anteCents: number;
 }
 
 /**
@@ -105,6 +125,13 @@ export interface OpenTable {
   /** Chairs a joiner may take — `open` or `ai`, since a person displaces the house. */
   readonly openSeats: number;
   readonly seatCount: number;
+  /**
+   * What a chair costs, in cents; `0` for a table not playing for money. On the poster because the
+   * stake is the fact most likely to decide whether a stranger sits down — a listing showing
+   * "3/4 seats" and not "$1,000 a hand" advertises the wrong number. A price, not a pot: still no
+   * uid, no roster, no state.
+   */
+  readonly anteCents: number;
   readonly createdAt: number;
 }
 

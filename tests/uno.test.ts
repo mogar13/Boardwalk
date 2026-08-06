@@ -12,7 +12,6 @@ import {
   type Card,
   type UnoColor,
   type UnoGame,
-  NO_PENDING,
   applyMove,
   canPlay,
   chooseAiMove,
@@ -21,7 +20,6 @@ import {
   freshDeck,
   mustDraw,
   shuffle,
-  submitMove,
   toPublic,
 } from '@boardwalk/game-logic/games/uno';
 
@@ -501,19 +499,21 @@ describe('the public projection', () => {
     expect(pub.deckCount).toBe(g.deck.length);
     expect(pub.top).toEqual(g.discard[0]);
     expect(pub.winner).toBe(-1); // sentinel, not null
-    expect(pub.pending).toBe(NO_PENDING);
     expect(pub.round).toBe(5);
+    expect(pub.potCents).toBe(0); // a table playing for nothing
     // No hand contents anywhere in the projection.
     expect(JSON.stringify(pub)).not.toContain(g.hands[1]![0]!.id);
   });
 
-  it('submitMove mints the next nonce and preserves the derived fields', () => {
-    const pub = toPublic(deal(2, seeded(3)), 0);
-    const next = submitMove(pub, 1, { type: 'draw' });
-    expect(next.pending.nonce).toBe(1);
-    expect(next.pending.seat).toBe(1);
-    expect(next.counts).toEqual(pub.counts); // host-authored fields untouched
-    const again = submitMove(next, 0, { type: 'draw' });
-    expect(again.pending.nonce).toBe(2); // monotonic
+  it('carries the referee\u2019s pot, and no lane for a client to write state through', () => {
+    // What replaced the `submitMove` test that stood here. The intent/ack pair is GONE, not unused:
+    // under host-as-dealer a guest wrote a `pending` move into shared state and waited to be
+    // acknowledged, because only the host could apply it. A move is now a message to the referee, so
+    // leaving that lane open would be a second road into a state the client may no longer author —
+    // the "cheapest way to defeat a cutover is to leave the road it replaced standing" rule.
+    const pub = toPublic(deal(2, seeded(3)), 0, 5_000);
+    expect(pub.potCents).toBe(5_000);
+    expect('pending' in pub).toBe(false);
+    expect('ackNonce' in pub).toBe(false);
   });
 });

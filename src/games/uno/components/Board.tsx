@@ -1,23 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button, Card, cx } from '@/ui';
-import { useGame } from '@/system/economy/useGame';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button, Card, cx, useToast } from '@/ui';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useAudio } from '@/system/audio/useAudio';
 import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
+import { mintNonce, useAuthStore } from '@/system/auth/authStore';
+import { repos } from '@/system/repo';
+import { formatMoney } from '@boardwalk/game-logic';
 import {
   DEAL_EVENT,
   canPlay,
   mustDraw,
-  submitMove,
   type Card as UnoCard,
+  type Move,
   type UnoColor,
   type UnoState,
 } from '@boardwalk/game-logic/games/uno';
 import { useAutoDraw } from '@/games/uno/components/useAutoDraw';
-import { useUnoHost } from '@/games/uno/components/useUnoHost';
 import { useMoveLog } from '@/games/uno/components/useMoveLog';
 import { HandView } from '@/games/uno/components/HandView';
 import { MoveLog } from '@/games/uno/components/MoveLog';
@@ -29,9 +30,29 @@ import { useGameOptions } from '@/system/options/useGameOptions';
 import { unoBotLevel } from '@/games/uno/manifest';
 
 /**
- * THE TABLE. Still a renderer plus an intent sender — it never runs the rules (a move is
- * `submitMove`, the host's `useUnoHost` applies it) and it never branches on a mode. What changed is
- * the SHAPE: opponents used to wrap into one row above the piles, which is a scoreboard. Now they
+ * THE TABLE — now a pure renderer plus a move sender, and no longer a dealer.
+ *
+ * It used to host one: `useUnoHost` held every hand and the draw pile in the host's memory, ran the
+ * reducer, projected a public view and dealt each hand to its owner. That file is GONE. The referee
+ * deals UNO, because the pot made host-as-dealer untenable — a host who can see every hand and also
+ * moves the money is a player who cannot lose, and a 4-seat $25 table pays 4× where the generic
+ * `/settle` ceiling is 3×. So a move is a message (`repos.uno.move`) and the resulting table comes
+ * back over the ordinary room subscription, exactly as it does for everyone else. There is no
+ * "host applies it locally" path left to diverge.
+ *
+ * IT DOES NOT CALL `reportResult`, and that is the sharpest consequence of a dealt game. The
+ * referee banks the stat, the XP and the achievements inside the settle transaction, so reporting
+ * would be a client claiming a result the server already recorded. `checkSettle` refuses `uno`, so
+ * it could not double-count — it would simply toast "settled by the dealer, not by a claim" at every
+ * player at the end of every round, which is exactly what Liar's Dice did until a browser found it.
+ * What IS still needed is a profile refresh at the two moments money moves; see `syncedMoment`.
+ *
+ * It DOES run `canPlay`/`mustDraw`, and that is not a contradiction: those are for FEEL — dim a card
+ * the rules will refuse, so nobody clicks into a wall — and the referee checks again and decides.
+ * Same split as `validateBet` on the chip rack, and literally the same functions.
+ *
+ * The SHAPE is unchanged: opponents used to wrap into one row above the piles, which is a
+ * scoreboard. Now they
  * are seated around the felt (`opponentSlots`), you sit at the bottom, and play runs bottom → left →
  * top → right, so reading the table clockwise is reading the order of play. That is v1's board, and
  * the reason to bring it over is not nostalgia: in a game where every hand is face down, the SHAPE
@@ -58,29 +79,88 @@ const RING: Record<UnoColor, string> = {
 };
 
 export function Board() {
-  const { state, patch, seats, status, isHost, writeHand } = useRoom<UnoState>();
+  const { state, seats, status, isHost, gameId, roomId, myId } = useRoom<UnoState>();
   // The table's difficulty, chosen in the lobby before the deal. The OS holds the value
   // (`<GameShell>`) and draws the control; turning it into a level the rulebook understands is the
-  // game's job, and `unoBotLevel` is where that meaning lives.
+  // game's job, and `unoBotLevel` is where that meaning lives. It rides the DEAL to the referee,
+  // which is what drives the bots now — the client that picked it may have closed its tab by then.
   const botLevel = unoBotLevel(useGameOptions().values);
   const { mySeatIndex, isMyTurn } = useSeats();
-  const { reportResult } = useGame();
+  const adoptProfile = useAuthStore((s) => s.adoptProfile);
   const felt = useEquippedFelt();
   const audio = useAudio();
+  const toast = useToast();
 
-  const { dealAgain } = useUnoHost({
-    isHost,
-    status,
-    state,
-    seats,
-    patch,
-    writeHand,
-    level: botLevel,
-  });
   const myHand = useHand<UnoCard[]>(mySeatIndex) ?? [];
 
   const [pendingWild, setPendingWild] = useState<string | null>(null);
   const [unoArmed, setUnoArmed] = useState(false);
+
+  const dealtRef = useRef(false);
+  /** Which money-moving moment this client has already refreshed its profile for. */
+  const syncedMoment = useRef<string>('');
+
+  /**
+   * The host asks the referee to deal. `state === null` is the not-yet-dealt signal; the nonce makes
+   * a double-fire a replay rather than a second round and a second ante, so the ref is belt to the
+   * server's braces rather than the only thing between a player and two stakes.
+   */
+  useEffect(() => {
+    if (!isHost || status !== 'playing' || state !== null || dealtRef.current) return;
+    if (repos.uno === null) return;
+    dealtRef.current = true;
+    void repos.uno.start(gameId, roomId, { nonce: mintNonce(), level: botLevel }).then((res) => {
+      if (res.ok) adoptProfile(res.value);
+      else toast.error(res.error);
+    });
+  }, [isHost, status, state, gameId, roomId, botLevel, toast, adoptProfile]);
+
+  /**
+   * THE PROFILE SYNC, and the reason this board does not call `reportResult` (see the header).
+   *
+   * A refresh is needed at the two moments the referee moves money, for every seated player rather
+   * than whoever happened to act:
+   *   - THE DEAL takes every human's ante, but only the HOST sends `unoStart`. Without this the
+   *     host's top bar drops the ante and everyone else's goes on showing the old balance while
+   *     their stake sits in the ledger.
+   *   - THE SETTLE pays the pot, and the move that triggers it can be a BOT's — in which case no
+   *     client made a request at all and nobody would learn anything from a reply.
+   *
+   * Keyed so each fires once: the deal per round, the settle per round.
+   */
+  useEffect(() => {
+    if (state === null || mySeatIndex < 0) return;
+    if (state.potCents <= 0) return; // nothing moved; a table playing for XP needs no refresh
+    const moment =
+      state.winner >= 0 ? `settled:${String(state.round)}` : `dealt:${String(state.round)}`;
+    if (syncedMoment.current === moment) return;
+    syncedMoment.current = moment;
+    void repos.profile.load(myId).then((p) => {
+      if (p !== null) adoptProfile(p);
+    });
+  }, [state, mySeatIndex, myId, adoptProfile]);
+
+  /** Send a move to the referee. The host's own moves take this road too — there is only one. */
+  const submit = useCallback(
+    (move: Move): void => {
+      if (mySeatIndex < 0 || repos.uno === null) return;
+      void repos.uno.move(gameId, roomId, { nonce: mintNonce(), move }).then((res) => {
+        if (res.ok) adoptProfile(res.value);
+        else toast.error(res.error);
+      });
+      setUnoArmed(false);
+    },
+    [mySeatIndex, gameId, roomId, toast, adoptProfile]
+  );
+
+  /** Deal the next round. Host-only by construction — the referee refuses anyone else. */
+  const dealAgain = useCallback((): void => {
+    if (!isHost || repos.uno === null) return;
+    void repos.uno.start(gameId, roomId, { nonce: mintNonce(), level: botLevel }).then((res) => {
+      if (res.ok) adoptProfile(res.value);
+      else toast.error(res.error);
+    });
+  }, [isHost, gameId, roomId, botLevel, toast, adoptProfile]);
 
   // Reset the half-made wild choice and the UNO arm when the round changes (rematch / first deal).
   const round = state?.round ?? null;
@@ -101,16 +181,6 @@ export function Board() {
 
   const names = seats.map((s, i) => (s.name === '' ? `Player ${String(i + 1)}` : s.name));
   const lines = useMoveLog(state?.lastEvent ?? DEAL_EVENT, names, state?.round ?? -1);
-
-  // Report my own seat's result once per finished round — keyed on round like Chess, so a rematch
-  // re-arms and a re-render of the same win does not double-count. No betting: XP + a stat, no money.
-  const reportedRound = useRef<number | null>(null);
-  useEffect(() => {
-    if (state === null || state.winner < 0 || mySeatIndex < 0) return;
-    if (reportedRound.current === state.round) return;
-    reportedRound.current = state.round;
-    reportResult({ outcome: state.winner === mySeatIndex ? 'win' : 'loss' });
-  }, [state, mySeatIndex, reportResult]);
 
   // Audio, from the OS roles (never a filename): a slide when anyone draws, a place on any played
   // card, a chime when the turn becomes mine, and win/lose at the end.
@@ -154,10 +224,22 @@ export function Board() {
     stuck && state !== null ? `${String(state.round)}:${String(state.lastEvent.seq)}` : null,
     () => {
       if (state === null || mySeatIndex < 0) return;
-      void patch((prev) => submitMove(prev ?? state, mySeatIndex, { type: 'draw' }));
-      setUnoArmed(false);
+      submit({ type: 'draw' });
     }
   );
+
+  if (repos.uno === null) {
+    // Named rather than degraded. There is no RTDB version of "the server holds the deck", and the
+    // only client-side dealer available is one player's browser holding everybody's hand — which is
+    // exactly what the referee replaced.
+    return (
+      <Card className="p-6 text-center">
+        <p className="text-base-content/70">
+          UNO needs the game server, and this build is running without it.
+        </p>
+      </Card>
+    );
+  }
 
   if (state === null) {
     return (
@@ -171,11 +253,6 @@ export function Board() {
   const finished = state.winner >= 0;
   const event = state.lastEvent;
 
-  const submit = (move: Parameters<typeof submitMove>[2]): void => {
-    if (mySeatIndex < 0) return;
-    void patch((prev) => submitMove(prev ?? state, mySeatIndex, move));
-    setUnoArmed(false);
-  };
   const playCard = (card: UnoCard): void => {
     if (!myTurn || !canPlay(card, state.top, state.color)) {
       if (!canPlay(card, state.top, state.color)) audio.play('error');
@@ -216,6 +293,14 @@ export function Board() {
       />
       <PenaltyFlash penaltyKey={event.penalty && event.seat === mySeatIndex ? event.seq : null} />
 
+      {/* THE POT. The referee's own number, off the projection — not `potFor(seats, ante)` computed
+          here, which is the same figure right up until it is not (a seat that changed hands after
+          the deal, an ante that was refused) and then the table quotes a pot nobody will be paid. */}
+      {state.potCents > 0 && (
+        <p className="font-display text-warning text-shadow-neon-gold text-sm font-semibold tracking-[0.2em] uppercase">
+          Pot {formatMoney(state.potCents)}
+        </p>
+      )}
       {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
           three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
           left a band of dead felt above the piles. */}
@@ -354,7 +439,9 @@ export function Board() {
             won={state.winner === mySeatIndex}
             text={
               state.winner === mySeatIndex
-                ? 'You went out — you win!'
+                ? state.potCents > 0
+                  ? `You went out — you win ${formatMoney(state.potCents)}!`
+                  : 'You went out — you win!'
                 : `${names[state.winner] ?? 'A player'} wins`
             }
           />

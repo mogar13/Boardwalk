@@ -39,6 +39,8 @@ interface RoomRecord {
   hostName: string;
   /** Public tables appear in the browser; private ones are reachable only by their code. */
   visibility: RoomVisibility;
+  /** The stake every seat pays, stamped at create and never written again. See `RoomMeta`. */
+  anteCents: number;
   status: RoomStatus;
   createdAt: number;
   seq: number;
@@ -111,6 +113,16 @@ export class RoomStore {
   }
 
   /**
+   * The table's stake. What a DEALT game charges each human seat, read from the room rather than
+   * from whoever pressed Deal — see `RoomMeta.anteCents`. `0` for a room that does not exist, which
+   * is the same answer as "plays for nothing": a start against a vanished room refuses anyway, and
+   * the one thing that must never happen is a missing room reading as a stake somebody gets charged.
+   */
+  anteOf(gameId: string, roomId: string): number {
+    return this.get(gameId, roomId)?.anteCents ?? 0;
+  }
+
+  /**
    * Every room where `uid` holds a seat. The disconnect path asks the STORE which seats a leaver
    * holds rather than trusting a per-connection mirror: a socket that claimed a seat and never
    * declared presence used to leak that seat forever on close, because the close path walked the
@@ -133,15 +145,23 @@ export class RoomStore {
    * predates the browser sends no such field, and the honest reading of a table created before
    * anyone could choose is the behaviour v1 had — listed. The frontend repo makes it a REQUIRED
    * argument, so nothing in this app creates a table without a decision.
+   *
+   * `anteCents` is SANITISED HERE and nowhere else, because this is the only moment it crosses from
+   * a client to the server. It is floored to a non-negative integer, so a fractional, negative,
+   * infinite or NaN stake becomes `0` — a table that plays for nothing — rather than reaching the
+   * ledger. Money is integer cents everywhere in this repo for the reason v1's `parseInt` gave, and
+   * a stake is the one number here a browser gets to choose.
    */
   create(
     gameId: string,
     host: SeatOccupant,
     seatCount: number,
-    visibility: RoomVisibility = 'public'
+    visibility: RoomVisibility = 'public',
+    anteCents = 0
   ): { ok: true; roomId: string } | { ok: false; error: string } {
     const claimed = claimSeatPure(emptyTable(seatCount), 0, host);
     if (!claimed.ok) return { ok: false, error: 'Could not seat the host.' };
+    const ante = Number.isFinite(anteCents) ? Math.max(0, Math.floor(anteCents)) : 0;
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const roomId = this.makeCode();
@@ -152,6 +172,7 @@ export class RoomStore {
         host: host.uid,
         hostName: host.name,
         visibility,
+        anteCents: ante,
         status: 'waiting',
         createdAt: this.now(),
         seq: 0,
@@ -197,6 +218,7 @@ export class RoomStore {
         players: room.seats.filter((s) => s.kind === 'human').length,
         openSeats,
         seatCount: room.seats.length,
+        anteCents: room.anteCents,
         createdAt: room.createdAt,
       });
     }
@@ -211,7 +233,13 @@ export class RoomStore {
     const presence: Record<string, true> = {};
     for (const uid of room.presence) presence[uid] = true;
     return {
-      meta: { host: room.host, status: room.status, createdAt: room.createdAt, seq: room.seq },
+      meta: {
+        host: room.host,
+        status: room.status,
+        createdAt: room.createdAt,
+        seq: room.seq,
+        anteCents: room.anteCents,
+      },
       seats: room.seats.map((s) => ({ ...s })),
       state: room.state,
       presence,

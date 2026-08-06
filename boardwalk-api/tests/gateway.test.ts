@@ -186,6 +186,54 @@ describe('RoomGateway — over a real socket', () => {
     bob.close();
   });
 
+  /**
+   * THE STAKE REACHES A JOINER OVER THE WIRE, BEFORE THEY TAKE A CHAIR.
+   *
+   * The store test proves the room HOLDS the ante; this proves it travels. The failure it guards
+   * against is a silent one — `anteCents` dropped anywhere between the `create` frame and the
+   * `room` broadcast leaves a lobby rendering "None" on a table that charges $500, and the player
+   * discovers the real number by being charged it. Asserted on BOB's subscription, not Ada's reply,
+   * because the host already knows what they chose and the guest is the one who needs telling.
+   */
+  it('a table’s stake reaches a guest on their own subscription, before they sit down', async () => {
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'uno',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 4,
+      anteCents: 2_500,
+    });
+    const roomId = okValue(created) as string;
+
+    const bob = await Client.open(url, 'bob');
+    bob.fire({ t: 'subscribe', gameId: 'uno', roomId });
+    const frame = await bob.waitFor((m) => m.t === 'room');
+    // Closed BEFORE the assertion, not after: a thrown assertion skips the trailing close, the
+    // `afterEach` server shutdown then waits on a live socket, and the failure is reported as a
+    // hook timeout with the real reason nowhere on screen. Found by falsifying this very test.
+    ada.close();
+    bob.close();
+    expect(frame.t === 'room' && frame.snapshot?.meta.anteCents).toBe(2_500);
+  });
+
+  it('a stake a client never sent reads as a table that plays for nothing', async () => {
+    // Every client that predates this field, and every game that does not bet. The absent case has
+    // to be `0` rather than `undefined`, or a lobby renders "$NaN" and a ledger takes a NaN row.
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'chess',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 2,
+    });
+    const roomId = okValue(created) as string;
+    ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+    const frame = await ada.waitFor((m) => m.t === 'room');
+    ada.close();
+    expect(frame.t === 'room' && frame.snapshot?.meta.anteCents).toBe(0);
+  });
+
   it('refuses a forged author on create, claim, and chat', async () => {
     const ada = await Client.open(url, 'ada');
     // create with a host uid ≠ the socket's identity
