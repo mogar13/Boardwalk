@@ -89,10 +89,13 @@ a seam with no boolean-typed option in it.
 
 ## 2. Stacking
 
-**Status: BUILT (slice 2).** `packages/game-logic/src/games/uno/logic/stacking.ts` +
-`tests/uno-stacking.test.ts` (37). Four things the design got right and two it did not, recorded
-below at the point each one is claimed. **`boardwalk-api` needed ZERO changes** — stacking reaches
-the referee entirely through the shared package, which is the Phase-D seam paying for itself.
+**Status: SHIPPED (slice 2) — merged and DEPLOYED to the Pi 2026-08-06.**
+`packages/game-logic/src/games/uno/logic/stacking.ts` + `tests/uno-stacking.test.ts` (37). Four
+things the design got right and two it did not, recorded below at the point each one is claimed.
+**`boardwalk-api` needed ZERO changes** — stacking reaches the referee entirely through the shared
+package, which is the Phase-D seam paying for itself. The deploy evidence is in CLAUDE.md's
+Enforcement table; the short version is that the Pi's `dist` carries `answersStack`, the running
+PID postdates the build, and the ledger did not move.
 
 The rule everybody actually plays: a +2 played at you can be answered with your own +2, and the
 debt accumulates until somebody cannot answer and takes the lot.
@@ -280,20 +283,25 @@ Until that number exists, this item is not ready to build. §1–§3 are.
 
 ## 5. Slices, and the deploy that comes first
 
-**Slice 0 — the Pi is behind `main` right now.** UNO's dealer merged at 18:10 on 2026-08-05; the
-last recorded deploy was 13:47 the same day. The frontend deploys on push and the Pi by hand, so
-prod UNO is calling `unoStart` at a referee that may not know the frame. **Nothing below ships until
-that is resolved**, and `/health` will not tell you either way — grep `dist/` for the symbol and
-check the running PID postdates it ([pi-deploy-procedure]).
+~~**Slice 0 — the Pi is behind `main` right now.**~~ **CLOSED.** It turned out the dealer was
+already deployed (a concurrent session had shipped it and not written it down — the record of a
+deploy is not the deploy), and the Pi then went behind again for slices 1–2 and was brought current
+on 2026-08-06. The lasting lesson is the CHECK, not the answer: `/health` will not tell you either
+way, and neither will a deploy record — `md5sum` the `src` trees against a clean worktree at
+`origin/main`, which is read-only, exact, and needs no restart ([pi-deploy-procedure]).
 
-1. **House rules as a create-time room parameter** — the shared type, `resolveHouseRules`, the
-   `create` frame, `RoomMeta`, `RoomListing`, the lobby toggles, the RTDB repo answering defaults.
-   Ships with every rule OFF and therefore changes nothing observable: a pure seam, green, and
-   independent of the three rules that will use it.
-2. ~~**Stacking**~~ — **DONE.** The rulebook, its tests (including the dry-deck debt), the bots, the
-   projection, the log, the board. **The Pi deploy is still owed** — see §2's status note and the
-   CLAUDE.md row; the frontend degrades to "the toggle does nothing" against an old referee rather
-   than breaking, which is by construction and tested, but it is still a control that lies.
+1. ~~**House rules as a create-time room parameter**~~ — **DONE and DEPLOYED (2026-08-06).** The
+   shared type, `resolveHouseRules`, the `create` frame, `RoomMeta`, `RoomListing`, the lobby
+   toggles, the RTDB repo answering defaults. Shipped with every rule OFF and therefore changed
+   nothing observable: a pure seam, green, and independent of the three rules that use it. It went
+   in alongside slice 2 rather than on its own, for a reason worth recording — **it sat finished and
+   UNPUSHED in a dead session's worktree**, which is the concurrent-session hazard in its most
+   expensive form: not lost work, but work nobody knew existed. Check the worktrees before
+   rebuilding a slice.
+2. ~~**Stacking**~~ — **DONE and DEPLOYED (2026-08-06).** The rulebook, its tests (including the
+   dry-deck debt), the bots, the projection, the log, the board — merged as PR #57, which carried
+   slice 1 with it because that slice had been built in a session that died before pushing and
+   stacking is meaningless without it.
    **Two things worth carrying into slice 3.** The reducer's read of `game.houseRules` is the first
    one there has ever been, so a match row written before slice 1 can now reach a line that indexes
    the bag — it is resolved rather than indexed, and the totality test has to PLAY A DRAW CARD to
