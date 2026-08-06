@@ -5,9 +5,9 @@ import {
   completionPct,
   type Achievement,
   type ChainRef,
-  type Tier,
 } from '@boardwalk/game-logic';
 import { useProfile } from '@/system/profile/useProfile';
+import { medalSrc } from '@/system/progress/medals';
 
 /**
  * The badge shelf — every achievement, earned or not, now grouped into the P3 chains. A chain is a
@@ -24,8 +24,15 @@ import { useProfile } from '@/system/profile/useProfile';
  * time one fires it is a discovery. Only its earned state reveals its name and face.
  */
 
-/** The medal shown for each tier — metallic, not neon, so it stays inside the glow budget. */
-const TIER_MEDAL: Record<Tier, string> = { bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '🏆' };
+/**
+ * The medal shown for each tier — metallic, not neon, so it stays inside the glow budget.
+ *
+ * REAL ART, not the `🥉🥈🥇🏆` emoji this used to be. A tier is the one thing on this shelf that
+ * must read as an ORDERED ladder at a glance, and emoji are rendered by whatever font the OS
+ * supplies — so the four came out as four unrelated pictures on some platforms and four flat
+ * blobs on others. `medalSrc` resolves one curated set, so bronze→platinum is visibly one family
+ * climbing. See `@/system/progress/medals` for why this is art and not a cosmetic kind.
+ */
 
 /**
  * The chains in first-appearance order — the render order for the sections.
@@ -93,12 +100,21 @@ export function AchievementShelf() {
                         unlocked ? 'border-bw-line-strong bg-base-300' : 'border-bw-line'
                       )}
                     >
-                      <span
-                        className={cx('text-2xl', !unlocked && 'opacity-40 grayscale')}
+                      {/* OPACITY ALONE on a locked tier — NOT `grayscale`, which is what the emoji
+                          version used and what this first copied. With real art that was actively
+                          wrong: a fresh account has every rung locked, and full desaturation made
+                          bronze, silver, gold and platinum four identical grey discs. That erases
+                          the exact property the art was brought in for — the ladder has to read as
+                          ORDERED at a glance, and its order is carried by the metal. Dimming says
+                          "not yet" while leaving the rung legible; desaturating says "not yet" by
+                          deleting which rung it is. Caught by looking at the shelf, which no test
+                          here can do. */}
+                      <img
+                        src={medalSrc(a.tier ?? 'bronze')}
+                        alt=""
                         aria-hidden
-                      >
-                        {TIER_MEDAL[a.tier ?? 'bronze']}
-                      </span>
+                        className={cx('h-8 w-auto', !unlocked && 'opacity-40')}
+                      />
                       <span
                         className={cx(
                           'font-display text-[0.7rem] font-semibold tracking-[0.04em]',

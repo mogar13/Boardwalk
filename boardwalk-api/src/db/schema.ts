@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   equipped_felt         TEXT,
   equipped_frame        TEXT,
   equipped_dice         TEXT,
+  equipped_chessset     TEXT,
   updated_at            INTEGER NOT NULL
   -- no bankroll column, on purpose. See the header.
 );
@@ -353,6 +354,10 @@ export const COLUMN_MIGRATIONS: readonly {
   { table: 'profiles', column: 'equipped_frame', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_frame TEXT' },
   // PHASE E. The fifth equipped slot, and the third time this note has been needed.
   { table: 'profiles', column: 'equipped_dice', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_dice TEXT' },
+  // The SIXTH equipped slot — Chess's set (pieces + squares). Fourth time. The DDL above and this
+  // list are two halves of one change and diverging is how a column silently misses production;
+  // `tests/migrations.test.ts` asserts every entry here names a column the fresh DDL also creates.
+  { table: 'profiles', column: 'equipped_chessset', ddl: 'ALTER TABLE profiles ADD COLUMN equipped_chessset TEXT' },
   { table: 'mutations', column: 'hand_id', ddl: 'ALTER TABLE mutations ADD COLUMN hand_id INTEGER' },
   { table: 'wagers', column: 'hand_id', ddl: 'ALTER TABLE wagers ADD COLUMN hand_id INTEGER' },
   // PHASE E. Two more columns on tables the Pi already has. The two `liars_dice_*` TABLES need no

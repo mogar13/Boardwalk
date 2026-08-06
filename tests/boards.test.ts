@@ -6,7 +6,7 @@ import {
   winRateOf,
   WIN_RATE_MIN_GAMES,
   type BoardId,
-} from '@/system/progress/boards';
+} from '@boardwalk/game-logic';
 import type { LeaderboardEntry } from '@/system/repo/types';
 
 /**

@@ -165,4 +165,133 @@ describe('leaderboard', () => {
     expect(board).toHaveLength(1);
     expect(board[0]).toMatchObject({ uid: 'u1', wins: 0, played: 0 });
   });
+
+  /**
+   * THE FOUR BOARDS, SERVER-SIDE. Every case here failed before the ranking moved into
+   * `@boardwalk/game-logic`: `leaderboard()` took no `board` argument at all and ended in
+   * `ORDER BY wins DESC, p.xp DESC LIMIT ?`, so all four tabs were the wins board.
+   *
+   * The set is built so the four boards genuinely DISAGREE about who is first — a fixture where
+   * the same player tops every board proves nothing, which is the trap that let this ship.
+   *   • `grinder`  — most wins, poor, low xp
+   *   • `whale`    — richest, few wins
+   *   • `leveller` — most xp, middling everything
+   *   • `sharp`    — best win rate over a real sample
+   *   • `fluke`    — a perfect 1/1 record that must NOT top the skill board
+   */
+  describe('boards', () => {
+    /**
+     * Give `uid` a record and a bankroll by betting and settling for real, so every number the
+     * boards rank on is one the server itself derived (`stats` sums and a ledger sum) rather than
+     * a row poked into a table.
+     *
+     * NOT `blackjack`. That game is in `SERVER_DEALT_GAMES`, so `checkSettle` refuses it outright
+     * and `applySettle` banks nothing — the first draft of this fixture used it and seeded an
+     * entirely empty database, which still "passed" the wins assertion because a five-way tie at
+     * zero has a first element. A fixture that can be empty and still green is worse than no
+     * fixture; `chess` settles through the generic path.
+     *
+     * `payoutCents` is bounded by `payoutCeiling` at 3× the stake for a non-blackjack game, so the
+     * whale gets rich through a big STAKE, not through a big multiple.
+     */
+    const seedPlayer = (
+      db: ReturnType<typeof openDb>,
+      uid: string,
+      opts: { wins: number; losses: number; wagerCents?: number; payoutCents?: number }
+    ) => {
+      const wagerCents = opts.wagerCents ?? 100;
+      upsertProfile(db, uid, cosmetics({ name: uid }), { now: 1 });
+      let n = 0;
+      for (let i = 0; i < opts.wins; i++) {
+        applyBet(db, uid, { nonce: `${uid}-b${n}`, gameId: 'chess', amountCents: wagerCents }, 2);
+        applySettle(
+          db,
+          uid,
+          {
+            nonce: `${uid}-w${n++}`,
+            gameId: 'chess',
+            outcome: 'win',
+            payoutCents: opts.payoutCents ?? 0,
+          },
+          2
+        );
+      }
+      for (let i = 0; i < opts.losses; i++) {
+        applySettle(
+          db,
+          uid,
+          { nonce: `${uid}-l${n++}`, gameId: 'chess', outcome: 'loss', payoutCents: 0 },
+          2
+        );
+      }
+    };
+
+    /**
+     * xp is 100 a win and 10 a loss, which is why `leveller` needs a pile of LOSSES to out-xp
+     * `grinder` without out-winning them: 20×100 + 60×10 = 2600 against 25×100 + 5×10 = 2550.
+     * That tension is the fixture's whole job — it is what makes the wins board and the level
+     * board name different players.
+     */
+    const seeded = () => {
+      const db = openDb(':memory:');
+      seedPlayer(db, 'grinder', { wins: 25, losses: 5 }); // most wins; 83% rate
+      seedPlayer(db, 'whale', { wins: 4, losses: 6, wagerCents: 10_000, payoutCents: 30_000 });
+      seedPlayer(db, 'leveller', { wins: 20, losses: 60 }); // most xp; 25% rate
+      seedPlayer(db, 'sharp', { wins: 18, losses: 2 }); // 90% over a real sample
+      seedPlayer(db, 'fluke', { wins: 1, losses: 0 }); // 100% over ONE game
+      return db;
+    };
+
+    it('seeds a database that actually has records in it', () => {
+      // Guards the fixture, not the code. The `blackjack` draft above silently seeded nothing and
+      // the board assertions still went green on a five-way tie at zero.
+      const board = leaderboard(seeded(), 10, 'wins');
+      expect(board).toHaveLength(5);
+      expect(board.every((e) => e.played > 0)).toBe(true);
+    });
+
+    it('ranks each board by its OWN key, and the four disagree', () => {
+      const db = seeded();
+      expect(leaderboard(db, 10, 'wins')[0]?.uid).toBe('grinder');
+      expect(leaderboard(db, 10, 'richest')[0]?.uid).toBe('whale');
+      expect(leaderboard(db, 10, 'level')[0]?.uid).toBe('leveller');
+      expect(leaderboard(db, 10, 'winRate')[0]?.uid).toBe('sharp');
+    });
+
+    it('applies the win-rate floor, so a 1/1 record cannot top the skill board', () => {
+      const db = seeded();
+      const skill = leaderboard(db, 10, 'winRate');
+      // `fluke` is 100% over one game — the highest rate in the set, and absent by rule.
+      expect(skill.map((e) => e.uid)).not.toContain('fluke');
+      // It is present on every board that has no floor, so this is the FILTER and not a bad seed.
+      expect(leaderboard(db, 10, 'wins').map((e) => e.uid)).toContain('fluke');
+    });
+
+    it('filters and sorts BEFORE slicing — a limit cannot pre-select the wrong candidates', () => {
+      const db = seeded();
+      // `whale` has the 4th-most wins of five. Asking for ONE richest row must still find them:
+      // the old query sliced in wins order first, so a limit of 1 could only ever return `grinder`.
+      const richest = leaderboard(db, 1, 'richest');
+      expect(richest).toHaveLength(1);
+      expect(richest[0]?.uid).toBe('whale');
+    });
+
+    it('serves the wins board for an unknown, empty or absent board id', () => {
+      const db = seeded();
+      const wins = leaderboard(db, 10, 'wins').map((e) => e.uid);
+      // One fallback, in `boardById`. Validating the id here too is how two answers drift.
+      expect(leaderboard(db, 10, 'nonsense').map((e) => e.uid)).toEqual(wins);
+      expect(leaderboard(db, 10, '').map((e) => e.uid)).toEqual(wins);
+      expect(leaderboard(db, 10).map((e) => e.uid)).toEqual(wins);
+    });
+
+    it('returns FEWER than the limit when a board filters, rather than padding it', () => {
+      const db = openDb(':memory:');
+      seedPlayer(db, 'fluke', { wins: 1, losses: 0 });
+      // Nobody clears the floor, so the skill board is legitimately empty on a young database —
+      // the state the page words as "no one has played enough games to rank yet".
+      expect(leaderboard(db, 25, 'winRate')).toEqual([]);
+      expect(leaderboard(db, 25, 'wins')).toHaveLength(1);
+    });
+  });
 });

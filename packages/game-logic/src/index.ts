@@ -49,6 +49,7 @@ export * from './profile/ranks';
 export * from './profile/defaults';
 export * from './progress/stats';
 export * from './progress/achievements';
+export * from './progress/boards';
 export * from './economy/bet';
 export * from './economy/refill';
 export * from './economy/result';

@@ -1,4 +1,10 @@
-node_modules/
+# NO TRAILING SLASH, deliberately. `node_modules/` matches a DIRECTORY only, and on 2026-08-05 a
+# `node_modules` SYMLINK pointing at its own absolute path got committed (32ed0e1) because it
+# slipped straight past that rule. The result was a self-referential loop: every root binary
+# resolved to `Too many levels of symbolic links`, so `tsc`, `eslint` and `vitest` were all dead on
+# a fresh checkout, with an error naming none of them. Without the slash this matches the name
+# whatever it is — directory, symlink or file.
+node_modules
 dist/
 dist-ssr/
 .vite/

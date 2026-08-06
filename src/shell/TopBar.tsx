@@ -150,6 +150,25 @@ export function TopBar() {
                 </span>
               </NavLink>
 
+              {/* An ICON link, not another word in the nav row. The left-hand nav names
+                  destinations you go to in order to do something (a game, the store, the board);
+                  settings is somewhere you go once and forget, so it sits with the account
+                  controls it belongs to and spends no horizontal budget. `aria-label` carries the
+                  name the glyph cannot — an emoji is decoration to a screen reader. */}
+              <NavLink
+                to="/settings"
+                aria-label="Settings"
+                title="Settings"
+                className={({ isActive }) =>
+                  cx(
+                    'rounded-field px-1.5 py-1 text-base transition-colors duration-200 ease-strike',
+                    isActive ? 'text-secondary' : 'text-bw-muted hover:text-base-content'
+                  )
+                }
+              >
+                <span aria-hidden>⚙</span>
+              </NavLink>
+
               <Button
                 variant="quiet"
                 size="sm"

@@ -153,6 +153,12 @@ export interface Equipped {
   readonly frame?: string;
   /** The dice Liar's Dice rolls — `@/system/dice/useEquippedDice`. Phase E's reader. */
   readonly dice?: string;
+  /**
+   * The pieces AND squares Chess draws — `@/system/chess/useEquippedChessSet`. Pieces and board
+   * are one cosmetic because a chess set is one object; see `chessSets.ts` for why splitting them
+   * would double the shelf to sell the same three combinations.
+   */
+  readonly chessset?: string;
 }
 
 /** The daily-reward clock. See the `daily` note and `@/system/rewards/daily`. */

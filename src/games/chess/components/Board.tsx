@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
+import { CHESS_GLYPH, chessPieceSrc, type ChessSet } from '@/system/chess/chessSets';
+import { useEquippedChessSet } from '@/system/chess/useEquippedChessSet';
 import { useAudio } from '@/system/audio/useAudio';
 import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
@@ -36,15 +38,31 @@ import {
  * seat is to move (both, on a shared screen; mine, online), and the game never branches on a mode.
  */
 
-/** Solid Unicode chess glyphs, tinted by seat so White/Black read on the dark squares (as X/O do). */
-const GLYPH: Record<PieceType, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+/** Tinted by seat so White/Black read on the dark squares (as X/O do). The GLYPHS themselves live
+ * in `@/system/chess/chessSets` — the store previews them too, and two copies of a king is how a
+ * shelf ends up showing a different piece from the board. */
 const TONE: Record<'w' | 'b', string> = { w: 'text-primary', b: 'text-secondary' };
+
+/**
+ * One man on one square, drawn by the equipped set — the `chessset` cosmetic's reader.
+ *
+ * Two branches and no third: a set either has piece ART or it draws GLYPHS. `chessPieceSrc`
+ * returns `null` for the glyph set rather than a placeholder URL, so the fallback is the board
+ * that shipped in Phase 6 and not a broken image. `alt=""` + `aria-hidden` because the piece is
+ * not the accessible name of anything — the square's button already carries the move.
+ */
+function Piece({ set, piece }: { set: ChessSet; piece: { color: 'w' | 'b'; type: PieceType } }) {
+  const src = chessPieceSrc(set, piece.color, piece.type);
+  if (src === null) return <span className={TONE[piece.color]}>{CHESS_GLYPH[piece.type]}</span>;
+  return <img src={src} alt="" aria-hidden className="h-[82%] w-[82%] object-contain" />;
+}
 
 export function Board() {
   const { state, patch, seats, status, isHost } = useRoom<ChessState>();
   const { isMyTurn, mySeatIndex } = useSeats();
   const { reportResult } = useGame();
   const felt = useEquippedFelt();
+  const set = useEquippedChessSet();
   const audio = useAudio();
 
   const [selected, setSelected] = useState<number | null>(null);
@@ -173,14 +191,23 @@ export function Board() {
               }}
               className={cx(
                 'relative flex aspect-square items-center justify-center text-3xl leading-none transition sm:text-4xl',
-                dark ? 'bg-base-300' : 'bg-base-200',
+                // The equipped set's squares, falling back to the theme surfaces the board has
+                // always used when the set carries none (`cs_classic`). Full class strings from
+                // `chessSets.ts` — never interpolated, or Tailwind generates nothing.
+                set.squares === null
+                  ? dark
+                    ? 'bg-base-300'
+                    : 'bg-base-200'
+                  : dark
+                    ? set.squares.dark
+                    : set.squares.light,
                 isLast && 'bg-primary/15',
                 isSel && 'ring-secondary ring-2 ring-inset',
                 i === checkedKing && 'ring-error ring-2 ring-inset',
                 myMove && 'cursor-pointer'
               )}
             >
-              {piece && <span className={TONE[piece.color]}>{GLYPH[piece.type]}</span>}
+              {piece && <Piece set={set} piece={piece} />}
               {isTarget && (
                 <span
                   className={cx(
@@ -209,7 +236,9 @@ export function Board() {
                   setSelected(null);
                 }}
               >
-                <span className={cx('text-2xl', TONE[turn === 0 ? 'w' : 'b'])}>{GLYPH[t]}</span>
+                <span className={cx('text-2xl', TONE[turn === 0 ? 'w' : 'b'])}>
+                  {CHESS_GLYPH[t]}
+                </span>
               </Button>
             ))}
           </div>

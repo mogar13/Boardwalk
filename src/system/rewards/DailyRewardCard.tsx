@@ -10,14 +10,20 @@ import { useDailyReward } from '@/system/rewards/useDailyReward';
  * store closes it. The claim button is `primary` (blue = act) because on a fresh day it is
  * the one thing to do here; once claimed, the card goes quiet and says come back tomorrow, so
  * the lit primary is never competing with a pier for attention.
+ *
+ * ONE ROW, NOT TWO. The label and the line used to stack, which cost the hub a whole row of
+ * vertical space for a sentence that is usually "come back tomorrow" — dead weight on every
+ * day but the one where it matters, on the page that has the least room to spare. Baseline
+ * alignment keeps the small-caps label sitting on the same line as the prose, and the wrap is
+ * ordinary flex behaviour: it stacks again when the row is genuinely too narrow.
  */
 export function DailyRewardCard() {
   const { status, claim } = useDailyReward();
   if (status === null) return null;
 
   return (
-    <Card className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-      <div className="flex flex-col gap-1">
+    <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
         <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
           Daily reward
         </span>

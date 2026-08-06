@@ -57,14 +57,24 @@ function sourceFiles() {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
-  return out
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .filter((f) => AREAS.some((a) => f.startsWith(a)))
-    .filter((f) => EXTS.some((e) => f.endsWith(e)))
-    .filter((f) => !/(^|\/)(tests?|__tests__)\//.test(f))
-    .filter((f) => !/\.(test|spec)\.[cm]?[jt]sx?$/.test(f));
+  return (
+    out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((f) => AREAS.some((a) => f.startsWith(a)))
+      .filter((f) => EXTS.some((e) => f.endsWith(e)))
+      .filter((f) => !/(^|\/)(tests?|__tests__)\//.test(f))
+      .filter((f) => !/\.(test|spec)\.[cm]?[jt]sx?$/.test(f))
+      // A file git TRACKS but the working tree no longer HAS — deleted and not yet committed, which
+      // is the normal state of any refactor that MOVES a module. `git ls-files` reads the index, so
+      // the old path is still listed and `readFileSync` throws ENOENT; the guard then crashed with a
+      // stack trace instead of reporting anything, and because it runs on `prebuild` that took
+      // `npm run build` down for a reason with nothing to do with file size. Found by moving
+      // `boards.ts` into `packages/game-logic`. Skipping is unambiguously safe: a file that does not
+      // exist has no lines and can hide nothing.
+      .filter((f) => existsSync(join(ROOT, f)))
+  );
 }
 
 function lineCount(file) {

@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { BoardId } from '@/system/progress/boards';
+import type { BoardId } from '@boardwalk/game-logic';
 import { repos } from '@/system/repo';
 import type { LeaderboardEntry } from '@/system/repo';
 
 /**
  * `useLeaderboard()` — a one-shot read of the public standings, for the leaderboard page.
  *
- * It reads through `repos.leaderboard`, which reads `leaderboard/` — a world-readable node — so
- * this works signed out. A one-shot `get` on mount, not a live subscription: standings do not
+ * It reads through `repos.leaderboard`, and it WORKS SIGNED OUT on both composed paths — which is
+ * a property that has to be maintained at each one rather than inherited. On the Firebase path
+ * that is the world-readable `leaderboard/` node; on the API path it is `/leaderboard` being
+ * mounted ahead of the auth middleware. It briefly was not true of the second: the route sat
+ * behind auth from the Phase B cutover, so this hook's error branch was every logged-out visitor's
+ * permanent view of the standings while this very comment claimed otherwise.
+ *
+ * A one-shot `get` on mount, not a live subscription: standings do not
  * need to tick in real time the way a bankroll does, and a live listener here would be a listener
  * to leak, which is the v1 defect the whole repo boundary is shaped to avoid. If live standings
  * ever matter, that is a change behind `LeaderboardRepo`, not here.

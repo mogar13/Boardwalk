@@ -1,6 +1,6 @@
 import { get, ref } from 'firebase/database';
 import { DEFAULT_AVATAR } from '@boardwalk/game-logic';
-import { boardById, rankFor } from '@/system/progress/boards';
+import { boardById, rankFor } from '@boardwalk/game-logic';
 import { firebaseDb } from '@/system/repo/firebase/app';
 import type { LeaderboardEntry, LeaderboardRepo } from '@/system/repo/types';
 
@@ -22,7 +22,7 @@ import type { LeaderboardEntry, LeaderboardRepo } from '@/system/repo/types';
  * change lands without touching the page. The repo boundary is exactly what makes that a later
  * edit to this file and nothing else.
  *
- * The ranking itself is NOT here — it is `rankFor` in `@/system/progress/boards`, the one place
+ * The ranking itself is NOT here — it is `rankFor` in `@boardwalk/game-logic`, the one place
  * every board's order is defined, imported by this repo AND the page so the two cannot disagree.
  */
 

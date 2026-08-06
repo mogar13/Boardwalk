@@ -13,6 +13,8 @@
  *   • `frame`    → the ring around your avatar in the top bar and profile card
  *                  (`useEquippedFrame` → `frameRingClass`) — P5.
  *   • `dice`     → the faces Liar's Dice rolls (`useEquippedDice` → `diceSrc`) — Phase E.
+ *   • `chessset` → Chess's pieces AND squares (`useEquippedChessSet` → `chessPieceSrc`), sold as
+ *                  one object because that is what a chess set is.
  *
  * THE KIND THAT IS STILL ABSENT, and why. A chip skin has abundant art in the trove and NO reader:
  * chips are betting UI rather than something you equip. It is deliberately not here. Staging art
@@ -40,10 +42,11 @@ import type { Profile } from '../profile/types';
 
 /**
  * The cosmetic families, each with a reader (see the header). `title` and `cardback` landed in P2;
- * `felt` and `frame` in P5, `dice` in Phase E. There is no `chip` — see the header for why absence
- * is the correct state for a kind whose art exists but whose reader does not.
+ * `felt` and `frame` in P5, `dice` in Phase E, `chessset` with the carved art. There is no `chip` —
+ * see the header for why absence is the correct state for a kind whose art exists but whose reader
+ * does not.
  */
-export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame' | 'dice';
+export type CosmeticKind = 'avatar' | 'cardback' | 'title' | 'felt' | 'frame' | 'dice' | 'chessset';
 
 /** Scarcity tier. Pure status — drives store styling and (P4) pack odds, never gameplay. */
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -298,6 +301,44 @@ export const CATALOG: readonly Cosmetic[] = [
   { id: 'fr_azure', name: 'Azure Ring', kind: 'frame', rarity: 'rare', priceCents: 250_000 },
   { id: 'fr_violet', name: 'Violet Ring', kind: 'frame', rarity: 'epic', priceCents: 900_000 },
   { id: 'fr_ember', name: 'Ember Ring', kind: 'frame', rarity: 'legendary', priceCents: 6_000_000 },
+
+  // ── Chess sets (pieces + squares, sold together) ─────────────────────────────────────────────
+  // ONE COSMETIC, TWO HALVES, because a chess set is one object — the board and the men on it.
+  // Two kinds would double these rows to sell the same three combinations and would let someone
+  // assemble a pairing whose contrast nobody checked. `chessSets.ts` owns the id→appearance map;
+  // Chess's board is the single reader, which is what earns the kind its place (the rule that kept
+  // `dice` out for two phases and still keeps `chip` out).
+  //
+  // `cs_classic` is a FREE STARTER and it is structurally a card back, not a felt: there is no
+  // such thing as a chessboard with no squares, so an unequipped player still needs a set. It
+  // draws the Unicode glyphs on `bg-base-300`/`bg-base-200` — byte-for-byte the board Chess has
+  // had since Phase 6 — so this whole kind is additive on a live account and nobody's board moves.
+  //
+  // Three buyable sets share ONE piece art style and differ in their squares, which is honestly
+  // what the curated art holds rather than a ladder padded to look full. They climb the rarity
+  // tiers on colourway alone, priced against the felts (the other "surface you stare at all game").
+  { id: 'cs_classic', name: 'Classic Set', kind: 'chessset', rarity: 'common', priceCents: 0 },
+  {
+    id: 'cs_carved_brown',
+    name: 'Carved Walnut',
+    kind: 'chessset',
+    rarity: 'common',
+    priceCents: 40_000,
+  },
+  {
+    id: 'cs_carved_blue',
+    name: 'Carved Ice',
+    kind: 'chessset',
+    rarity: 'rare',
+    priceCents: 250_000,
+  },
+  {
+    id: 'cs_carved_green',
+    name: 'Carved Jade',
+    kind: 'chessset',
+    rarity: 'epic',
+    priceCents: 900_000,
+  },
 ];
 
 /** Lookup by id, for turning a stored `inventory` / `equipped` key back into a cosmetic. */
@@ -338,6 +379,8 @@ export function isEquipped(profile: Profile, item: Cosmetic): boolean {
       return profile.equipped.frame === item.id;
     case 'dice':
       return profile.equipped.dice === item.id;
+    case 'chessset':
+      return profile.equipped.chessset === item.id;
   }
 }
 
@@ -400,6 +443,8 @@ export function applyEquip(profile: Profile, item: Cosmetic): Profile {
       return { ...profile, equipped: { ...profile.equipped, frame: item.id } };
     case 'dice':
       return { ...profile, equipped: { ...profile.equipped, dice: item.id } };
+    case 'chessset':
+      return { ...profile, equipped: { ...profile.equipped, chessset: item.id } };
   }
 }
 

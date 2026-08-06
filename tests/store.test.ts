@@ -59,7 +59,15 @@ describe('the catalogue', () => {
     // five (P5's felt and frame never got a line), and passed the whole time — a test that lists
     // what it knows about cannot notice a kind it does not. Driving it off the union means a new
     // `CosmeticKind` is red here until something is actually for sale under it.
-    const kinds: readonly CosmeticKind[] = ['avatar', 'cardback', 'title', 'felt', 'frame', 'dice'];
+    const kinds: readonly CosmeticKind[] = [
+      'avatar',
+      'cardback',
+      'title',
+      'felt',
+      'frame',
+      'dice',
+      'chessset',
+    ];
     for (const kind of kinds) {
       expect(cosmeticsOfKind(kind).length, `no cosmetics of kind ${kind}`).toBeGreaterThan(0);
     }
@@ -72,6 +80,7 @@ describe('the catalogue', () => {
       felt: true,
       frame: true,
       dice: true,
+      chessset: true,
     };
     expect(Object.keys(exhaustive).sort()).toEqual([...kinds].sort());
   });

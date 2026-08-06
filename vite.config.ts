@@ -18,12 +18,43 @@ import tailwindcss from '@tailwindcss/vite';
 // that cannot see each other. A copy of the list here is the v1 defect in miniature —
 // its Firebase config lived inline in 32 HTML files, each free to drift from the others.
 import { readFirebaseConfig, missingConfigMessage } from './src/system/repo/firebase/config';
+import { execFileSync } from 'node:child_process';
 // The Pages SPA fallback: dist/404.html = a byte-copy of index.html, so a deep link that
 // Pages has no file for boots the app and lets react-router resolve it. Pure + self-checking
 // — see scripts/spa-fallback.mjs for why BrowserRouter needs this on a static host.
 import { writeSpaFallback } from './scripts/spa-fallback.mjs';
 
+/**
+ * THE BUILD STAMP — what commit this bundle was cut from, resolved at build time.
+ *
+ * A `define`, deliberately NOT a `VITE_*` variable. A var would have to be listed in
+ * `deploy.yml` and set correctly by whoever runs the build, which makes "what is deployed" a
+ * thing someone remembers rather than a thing the build knows — and the whole point of the
+ * readout it feeds is answering that question without trusting anybody's memory. `tests/deploy-env.test.ts`
+ * exists because exactly that kind of var was wired into nothing for months.
+ *
+ * Three sources in order: CI's `GITHUB_SHA` (what Pages actually built), then git in the working
+ * tree (a local build), then `unknown` — never a throw, because a missing `.git` must not be able
+ * to fail a build. `dirty` is the honest half: a local build with uncommitted changes is NOT the
+ * commit it names, and a readout that says otherwise is worse than one that says nothing.
+ */
+function buildStamp(): { commit: string; dirty: boolean } {
+  const ci = process.env.GITHUB_SHA;
+  if (ci !== undefined && ci !== '') return { commit: ci.slice(0, 12), dirty: false };
+  try {
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return {
+      commit: git('rev-parse', '--short=12', 'HEAD'),
+      dirty: git('status', '--porcelain') !== '',
+    };
+  } catch {
+    return { commit: 'unknown', dirty: false };
+  }
+}
+
 export default defineConfig(({ command, mode }) => {
+  const stamp = buildStamp();
   // A PRODUCTION BUILD WITH NO CREDENTIALS FAILS HERE, LOUDLY.
   //
   // The alternative is a green deploy of a site whose only feature is a panel explaining
@@ -47,6 +78,14 @@ export default defineConfig(({ command, mode }) => {
     // asset URL is prefixed. A wrong `base` fails in exactly one place — production —
     // because dev and preview would still resolve from the root.
     base: '/Boardwalk/',
+
+    // Baked in at build time, read by `/dev`. JSON-stringified because `define` performs a raw
+    // textual substitution — an unquoted string would be spliced in as an identifier.
+    define: {
+      __BUILD_COMMIT__: JSON.stringify(stamp.commit),
+      __BUILD_DIRTY__: JSON.stringify(stamp.dirty),
+      __BUILD_MODE__: JSON.stringify(mode),
+    },
 
     plugins: [
       tailwindcss(),

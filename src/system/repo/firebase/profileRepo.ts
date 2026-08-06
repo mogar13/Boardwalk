@@ -123,25 +123,42 @@ function readInventory(wire: unknown): Inventory {
 }
 
 /**
+ * Every key `Equipped` has — and the ONLY list of them in this file.
+ *
+ * IT IS EXHAUSTIVE BY THE TYPE, not by care. `_EveryEquippedKeyIsListed` below resolves to `never`
+ * the moment `Equipped` gains a field that is not here, so the assignment stops compiling. That
+ * matters because the previous shape — a hand-written `if` per key — accepted a stale list in
+ * total silence, and did: `chessset` was added to `Equipped`, and the rules, the SQLite column,
+ * the API route's allowlist, the store and the board were all updated while THIS reader was
+ * missed. Buying and equipping a chess set then worked, the write landed in RTDB, and the board
+ * drew the classic set anyway, because the READ dropped the key on the way back. Nothing went
+ * red. It was found by opening the board in a browser and noticing the pieces were glyphs.
+ */
+const EQUIPPED_KEYS = ['cardback', 'title', 'felt', 'frame', 'dice', 'chessset'] as const;
+
+/** `never` if `Equipped` has a key `EQUIPPED_KEYS` does not — which fails the assignment below. */
+type _EveryEquippedKeyIsListed =
+  Exclude<keyof Equipped, (typeof EQUIPPED_KEYS)[number]> extends never ? true : never;
+const _equippedKeysAreExhaustive: _EveryEquippedKeyIsListed = true;
+void _equippedKeysAreExhaustive;
+
+/**
  * Equipped non-avatar cosmetics — each a non-empty string id, or absent. RTDB strips the empty
  * `{}` a fresh account writes, so a missing node reads back as `{}` (nothing equipped), and the
  * card games fall back to the default back. A field of the wrong type is dropped rather than
  * trusted, the same discipline every other reader here follows.
+ *
+ * Still a per-key ALLOWLIST — the wire is not spread in, so a hostile or stale extra field on the
+ * node cannot reach the domain object. What changed is that the list is now checked against the
+ * type instead of maintained by hand.
  */
 function readEquipped(wire: unknown): Equipped {
   const e = asRecord(wire);
-  const out: { cardback?: string; title?: string; felt?: string; frame?: string; dice?: string } =
-    {};
-  if (typeof e.cardback === 'string' && e.cardback !== '') out.cardback = e.cardback;
-  if (typeof e.title === 'string' && e.title !== '') out.title = e.title;
-  // P5's two kinds. This whitelist is per-key by design — an unlisted key is DROPPED, so a kind
-  // added to the type without a line here reads back as nothing-equipped: the cosmetic saves, then
-  // silently un-equips on reload. That is the failure mode this function's shape invites, and the
-  // reason each kind gets its own line rather than a spread of whatever the wire carried.
-  if (typeof e.felt === 'string' && e.felt !== '') out.felt = e.felt;
-  if (typeof e.frame === 'string' && e.frame !== '') out.frame = e.frame;
-  // Phase E's `dice`. The paragraph above is the reason this line exists rather than a spread.
-  if (typeof e.dice === 'string' && e.dice !== '') out.dice = e.dice;
+  const out: Record<string, string> = {};
+  for (const key of EQUIPPED_KEYS) {
+    const v = e[key];
+    if (typeof v === 'string' && v !== '') out[key] = v;
+  }
   return out;
 }
 

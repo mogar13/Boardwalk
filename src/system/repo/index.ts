@@ -180,6 +180,51 @@ export const repos: Repos = {
 };
 
 /**
+ * WHAT THIS FILE ACTUALLY COMPOSED, as data — the `/dev` wiring readout reads it.
+ *
+ * Every branch above is decided by a BUILD-TIME constant, which is precisely what makes it
+ * invisible in production: `VITE_API_ECONOMY` is not a setting anyone can inspect at runtime, it
+ * is a string that was or was not present when the bundle was cut, and its effect is a different
+ * `const` on line 80. When something is wrong in prod the first real question is "which economy is
+ * this build even running", and until now the only way to answer it was to read the deploy log.
+ *
+ * DERIVED FROM THE SAME `const`s THE `repos` OBJECT WAS BUILT FROM, never re-computed from
+ * `import.meta.env` a second time. A readout that re-reads the environment and re-applies the
+ * rules is a second implementation of this file's logic, and the day the two disagree the readout
+ * lies with total confidence — which is worse than not having one. `economy` reports `apiEconomyOn`
+ * itself; `rooms` reports whether `wsRooms` is non-null; `blackjack` compares the composed value to
+ * the API's, so it reports what was CHOSEN rather than what was configured.
+ */
+export interface RepoWiring {
+  /** Is the API reachable at all (a base URL is set and we are not on the emulator)? */
+  readonly apiConfigured: boolean;
+  /** The API base URL, or null. Not a secret — it is in the bundle and has to be. */
+  readonly apiBaseUrl: string | null;
+  /** SQLite-authoritative economy + profile + leaderboard, or the Firebase path. */
+  readonly economy: 'api' | 'firebase';
+  /** Rooms/chat over the WebSocket referee, or the RTDB fallback. */
+  readonly rooms: 'websocket' | 'firebase';
+  /** Is the one game that can win money dealt by the referee, or by the local reducer? */
+  readonly blackjack: 'server-dealt' | 'local';
+  /** Are offline results banked against server-signed tickets? */
+  readonly tickets: 'server-signed' | 'client-minted';
+  /** The two server-dealt room games are null without the gateway, by design. */
+  readonly liarsDice: boolean;
+  readonly uno: boolean;
+}
+
+export const repoWiring: RepoWiring = Object.freeze({
+  apiConfigured: api !== null,
+  apiBaseUrl: apiBaseUrl !== undefined && apiBaseUrl !== '' ? apiBaseUrl : null,
+  economy: apiEconomyOn ? 'api' : 'firebase',
+  rooms: wsRooms ? 'websocket' : 'firebase',
+  blackjack: api !== null && blackjack === api.blackjack ? 'server-dealt' : 'local',
+  tickets: apiEconomyOn ? 'server-signed' : 'client-minted',
+  liarsDice: wsRooms !== null,
+  uno: wsRooms !== null,
+});
+
+/**
  * Re-exported so nothing outside this directory needs to know that `firebase/` is where
  * the answer comes from. `App.tsx` asks this before it renders a form — a missing config
  * is not a form error, it is a deployment fact, and it gets a panel of its own.

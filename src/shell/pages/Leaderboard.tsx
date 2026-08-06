@@ -3,7 +3,7 @@ import { Card, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { formatMoney } from '@boardwalk/game-logic';
 import { rankForLevel, xpProgress } from '@boardwalk/game-logic';
-import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@/system/progress/boards';
+import { BOARDS, boardById, winRateOf, type Board, type BoardId } from '@boardwalk/game-logic';
 import { useLeaderboard } from '@/system/progress/useLeaderboard';
 import type { LeaderboardEntry } from '@/system/repo';
 import { Avatar } from '@/system/profile/Avatar';
@@ -14,8 +14,10 @@ import { Avatar } from '@/system/profile/Avatar';
  * level, win rate — each a tab. One stiff number let exactly one player top the board; four let a
  * grinder, a whale, a leveller and a sharp each own one.
  *
- * The ranking is NOT decided here — `@/system/progress/boards` owns every board's order, and the
- * repo sorts by the same `compare`, so the page and the repo cannot disagree. This file only picks
+ * The ranking is NOT decided here — `@boardwalk/game-logic` owns every board's order, and the
+ * REFEREE sorts by that same `compare`, so the page and the server cannot disagree. (They did:
+ * before the boards moved into the shared package the API ranked every board by wins, because it
+ * had no way to reach this rule. See the module's own header.) This file only picks
  * a board, reads its ranked rows, and draws them. Your own row is cyan (= here): the board's whole
  * point is finding yourself on it.
  */
