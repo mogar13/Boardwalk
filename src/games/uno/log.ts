@@ -157,14 +157,44 @@ export function linesFor(event: UnoEvent, names: readonly string[]): LogLine[] {
       system: true,
     });
   }
-  if (event.winner >= 0) {
+  // GOING OUT AND WINNING CAME APART when ranked places arrived, and the log is where that shows.
+  // Ordinarily they are the same move: `place` is 1 and the round is over, so this reads exactly as
+  // it always did. Playing for places, first place is settled several moves before the round is —
+  // so a seat that goes out gets its placement line here and now, and the round's end gets a line of
+  // its own that names nobody, because by then the winner left the table three moves ago and
+  // "X went out and WINS!" would be a sentence about the wrong moment.
+  if (event.place > 0) {
+    const won = event.winner === event.seat && event.place === 1;
     out.push({
       key: key(5),
-      seat: event.winner,
-      text: `${nameOf(names, event.winner)} went out and WINS!`,
+      seat: event.seat,
+      text: won
+        ? `${actor} went out and WINS!`
+        : `${actor} goes out — ${ordinal(event.place)} place.`,
+      card: null,
+      system: true,
+    });
+  }
+  if (event.winner >= 0 && event.winner !== event.seat) {
+    out.push({
+      key: key(7),
+      seat: -1,
+      text: `Round over — ${nameOf(names, event.winner)} took it.`,
       card: null,
       system: true,
     });
   }
   return out;
+}
+
+/**
+ * "1st", "2nd", "3rd"… A table seats seven, so this only ever has to reach 7th and the English
+ * exceptions at 11–13 never arise — but they are handled anyway, because the rule is two lines and
+ * the alternative is a function that is quietly wrong for a table size nobody has tried yet.
+ */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${String(n)}th`;
+  const suffix = n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return `${String(n)}${suffix}`;
 }

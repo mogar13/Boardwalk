@@ -45,7 +45,7 @@ import type { Db } from '../db/db';
 import { loadProfile } from '../domain/profile';
 import type { Profile } from '../domain/types';
 import type { Seat, RoomStatus, TableRules } from './types';
-import type { Move, UnoLevel } from '@boardwalk/game-logic/games/uno';
+import { roundOver, type Move, type UnoLevel } from '@boardwalk/game-logic/games/uno';
 
 /** How long a bot "thinks". Matches what the client dealer used, so the table's rhythm is unchanged. */
 const AI_DELAY_MS = 900;
@@ -190,7 +190,10 @@ export class UnoDealer {
    */
   private schedule(gameId: string, roomId: string, result: StartOk | MoveOk): void {
     this.cancel(gameId, roomId);
-    if (result.match.game.winner !== -1) return;
+    // `roundOver`, not "somebody went out": playing for places the table keeps going after 1st, and
+    // a timer that stopped there would leave every remaining bot seat waiting for a move nobody can
+    // make — the stall this whole file exists to prevent, arriving through the front door.
+    if (roundOver(result.match.game)) return;
 
     const seat = this.host.seatsOf(gameId, roomId)[result.match.game.turn];
     if (seat?.kind !== 'ai') return;

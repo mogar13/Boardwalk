@@ -30,6 +30,8 @@ import {
   tableOf,
   toPublic,
   DEFAULT_HOUSE_RULES,
+  roundOver,
+  winnerOf,
 } from '@boardwalk/game-logic/games/uno';
 import { linesFor } from '@/games/uno/log';
 
@@ -77,7 +79,7 @@ function game(hands: Card[][], topCard: Card, over: Partial<UnoGame> = {}): UnoG
     turn: 0,
     direction: 1,
     calledUno: hands.map(() => false),
-    winner: -1,
+    finished: [],
     pendingDraw: 0,
     houseRules: DEFAULT_HOUSE_RULES,
     ...over,
@@ -308,7 +310,7 @@ describe('the reducer with stacking ON', () => {
       turn: 0,
     };
     const won = applyMove(played, 0, { type: 'play', cardId: d2.id }, seeded(1));
-    expect(won.winner).toBe(0);
+    expect(winnerOf(won)).toBe(0);
     expect(won.pendingDraw).toBe(0);
   });
 });
@@ -532,14 +534,14 @@ describe('the bots', () => {
           const rng = seeded(seed);
           let g = deal(4, rng, 0, rules);
           let guard = 0;
-          while (g.winner === -1 && guard < 5000) {
+          while (!roundOver(g) && guard < 5000) {
             const before = g;
             const next = applyMove(g, g.turn, chooseAiMove(g, g.turn, level, rng), rng);
             expect(next).not.toBe(before); // a refusal returns the SAME object — the stall
             g = next;
             guard += 1;
           }
-          expect(g.winner).toBeGreaterThanOrEqual(0);
+          expect(winnerOf(g)).toBeGreaterThanOrEqual(0);
         }
       }
     }

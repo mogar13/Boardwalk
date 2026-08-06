@@ -80,12 +80,16 @@ export const unoManifest = {
    * opposed to `options` above, which is how one client does. The ids are the keys
    * `resolveHouseRules` reads, asserted as a bijection in `tests/uno-house-rules.test.ts`.
    *
-   * EVERY ONE DEFAULTS OFF, and none of them is enforced yet: this slice is the SEAM — the type,
-   * the resolver, the create-time room parameter, the toggles — and the rulebook changes land on
-   * top of it. Shipping the toggles now with the rules off is deliberate and not a stub: the seam
-   * is independently useful, independently green, and the thing most likely to be got wrong (a
-   * rule a guest reads differently from the referee) is exactly what it exists to make impossible.
-   * A table nobody configures is the table that already exists.
+   * EVERY ONE DEFAULTS OFF, and that is load-bearing rather than tidy: all-false IS the game as it
+   * already plays, so a table nobody configures is exactly the table that existed before the
+   * control did. All three are enforced by the reducer now — stacking in slice 2, places in slice
+   * 3 — and none of them is spelled anywhere in `src/system/room`, which carries the bag and never
+   * learns what a rule means.
+   *
+   * A HINT IS WHERE A GAME EXPLAINS ITS OWN MONEY. The lobby's ante line is OS copy and says "the
+   * winner takes the pot", which stops being the whole truth under `playToLast` — so the correction
+   * rides in the manifest, where a game may say game things, rather than teaching the lobby a rule
+   * id it must never know.
    */
   houseRules: [
     {
@@ -104,7 +108,7 @@ export const unoManifest = {
     {
       id: 'playToLast',
       label: 'Play for places',
-      hint: 'Keep playing after 1st: 2nd, then 3rd. Last player standing is last.',
+      hint: 'Keep playing after 1st: 2nd, then 3rd. Last player standing is last. Playing for money, the top half of the places share the pot instead of the winner taking it all.',
     },
   ],
 } as const satisfies GameManifest;

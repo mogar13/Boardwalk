@@ -107,3 +107,54 @@ export function potFor(seats: readonly PotSeat[], anteCents: number): number {
 export function isBetting(seats: readonly PotSeat[], anteCents: number): boolean {
   return stakePerSeat(seats, anteCents) > 0;
 }
+
+/**
+ * HOW A POT SPLITS ACROSS RANKED PLACES — `places` positions, best first, in integer cents.
+ *
+ * `places` is THE NUMBER OF PAYING SEATS THAT PLACED, not the number of chairs. A bot stakes
+ * nothing, so it takes nothing, and it is simply absent from this ladder rather than allocated a
+ * share that would then have to go somewhere. That keeps one rule covering both modes: **the pot is
+ * split among the seats that PAID and PLACED, in the order they placed.** Playing for places, that
+ * is every human at the table; playing the ordinary game, `finished` holds one seat, so it is
+ * `[winner]` — and `potSplit(pot, 1)` is `[pot]`, winner takes all, today's behaviour to the cent.
+ * If a bot goes out first in the ordinary game no paying seat placed at all, `places` is 0, and the
+ * pot goes to nobody — which is what this game already did, now stated as a consequence of one rule
+ * rather than as a separate case.
+ *
+ * THE LADDER: the top HALF of the paying places share it, weighted `k, k-1, … 1`. Two properties
+ * bought deliberately —
+ *
+ *   • two and three payers collapse to winner-takes-all (`floor(k/2)` is 1), so the tables that
+ *     exist today are unchanged whether or not they turn ranked places on. A house rule that
+ *     re-prices a game nobody asked to re-price is the default-change mistake in a different hat;
+ *   • placing badly costs you. A ladder that pays every position hands last place a rebate for
+ *     losing, which is a softer version of the faucet §4 of the plan exists to refuse.
+ *
+ * CONSERVATION IS BY CONSTRUCTION, NOT BY ARITHMETIC LUCK. Every place below first is floored and
+ * the REMAINDER goes to first, so the shares sum to exactly the pot at every table size and every
+ * stake. A percentage split that rounds each share independently is the one thing the ledger cannot
+ * absorb — it either mints a cent or loses one, on every single hand.
+ *
+ * Garbage in, zeroes out, never throws: a non-finite or negative pot pays nothing rather than
+ * writing a nonsense ledger row, the discipline `stakePerSeat` follows one function up.
+ */
+export function potSplit(potCents: number, places: number): number[] {
+  if (!Number.isFinite(places)) return [];
+  const seats = Math.floor(places);
+  if (seats <= 0) return [];
+
+  const out = new Array<number>(seats).fill(0);
+  const pot = Number.isFinite(potCents) && potCents > 0 ? Math.floor(potCents) : 0;
+  if (pot === 0) return out;
+
+  const paid = Math.max(1, Math.floor(seats / 2));
+  const weight = (paid * (paid + 1)) / 2;
+  let given = 0;
+  for (let place = 1; place < paid; place += 1) {
+    const share = Math.floor((pot * (paid - place)) / weight);
+    out[place] = share;
+    given += share;
+  }
+  out[0] = pot - given; // the remainder rides with first place — see above
+  return out;
+}

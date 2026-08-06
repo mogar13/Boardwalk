@@ -18,6 +18,7 @@
  */
 
 import { DEAL_EVENT, tableOf, type Card, type Move, type UnoEvent, type UnoGame } from './uno';
+import { placesOf, roundOver, seatAfterLive, winnerOf } from './places';
 import { drawDebt } from './stacking';
 
 /** Seats whose hand grew, and by how much — the only way to see a draw-2/4 without re-deriving it. */
@@ -63,11 +64,21 @@ export function describeMove(
     }
   }
 
-  // A skip is "the turn passed over somebody": the seat one step along from the actor, in the
-  // direction that was in force AFTER any reverse, is not the seat now holding the turn.
+  // A skip is "the turn passed over somebody": the seat one LIVE step along from the actor, in the
+  // direction that was in force AFTER any reverse, is not the seat now holding the turn. Live and
+  // not modular, because a player who has gone out was never going to take a turn — announcing them
+  // as skipped is the log reporting a rule that did not fire.
   const n = after.hands.length;
-  const next = (((seat + after.direction) % n) + n) % n;
-  const skipped = after.winner === -1 && after.turn !== next && n > 1 ? next : -1;
+  const out = placesOf(after);
+  const next = seatAfterLive(seat, 1, after.direction, n, out);
+  const skipped = !roundOver(after) && after.turn !== next && n > 1 ? next : -1;
+
+  // WHAT PLACE THE ACTOR TOOK, read off the diff like everything else here: they placed on this move
+  // if they were not on the podium before it and are now. A ranked round ends by placing TWO seats
+  // at once (the actor, then the straggler), so this indexes the actor rather than taking the last
+  // entry — which would credit whoever went out with the place the straggler was given.
+  const placedBefore = placesOf(before);
+  const place = !placedBefore.includes(seat) && out.includes(seat) ? out.indexOf(seat) + 1 : 0;
 
   // The actor going to one card either declared (calledUno flips true) or paid the standard +2.
   const actorGrew = grewBy(before, after, seat);
@@ -92,7 +103,9 @@ export function describeMove(
     reversed: after.direction !== before.direction,
     calledUno,
     penalty,
-    winner: after.winner,
+    // The move that ENDED it, not the move somebody went out on — see `UnoEvent.winner`.
+    winner: roundOver(after) ? winnerOf(after) : -1,
+    place,
     // READ OFF THE RESULT, like the victim and the skip above: the log says what the debt IS, not
     // what this card added to it, so a rule change to what a +4 contributes needs no edit here.
     stacked: drawDebt(tableOf(after)),

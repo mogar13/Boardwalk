@@ -7,7 +7,9 @@
  * the way it did when this file was `src/games/uno/logic/uno.ts`.
  */
 export * from './logic/uno';
+export * from './logic/ai';
 export * from './logic/events';
+export * from './logic/places';
 export * from './logic/pot';
 export * from './logic/houseRules';
 export * from './logic/stacking';

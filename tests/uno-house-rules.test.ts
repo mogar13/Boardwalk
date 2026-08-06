@@ -7,6 +7,7 @@ import {
   resolveHouseRules,
   UNO_HOUSE_RULE_IDS,
   type UnoHouseRules,
+  roundOver,
 } from '@boardwalk/game-logic/games/uno';
 import {
   houseRuleChoices,
@@ -247,7 +248,7 @@ describe('the rules ride the MATCH, not just the room', () => {
     expect(g.houseRules).toEqual(expected);
 
     // Play the table out for a while, through both branches (a play and a draw).
-    for (let i = 0; i < 25 && g.winner === -1; i += 1) {
+    for (let i = 0; i < 25 && !roundOver(g); i += 1) {
       const hand = g.hands[g.turn] ?? [];
       const playable = hand.find((c) => c.color === g.color || c.color === 'wild');
       const before = g;

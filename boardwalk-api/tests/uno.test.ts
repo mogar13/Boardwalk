@@ -37,7 +37,14 @@ import {
   type SeatSpec,
   type StartOk,
 } from '../src/domain/uno';
-import { chooseAiMove, type UnoGame, type Move } from '@boardwalk/game-logic/games/uno';
+import {
+  chooseAiMove,
+  placesOf,
+  roundOver,
+  winnerOf,
+  type UnoGame,
+  type Move,
+} from '@boardwalk/game-logic/games/uno';
 
 const ANTE = 2_500;
 const ROOM = 'ABCD';
@@ -340,7 +347,7 @@ describe('settling — the pot is paid, and the board never claims it', () => {
       const row = rowOf(db, matchId);
       if (row.settled === 1) return;
       const game = stored(db, matchId).game;
-      if (game.winner !== -1) return;
+      if (roundOver(game)) return;
       const uid = seatUid(game.turn);
       if (uid === null) {
         if (playAiTurn(db, matchId, 2_000 + i) === null) return;
@@ -357,9 +364,9 @@ describe('settling — the pot is paid, and the board never claims it', () => {
     playToAWinner(db, res.matchId, (seat) => (seat === 0 ? 'ada' : 'bob'));
 
     const game = stored(db, res.matchId).game;
-    expect(game.winner).not.toBe(-1);
-    const winner = game.winner === 0 ? 'ada' : 'bob';
-    const loser = game.winner === 0 ? 'bob' : 'ada';
+    expect(winnerOf(game)).not.toBe(-1);
+    const winner = winnerOf(game) === 0 ? 'ada' : 'bob';
+    const loser = winnerOf(game) === 0 ? 'bob' : 'ada';
 
     // The pot was 2 × ante; the winner is up one ante and the loser down one. Money conserved.
     expect(balanceOf(db, winner)).toBe(STARTING_BANKROLL_CENTS + ANTE);
@@ -407,9 +414,131 @@ describe('settling — the pot is paid, and the board never claims it', () => {
     const res = dealTable(db, [human('ada'), human('bob'), bot()], ANTE);
     playToAWinner(db, res.matchId, (seat) => (seat === 0 ? 'ada' : seat === 1 ? 'bob' : null));
     const game = stored(db, res.matchId).game;
-    if (game.winner !== 2) return; // a human won this deal; the assertion below is for the bot case
+    if (winnerOf(game) !== 2) return; // a human won this deal; the assertion below is for the bot case
     expect(balanceOf(db, 'ada')).toBe(STARTING_BANKROLL_CENTS - ANTE);
     expect(balanceOf(db, 'bob')).toBe(STARTING_BANKROLL_CENTS - ANTE);
+  });
+});
+
+/**
+ * RANKED PLACES — slice 3, and the half of it that moves money.
+ *
+ * `potSplit`'s arithmetic is proved in `tests/uno-places.test.ts`, where it is pure. What can only
+ * be asked here is whether the REFEREE hands it the right list: the paying seats, in the order they
+ * went out. Get that wrong and every share is computed correctly and paid to the wrong person.
+ */
+describe('settling a ranked round — the pot splits, and only 1st is a win', () => {
+  const RANKED = { playToLast: true };
+
+  /** Play a dealt table until the podium is complete, driving whoever is on turn. */
+  function playToTheEnd(db: Db, matchId: number, seatUid: (seat: number) => string | null): void {
+    for (let i = 0; i < 8_000; i += 1) {
+      const row = rowOf(db, matchId);
+      if (row.settled === 1) return;
+      const game = stored(db, matchId).game;
+      if (roundOver(game)) return;
+      const uid = seatUid(game.turn);
+      if (uid === null) {
+        if (playAiTurn(db, matchId, 2_000 + i) === null) return;
+        continue;
+      }
+      playMove(db, uid, matchId, `r${String(i)}`, legalMove(game), 2_000 + i);
+    }
+    throw new Error('no complete podium in 8000 moves');
+  }
+
+  it('does not settle when FIRST place goes out — the table is still playing', () => {
+    // The failure this guards is paying the pot with two players still holding cards. It is only
+    // visible on a table big enough for the two moments to be different.
+    const db = seeded();
+    const res = dealTable(db, [human('ada'), human('bob'), human('cy')], ANTE, 'n-rank1', RANKED);
+    for (let i = 0; i < 8_000; i += 1) {
+      const game = stored(db, res.matchId).game;
+      if (placesOf(game).length >= 1) break;
+      const uid = ['ada', 'bob', 'cy'][game.turn] ?? 'ada';
+      playMove(db, uid, res.matchId, `k${String(i)}`, legalMove(game), 3_000 + i);
+    }
+    const mid = stored(db, res.matchId).game;
+    expect(placesOf(mid)).toHaveLength(1);
+    expect(roundOver(mid)).toBe(false);
+    expect(rowOf(db, res.matchId).settled).toBe(0); // nothing paid yet
+    for (const uid of ['ada', 'bob', 'cy']) {
+      expect(balanceOf(db, uid)).toBe(STARTING_BANKROLL_CENTS - ANTE);
+    }
+  });
+
+  it('splits the pot by placement and CONSERVES it, paying only the top half', () => {
+    const db = seeded();
+    const seats = [human('ada'), human('bob'), human('cy')];
+    const res = dealTable(db, seats, ANTE, 'n-rank2', RANKED);
+    playToTheEnd(db, res.matchId, (seat) => ['ada', 'bob', 'cy'][seat] ?? null);
+
+    const game = stored(db, res.matchId).game;
+    const podium = placesOf(game);
+    expect(podium).toHaveLength(3);
+    const uidAt = (place: number): string => ['ada', 'bob', 'cy'][podium[place]!]!;
+
+    // Three payers → `floor(3/2)` is 1 paid place, so the winner still takes the lot. That is not a
+    // special case: it is the ladder, and it is why turning places on does not re-price a small
+    // table under anyone.
+    expect(balanceOf(db, uidAt(0))).toBe(STARTING_BANKROLL_CENTS + ANTE * 2);
+    expect(balanceOf(db, uidAt(1))).toBe(STARTING_BANKROLL_CENTS - ANTE);
+    expect(balanceOf(db, uidAt(2))).toBe(STARTING_BANKROLL_CENTS - ANTE);
+
+    // The property, stated as one: the table's money is exactly where it started.
+    const total = ['ada', 'bob', 'cy'].reduce((sum, uid) => sum + balanceOf(db, uid), 0);
+    expect(total).toBe(STARTING_BANKROLL_CENTS * 3);
+    const open = db
+      .prepare('SELECT COUNT(*) AS n FROM wagers WHERE match_id = ? AND settled_at IS NULL')
+      .get(res.matchId) as { n: number };
+    expect(open.n).toBe(0);
+  });
+
+  it('records ONE win — placing 2nd of 3 is not a win', () => {
+    // Inventing a half-win would put a second meaning into a number four leaderboards already rank.
+    const db = seeded();
+    const res = dealTable(
+      db,
+      [human('ada'), human('bob'), human('cy')],
+      ANTE,
+      'n-rank3',
+      RANKED
+    );
+    playToTheEnd(db, res.matchId, (seat) => ['ada', 'bob', 'cy'][seat] ?? null);
+    const rows = db
+      .prepare('SELECT uid, played, won, lost FROM stats WHERE game_id = ? ORDER BY uid')
+      .all(GAME_ID) as { uid: string; played: number; won: number; lost: number }[];
+    expect(rows).toHaveLength(3);
+    expect(rows.reduce((a, r) => a + r.played, 0)).toBe(3);
+    expect(rows.reduce((a, r) => a + r.won, 0)).toBe(1);
+    expect(rows.reduce((a, r) => a + r.lost, 0)).toBe(2);
+    const winner = ['ada', 'bob', 'cy'][winnerOf(stored(db, res.matchId).game)];
+    expect(rows.find((r) => r.uid === winner)?.won).toBe(1);
+  });
+
+  it('gives a BOT on the podium nothing, and still pays the whole pot out', () => {
+    // A bot placed 1st would take the winner's share of money it never staked. It is simply not on
+    // the paying ladder — the pot is split among the seats that PAID and PLACED — so the humans'
+    // own money still lands entirely on humans.
+    const db = seeded();
+    const res = dealTable(
+      db,
+      [human('ada'), human('bob'), bot(), bot()],
+      ANTE,
+      'n-rank4',
+      RANKED
+    );
+    playToTheEnd(db, res.matchId, (seat) => (seat === 0 ? 'ada' : seat === 1 ? 'bob' : null));
+
+    const podium = placesOf(stored(db, res.matchId).game);
+    expect(podium).toHaveLength(4);
+    // Two payers → one paid place: whichever human placed better takes both antes.
+    const humansInOrder = podium.filter((seat) => seat < 2);
+    const best = humansInOrder[0] === 0 ? 'ada' : 'bob';
+    const rest = best === 'ada' ? 'bob' : 'ada';
+    expect(balanceOf(db, best)).toBe(STARTING_BANKROLL_CENTS + ANTE);
+    expect(balanceOf(db, rest)).toBe(STARTING_BANKROLL_CENTS - ANTE);
+    expect(balanceOf(db, 'ada') + balanceOf(db, 'bob')).toBe(STARTING_BANKROLL_CENTS * 2);
   });
 });
 
@@ -418,7 +547,7 @@ describe('rounds — a table plays many, and each is its own pot', () => {
     const db = seeded();
     const first = dealTable(db);
     // Settle round one by hand — the leader rule is what is under test, not the play.
-    const won: UnoGame = { ...first.match.game, winner: 1 };
+    const won: UnoGame = { ...first.match.game, finished: [1] };
     db.prepare('UPDATE uno_matches SET state_json = ?, settled = 1 WHERE id = ?').run(
       JSON.stringify({ ...first.match, game: won }),
       first.matchId

@@ -24,6 +24,8 @@ import {
   tableOf,
   toPublic,
   DEFAULT_HOUSE_RULES,
+  roundOver,
+  winnerOf,
 } from '@boardwalk/game-logic/games/uno';
 
 // A tiny seeded PRNG so a shuffle is deterministic in a test without stubbing Math.random.
@@ -56,7 +58,7 @@ function game(hands: Card[][], topCard: Card, over: Partial<UnoGame> = {}): UnoG
     turn: 0,
     direction: 1,
     calledUno: hands.map(() => false),
-    winner: -1,
+    finished: [],
     pendingDraw: 0,
     houseRules: DEFAULT_HOUSE_RULES,
     ...over,
@@ -177,7 +179,7 @@ describe('deal', () => {
     expect(g.discard[0]?.kind).toBe('number'); // never opens on an action/wild
     expect(g.deck).toHaveLength(108 - 4 * 7 - 1);
     expect(g.turn).toBe(0);
-    expect(g.winner).toBe(-1);
+    expect(g.finished).toEqual([]);
     expect(g.color).toBe(g.discard[0]?.color);
   });
 
@@ -248,7 +250,7 @@ describe('applyMove — totality & immutability', () => {
   });
 
   it('is a no-op once the game is finished', () => {
-    const g = game([[c('red', 'number', 3)], []], c('red', 'number', 9), { winner: 1 });
+    const g = game([[c('red', 'number', 3)], []], c('red', 'number', 9), { finished: [1] });
     expect(applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id })).toBe(g);
   });
 });
@@ -369,7 +371,7 @@ describe('applyMove — the UNO call and the win', () => {
   it('playing the last card wins, and the turn stops', () => {
     const g = game([[c('red', 'number', 3)], [c('blue', 'number', 1)]], c('red', 'number', 9));
     const next = applyMove(g, 0, { type: 'play', cardId: g.hands[0]![0]!.id });
-    expect(next.winner).toBe(0);
+    expect(winnerOf(next)).toBe(0);
     expect(next.hands[0]).toHaveLength(0);
     expect(next.turn).toBe(0); // no advance after a win
   });
@@ -496,14 +498,14 @@ describe('chooseAiMove — the difficulty tiers', () => {
         const rng = seeded(seed);
         let g = deal(4, rng);
         let guard = 0;
-        while (g.winner === -1 && guard < 5000) {
+        while (!roundOver(g) && guard < 5000) {
           const before = g;
           const next = applyMove(g, g.turn, chooseAiMove(g, g.turn, level, rng), rng);
           expect(next).not.toBe(before); // a refusal returns the SAME object — the stall
           g = next;
           guard += 1;
         }
-        expect(g.winner).toBeGreaterThanOrEqual(0); // a table that finishes, at either level
+        expect(winnerOf(g)).toBeGreaterThanOrEqual(0); // a table that finishes, at either level
       }
     }
   });
