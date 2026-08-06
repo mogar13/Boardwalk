@@ -20,6 +20,7 @@ import {
 } from '@boardwalk/game-logic/games/uno';
 import { useAutoDraw } from '@/games/uno/components/useAutoDraw';
 import { useMoveLog } from '@/games/uno/components/useMoveLog';
+import { CallUno } from '@/games/uno/components/CallUno';
 import { HandView } from '@/games/uno/components/HandView';
 import { MoveLog } from '@/games/uno/components/MoveLog';
 import { SeatView } from '@/games/uno/components/SeatView';
@@ -297,7 +298,7 @@ export function Board() {
           here, which is the same figure right up until it is not (a seat that changed hands after
           the deal, an ante that was refused) and then the table quotes a pot nobody will be paid. */}
       {state.potCents > 0 && (
-        <p className="font-display text-warning text-shadow-neon-gold text-sm font-semibold tracking-[0.2em] uppercase">
+        <p className="font-display text-accent text-shadow-neon-gold text-sm font-semibold tracking-[0.2em] uppercase">
           Pot {formatMoney(state.potCents)}
         </p>
       )}
@@ -415,16 +416,12 @@ export function Board() {
               Hidden while stuck: with no playable card the button cannot change the next move, and
               the draw it is about to be interrupted by clears the call anyway. */}
           {myHand.length === 2 && myTurn && !stuck && (
-            <Button
-              variant={unoArmed ? 'primary' : 'secondary'}
-              size="sm"
-              className={cx(!unoArmed && 'animate-lastcard')}
-              onClick={() => {
+            <CallUno
+              armed={unoArmed}
+              onToggle={() => {
                 setUnoArmed((v) => !v);
               }}
-            >
-              {unoArmed ? 'UNO! armed — play your card' : 'Call UNO!'}
-            </Button>
+            />
           )}
         </>
       )}
