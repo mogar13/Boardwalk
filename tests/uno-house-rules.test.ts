@@ -23,7 +23,7 @@ import { unoManifest } from '@/games/uno/manifest';
 import { registry } from '@/games/registry';
 
 /**
- * HOUSE RULES, SLICE 1 — the seam, not the rules (plans/UNO_HOUSE_RULES.md §1).
+ * HOUSE RULES, SLICE 1 — the seam, not the rules (plans/done/UNO_HOUSE_RULES.md §1).
  *
  * Every rule ships OFF, so nothing here asserts what stacking or ranked places DO. What it asserts
  * is the property that makes those safe to build on top: **the referee and every client read the

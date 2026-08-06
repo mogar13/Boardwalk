@@ -151,7 +151,7 @@ describe('RoomStore — create + snapshot', () => {
 
   /**
    * HOUSE RULES ARE THE ANTE'S SIBLING, and every property asserted for the stake above holds for
-   * them with the money taken out and the fairness left in (plans/UNO_HOUSE_RULES.md §1).
+   * them with the money taken out and the fairness left in (plans/done/UNO_HOUSE_RULES.md §1).
    *
    * Slice 1 ships every rule OFF, so none of this changes what a hand does. What it fixes in place
    * is WHERE a rule lives: on the room, chosen once, readable by everyone, and not the property of

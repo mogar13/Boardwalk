@@ -4,7 +4,7 @@
 house-odds simulation, and betting a bot table. Slice 5 reached the Pi on 2026-08-06, **before its
 own PR merged**, which is the ordering rule ("the Pi goes first") honoured literally rather than
 closed a few hours later. Written after
-[UNO_POT.md](done/UNO_POT.md) shipped, and it changes what every one of these costs: the referee
+[UNO_POT.md](UNO_POT.md) shipped, and it changes what every one of these costs: the referee
 deals UNO now, so **three of the four items below are rulebook changes that land on the Pi**, and
 the Pi goes first.
 

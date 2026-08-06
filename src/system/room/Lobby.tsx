@@ -311,7 +311,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
           </div>
         )}
         {/*
-          HOUSE RULES (plans/UNO_HOUSE_RULES.md §1) — how this TABLE plays, as opposed to
+          HOUSE RULES (plans/done/UNO_HOUSE_RULES.md §1) — how this TABLE plays, as opposed to
           `<GameOptions>` below, which is how one client does. Drawn only for a game that declares
           any, so the lobby is unchanged for the other five.
 

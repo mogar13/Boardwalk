@@ -855,7 +855,7 @@ describe('void and the boot sweep — a restart must refund, never strand', () =
 
 describe('house rules — the table decides, and the match remembers', () => {
   /**
-   * SLICE 1 of plans/UNO_HOUSE_RULES.md. Every rule ships OFF, so nothing here asserts what
+   * SLICE 1 of plans/done/UNO_HOUSE_RULES.md. Every rule ships OFF, so nothing here asserts what
    * stacking or ranked places DO — they are not built. What it pins is the road they will travel:
    * the rules come off the ROOM (never a frame), are stamped onto the round at the deal, and stay
    * with that round for the whole of its life.

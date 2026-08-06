@@ -1,5 +1,5 @@
 /**
- * STACKING — slice 2 of `plans/UNO_HOUSE_RULES.md`, and the first house rule the reducer actually
+ * STACKING — slice 2 of `plans/done/UNO_HOUSE_RULES.md`, and the first house rule the reducer actually
  * enforces. Slice 1 shipped the seam with every rule off; this is the one that changes what a card
  * is allowed to do.
  *

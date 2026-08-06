@@ -186,7 +186,7 @@ describe('the pot is the LITERAL SUM of the stakes', () => {
 });
 
 /**
- * PLAYING THE HOUSE (plans/UNO_HOUSE_RULES.md §4) — the second counterparty, and the one that mints.
+ * PLAYING THE HOUSE (plans/done/UNO_HOUSE_RULES.md §4) — the second counterparty, and the one that mints.
  *
  * The rules that matter here are not about arithmetic being right, they are about the arithmetic
  * being SUB-FAIR. v1 paid a lone player fair odds out of the house's pocket, which is EV-neutral

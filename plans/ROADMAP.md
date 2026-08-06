@@ -228,7 +228,7 @@ a fallback nobody keeps working is worse than no fallback, because it reads like
 
 ## 4. A sixth game — BUILT, and it was Liar's Dice
 
-> **Built 2026-07-19** — [LIARS_DICE.md](LIARS_DICE.md) is the design, the decisions and the
+> **Built 2026-07-19** — [LIARS_DICE.md](done/LIARS_DICE.md) is the design, the decisions and the
 > evidence. It exists because the owner wanted to play it; the two OS notes below were tie-breakers
 > between candidates, not the reason. Both are now closed:
 >

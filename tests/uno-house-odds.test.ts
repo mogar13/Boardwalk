@@ -1,5 +1,5 @@
 /**
- * THE HOUSE-ODDS SIMULATION — slice 4 of `plans/UNO_HOUSE_RULES.md`, and the only slice whose whole
+ * THE HOUSE-ODDS SIMULATION — slice 4 of `plans/done/UNO_HOUSE_RULES.md`, and the only slice whose whole
  * output is a NUMBER rather than a rule.
  *
  * §4 of that plan wants to let a player bet at a table of bots, paying `ante × M` from the house at
