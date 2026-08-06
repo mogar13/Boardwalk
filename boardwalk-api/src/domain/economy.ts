@@ -161,8 +161,15 @@ export interface SettleRequest {
  * every cup and pays the pot, so a `/settle` naming this game is by definition a claim about a
  * match the server already settled itself. Leaving it open would let a client bet a chip and then
  * claim the 3× default ceiling on a match it never played.
+ *
+ * UNO'S POT adds `uno`, and here the ceiling is not merely a bound that could be beaten — it is a
+ * bound the honest game already EXCEEDS. A 4-seat $25-ante table pays $100 on a $25 stake, which is
+ * 4×, and a 7-seat table pays 7×; the default is 3×. So this game could not have been left on the
+ * generic road even if every client were trusted, and raising the ceiling to fit it would have
+ * raised it for every game that shares the constant. It lands in the same commit that teaches the
+ * referee to deal UNO, per the rule above.
  */
-export const SERVER_DEALT_GAMES: ReadonlySet<string> = new Set(['blackjack', 'liars-dice']);
+export const SERVER_DEALT_GAMES: ReadonlySet<string> = new Set(['blackjack', 'liars-dice', 'uno']);
 
 export function checkSettle(req: SettleRequest): Decision<{ readonly payoutCents: number }> {
   if (SERVER_DEALT_GAMES.has(req.gameId)) {

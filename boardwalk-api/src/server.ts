@@ -4,6 +4,7 @@ import { openDb } from './db/db';
 import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import { RoomGateway } from './rooms/gateway';
 import { sweepAbandonedMatches } from './domain/liarsDice';
+import { sweepAbandonedMatches as sweepAbandonedUnoRounds } from './domain/uno';
 
 /**
  * The process entrypoint. Reads config, refuses to boot on a dangerous one (see
@@ -49,6 +50,15 @@ function main(): void {
   if (swept.matches > 0) {
     console.log(
       `[liars-dice] voided ${String(swept.matches)} abandoned match(es), refunded ${String(swept.refundedCents)} cents`
+    );
+  }
+  // The same for UNO, whose rounds carry antes for exactly the same reason and are stranded by a
+  // restart in exactly the same way. Two sweeps rather than one generic one, matching the two
+  // dealers — see the gateway's note on not inventing the shared seam yet.
+  const sweptUno = sweepAbandonedUnoRounds(db, Date.now());
+  if (sweptUno.matches > 0) {
+    console.log(
+      `[uno] voided ${String(sweptUno.matches)} abandoned round(s), refunded ${String(sweptUno.refundedCents)} cents`
     );
   }
 

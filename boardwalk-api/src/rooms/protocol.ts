@@ -69,7 +69,19 @@ export type RequestMsg =
   // field for a die, a face count, an outcome or a payout — absent, not validated — and no `uid`,
   // which comes off the authenticated socket.
   | { t: 'ldStart'; id: number; gameId: string; roomId: string; nonce: string; anteCents: number }
-  | { t: 'ldAction'; id: number; gameId: string; roomId: string; nonce: string; action: unknown };
+  | { t: 'ldAction'; id: number; gameId: string; roomId: string; nonce: string; action: unknown }
+  // UNO, DEALT (plans/UNO_POT.md). The same two-frames-in, zero-out shape, with one difference
+  // worth reading: `unoStart` has NO `anteCents`. The stake is a property of the table, stamped on
+  // the room at create and agreed to by everyone who sat down, so the referee reads it from the
+  // room rather than from whoever happens to press Deal — a client that can name its own stake can
+  // name a large one, and the resulting game is perfectly fair at a price nobody consented to.
+  // (`ldStart` above still carries one; closing that is a follow-up.)
+  //
+  // `level` is the only thing here a client chooses, and it is a DIFFICULTY: it cannot move a chip,
+  // cannot name an outcome, and the worst a hostile value does is make the house play badly against
+  // the person who sent it. Neither frame has a field for a card, a hand, a winner or a payout.
+  | { t: 'unoStart'; id: number; gameId: string; roomId: string; nonce: string; level: unknown }
+  | { t: 'unoMove'; id: number; gameId: string; roomId: string; nonce: string; move: unknown };
 
 /** A subscription/registration: no reply, a stream of push frames instead. */
 export type SubscribeMsg =

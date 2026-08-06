@@ -271,12 +271,51 @@ CREATE TABLE IF NOT EXISTS liars_dice_players (
   PRIMARY KEY (match_id, uid)
 );
 
+-- UNO, THE THIRD SERVER-DEALT GAME AND THE SECOND MULTIPLAYER ONE (plans/UNO_POT.md).
+--
+-- Structurally identical to the Liar's Dice pair above, and deliberately NOT merged with it. A
+-- shared \`matches\` table would put two games' state blobs in one column whose shape depends on a
+-- discriminator, which is the "which table is this id in?" problem the \`hand_id\`/\`match_id\` split
+-- already refused one level up. types.ts also records that a generic dealt-game seam should not be
+-- invented until two of them exist side by side — they now do, and looking at them is a follow-up,
+-- not something to guess at in a DDL.
+--
+-- ONE ROW PER ROUND, not per table. UNO plays many rounds at one table and each has its own ante and
+-- its own pot, so \`round\` is stored rather than counted: a COUNT would answer differently the day a
+-- row is ever deleted, and the client resets its move-log scrollback on this number.
+CREATE TABLE IF NOT EXISTS uno_matches (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id    TEXT NOT NULL,
+  room_id    TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  -- Which round of this table's evening. Drives the leader of the next deal and the client's log.
+  round      INTEGER NOT NULL DEFAULT 0,
+  -- Total cents anted by every human seat. The winner is paid exactly this.
+  pot_cents  INTEGER NOT NULL DEFAULT 0,
+  -- 1 once the pot has been paid and the wagers closed, OR once the match was voided and refunded.
+  settled    INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Who is in a round, and what they staked. Carries the authority for every read of the row above:
+-- a match has no owner, so a load is scoped by MEMBERSHIP rather than ownership.
+CREATE TABLE IF NOT EXISTS uno_players (
+  match_id   INTEGER NOT NULL REFERENCES uno_matches(id) ON DELETE CASCADE,
+  uid        TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  seat       INTEGER NOT NULL,
+  ante_cents INTEGER NOT NULL,
+  PRIMARY KEY (match_id, uid)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;
 -- A match is looked up by room while it is live, and swept by \`settled\` at boot.
 CREATE INDEX IF NOT EXISTS idx_ld_matches_room ON liars_dice_matches(game_id, room_id, settled);
 CREATE INDEX IF NOT EXISTS idx_ld_players_uid ON liars_dice_players(uid);
+CREATE INDEX IF NOT EXISTS idx_uno_matches_room ON uno_matches(game_id, room_id, settled);
+CREATE INDEX IF NOT EXISTS idx_uno_players_uid ON uno_players(uid);
 -- Every hand lookup is "this player's, live or not" — a hand id alone is never enough, because a
 -- hand id from another account must be a REFUSAL and not a read.
 CREATE INDEX IF NOT EXISTS idx_blackjack_hands_uid ON blackjack_hands(uid, settled);

@@ -37,6 +37,7 @@ import { decodeFrame } from './protocol';
 import type { RoomListing, RoomStatus, RoomVisibility, SeatOccupant } from './types';
 import type { Db } from '../db/db';
 import { LiarsDiceDealer } from './liarsDiceDealer';
+import { UnoDealer } from './unoDealer';
 
 /** Per-connection state — its identity and everything it is currently subscribed to. */
 interface Conn {
@@ -109,12 +110,19 @@ export class RoomGateway {
   private readonly reaping = new Map<string, ReturnType<typeof setTimeout>>();
 
   /**
-   * The referee for the one game the server DEALS over this socket. Null when no database was
-   * handed in — every test that predates Phase E builds a gateway without one, and a room-only
-   * gateway is a perfectly coherent thing to be. The `ld*` frames simply refuse when it is absent,
-   * rather than the constructor demanding a database that most callers have no use for.
+   * The referees for the games the server DEALS over this socket. Null when no database was handed
+   * in — every test that predates Phase E builds a gateway without one, and a room-only gateway is
+   * a perfectly coherent thing to be. The dealt frames simply refuse when they are absent, rather
+   * than the constructor demanding a database that most callers have no use for.
+   *
+   * TWO FIELDS AND NOT A REGISTRY. There are two dealt room games now, which is the moment
+   * `types.ts` said to LOOK at whether a generic seam exists — not the moment to invent one. They
+   * are close but not the same shape (UNO reads its stake off the room and has no reveal phase;
+   * Liar's Dice takes a stake off the wire and steps a reveal on a timer), and abstracting over two
+   * things before the differences have stopped moving is the mistake that note warns about.
    */
   private readonly dealer: LiarsDiceDealer | null;
+  private readonly unoDealer: UnoDealer | null;
 
   constructor(
     private readonly verifier: TokenVerifier,
@@ -132,19 +140,22 @@ export class RoomGateway {
     /** Injectable so a test can drive the empty-room window instead of waiting one out. */
     private readonly emptyGraceMs: number = EMPTY_ROOM_GRACE_MS
   ) {
-    this.dealer = db === null ? null : new LiarsDiceDealer(db, {
-      seatsOf: (g, r) => this.store.seatsOf(g, r),
-      hostOf: (g, r) => this.store.hostOf(g, r),
-      statusOf: (g, r) => this.store.statusOf(g, r),
-      publish: (g, r, state) => {
+    const host = {
+      seatsOf: (g: string, r: string) => this.store.seatsOf(g, r),
+      hostOf: (g: string, r: string) => this.store.hostOf(g, r),
+      statusOf: (g: string, r: string) => this.store.statusOf(g, r),
+      anteOf: (g: string, r: string) => this.store.anteOf(g, r),
+      publish: (g: string, r: string, state: unknown) => {
         this.store.patchState(g, r, state);
         this.broadcastRoom(g, r);
       },
-      deal: (g, r, index, data) => {
+      deal: (g: string, r: string, index: number, data: unknown) => {
         this.store.writePrivate(g, r, index, data);
         this.broadcastPrivate(g, r, index);
       },
-    });
+    };
+    this.dealer = db === null ? null : new LiarsDiceDealer(db, host);
+    this.unoDealer = db === null ? null : new UnoDealer(db, host);
   }
 
   /** Wire this gateway to an existing HTTP server (shares the Express port and the tunnel). */
@@ -280,6 +291,10 @@ export class RoomGateway {
         return this.onLdStart(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.anteCents);
       case 'ldAction':
         return this.onLdAction(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.action);
+      case 'unoStart':
+        return this.onUnoStart(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.level);
+      case 'unoMove':
+        return this.onUnoMove(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.move);
       default:
         return;
     }
@@ -450,6 +465,26 @@ export class RoomGateway {
     this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
   }
 
+  /**
+   * Deal an UNO round. Host-only here AND in the dealer, for `onLdStart`'s reason — this refusal is
+   * the specific one, the dealer's is the load-bearing one.
+   *
+   * Note what is NOT read off `msg`: the stake. `unoStart` has no such field, so there is nothing
+   * to sanitise and nothing a hostile client could inflate; the dealer takes it from the room.
+   */
+  private onUnoStart(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, level: unknown): void {
+    if (this.unoDealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Host only.' });
+    const res = this.unoDealer.start(conn.uid, gameId, roomId, nonce, level);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
+  }
+
+  private onUnoMove(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, move: unknown): void {
+    if (this.unoDealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    const res = this.unoDealer.act(conn.uid, gameId, roomId, nonce, move);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
+  }
+
   private onChatSend(conn: Conn, id: number, gameId: string, roomId: string, message: unknown): void {
     if (!isRecord(message)) return this.reply(conn, id, { ok: false, error: 'Message not sent.' });
     const uid = asStr(message.uid);
@@ -521,6 +556,7 @@ export class RoomGateway {
    */
   private notifyDealerOfSeats(gameId: string, roomId: string): void {
     this.dealer?.onSeatsChanged(gameId, roomId);
+    this.unoDealer?.onSeatsChanged(gameId, roomId);
   }
 
   private broadcastRoomPrivates(gameId: string, roomId: string): void {
@@ -569,6 +605,7 @@ export class RoomGateway {
     this.cancelReap(roomKey(gameId, roomId));
     // A dead room must not leave a timer that would publish into it.
     this.dealer?.cancel(gameId, roomId);
+    this.unoDealer?.cancel(gameId, roomId);
     this.cancelRoomReleases(roomKey(gameId, roomId));
     this.store.remove(gameId, roomId);
     this.broadcastRoom(gameId, roomId);

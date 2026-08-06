@@ -113,6 +113,16 @@ export class RoomStore {
   }
 
   /**
+   * The table's stake. What a DEALT game charges each human seat, read from the room rather than
+   * from whoever pressed Deal — see `RoomMeta.anteCents`. `0` for a room that does not exist, which
+   * is the same answer as "plays for nothing": a start against a vanished room refuses anyway, and
+   * the one thing that must never happen is a missing room reading as a stake somebody gets charged.
+   */
+  anteOf(gameId: string, roomId: string): number {
+    return this.get(gameId, roomId)?.anteCents ?? 0;
+  }
+
+  /**
    * Every room where `uid` holds a seat. The disconnect path asks the STORE which seats a leaver
    * holds rather than trusting a per-connection mirror: a socket that claimed a seat and never
    * declared presence used to leak that seat forever on close, because the close path walked the

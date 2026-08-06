@@ -6,6 +6,7 @@ import { apiChatRepo } from '@/system/repo/api/chatRepo';
 import { httpTicketRepo } from '@/system/repo/api/ticketRepo';
 import { apiRoomRepo } from '@/system/repo/api/roomRepo';
 import { apiLiarsDiceRepo } from '@/system/repo/api/liarsDiceRepo';
+import { apiUnoRepo } from '@/system/repo/api/unoRepo';
 import { createRoomSocket } from '@/system/repo/api/socket';
 import type { ApiClientConfig } from '@/system/repo/api/client';
 import type {
@@ -14,6 +15,7 @@ import type {
   EconomyRepo,
   LeaderboardRepo,
   LiarsDiceRepo,
+  UnoRepo,
   ProfileRepo,
   RoomRepo,
   TicketRepo,
@@ -58,6 +60,7 @@ export function apiRoomChat(cfg: ApiClientConfig): {
   room: RoomRepo;
   chat: ChatRepo;
   liarsDice: LiarsDiceRepo;
+  uno: UnoRepo;
 } {
   const socket = createRoomSocket(cfg);
   // The dealt game rides the SAME socket as rooms and chat — it is not a second connection, and it
@@ -66,6 +69,7 @@ export function apiRoomChat(cfg: ApiClientConfig): {
     room: apiRoomRepo(socket),
     chat: apiChatRepo(socket),
     liarsDice: apiLiarsDiceRepo(socket),
+    uno: apiUnoRepo(socket),
   };
 }
 

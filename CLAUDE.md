@@ -16,7 +16,8 @@ standing takes the pot, and no client names a number at any point: `ldStart`/`ld
 field for a die, an outcome or a payout, and `liars-dice` joined `SERVER_DEALT_GAMES` in the same
 commit that taught the referee to deal it, because the cheapest way to defeat a cutover is to leave
 the road it replaced standing. UNO's host-as-dealer was unavailable here for a reason worth stating:
-a host who can see every cup is a player who cannot lose. So the match lives in SQLite
+a host who can see every cup is a player who cannot lose. (That same sentence later came for UNO
+itself, the moment its pot made it true there too — see the Money section.) So the match lives in SQLite
 (`liars_dice_matches`/`liars_dice_players`, authority by MEMBERSHIP rather than ownership — a match
 has no owner), the gateway holds the dice, and the client is a renderer. It needed **two new
 client→server frames and zero new server→client ones**: the projection rides the existing `room`
@@ -42,15 +43,17 @@ game, not a sixth item: it exists because it sounded fun.**
 Its coverage is the multiplayer-hard half: **private hands** (each player sees only their own cards —
 a data-layout-and-rule guarantee, not a UI trick), **seq ordering** (the OS's `patchState`, so no game
 re-derives v1's clock-skew fix), **AI-as-occupant** (a leaving player's hand is driven on by the host
-so the table never stalls), and a table that seats up to **seven**. The model is **host-as-dealer**:
-because the rules refuse a read of anyone else's `hands/` node (even the host's), no client can hold the
-whole game the way Chess's every client holds the board — so the host alone holds the complete
-`UnoGame` (every hand + the draw pile) in memory, runs the pure `@boardwalk/game-logic/games/uno` reducer,
-and each transition **projects** a public view (`toPublic` → top card, counts, whose turn — never a
-hidden card) to `state/data` and **deals** each changed hand to its owner's private node. The deck
-therefore never touches the wire at all — strictly more private than v1, whose deck was public. Non-hosts
-render the projection plus their own hand (`useHand`) and submit a move as a nonce'd intent the host
-acks; the host's own moves take that same path, so there is one code path for "a human moved". The
+so the table never stalls), and a table that seats up to **seven**. **The model WAS host-as-dealer and
+is now the REFEREE** — UNO's pot moved the cards along with the money (see the Money section), so the
+one client that legitimately held every hand no longer does. The gateway holds the complete `UnoGame`
+(every hand + the draw pile), runs the pure `@boardwalk/game-logic/games/uno` reducer, and each
+transition **projects** a public view (`toPublic` → top card, counts, whose turn, the pot — never a
+hidden card) to room state and **deals** each hand to its owner's private node. The deck therefore
+never touches the wire at all — strictly more private than v1, whose deck was public — and now neither
+does anyone else's hand, the host's own socket included. Every seated human sends a move as a nonce'd
+message (`unoMove`) and reads the result off the ordinary room subscription, the host included, so
+there is one code path for "a human moved" and no local-apply path to diverge. Two client→server
+frames, **zero** new server→client ones. The
 rulebook — 108-card deck, legal-play matching, skip/reverse/draw2/wild4, the UNO-call +2 penalty,
 reshuffle-on-empty, win detection — is all pure and in `tests/uno.test.ts` (40), with the art resolved
 to disk in `tests/uno-art.test.ts` (4).
@@ -194,7 +197,7 @@ hand channel's two game-facing hooks — `useRoom().writeHand(index, data)` (hos
 Tic-Tac-Toe (how the SDK first got exercised end-to-end, and where RTDB's drop-null-children bug was
 found — the `-1` sentinel), Blackjack (the economy proof: betting, the 3:2 natural, `reportResult`
 payouts, a room-less solo game), Chess (the hot-seat proof: a full wire-safe rulebook, two humans on
-one screen, a 2-seat online table, zero betting), UNO (the hidden-hands proof: host-as-dealer,
+one screen, a 2-seat online table, zero betting), UNO (the hidden-hands proof: refereed-dealer,
 private per-seat hands, AI-as-occupant, a 7-seat table, zero betting), and Solitaire (the room-less
 proof: a full Klondike engine, no seats, no bankroll, `reportResult({ outcome: 'win' })` only) —
 each ~1 file of glue plus a pure, unit-tested `logic/`, which is the whole claim the SDK exists to
@@ -377,6 +380,29 @@ lint rule that matches nothing reports success.
   as before) — deliberate, because the Pi deploys by hand and this control protects the leaderboard,
   not the bankroll; `/health` reports `tickets: on|off` so the state is readable from the artifact.
   Design and the drive evidence: [plans/done/OFFLINE_HARDENING.md](plans/done/OFFLINE_HARDENING.md).
+- **UNO's pot moved the CARDS as well as the money, and a client cannot name its own stake.** ✅ Live
+  (plans/UNO_POT.md). Every human seat antes at the deal and the winner takes the pot — v1's ante;
+  raise/call/fold is a deliberate second slice, because that half changes UNO's turn rules (a folded
+  seat leaves the rotation) while ante-only touches the rulebook not at all. Declaring `betting`
+  is what forced the deal onto the referee, for **two** independent reasons: a 4-seat $25 table pays
+  **4×** a player's stake and a 7-seat one **7×**, where `DEFAULT_PAYOUT_MULTIPLE` is **3×** — so the
+  honest game already exceeded the ceiling, and raising it would have raised it for every game
+  sharing the constant — and UNO was **host-as-dealer**, so a host who can see every hand and also
+  moves the money is Liar's Dice's "a host who can see every cup" with one word changed.
+  `useUnoHost.ts` was **deleted**, not kept as a fallback, and `PendingMove`/`submitMove` went with
+  it: the intent/ack lane existed only because a guest could not apply its own move, and leaving it
+  open is "the road it replaced standing". **The stake is a property of the TABLE, not of whoever
+  presses Deal** — chosen at create, stamped on `RoomMeta.anteCents`, visible to a guest before they
+  take a chair, and read by the referee from there, so **`unoStart` has no field for a stake at all**
+  (`ldStart` still carries one; that is a follow-up). A client that could name its own would play a
+  perfectly FAIR game at a price nobody consented to, which validation cannot fix because there is no
+  wrong number to reject. **The house does not ante for bots** — v1 did, and on a 4-seat table that
+  is a $25 stake winning $100, a $75 grant on a coin flip, which is exactly the faucet
+  `refillGrantFor` exists to make impossible. So **betting needs two humans**, `uno` joined
+  `SERVER_DEALT_GAMES` in the same commit, and the board stopped calling `reportResult`. **The cost,
+  named: UNO no longer works on the RTDB fallback**, exactly as Liar's Dice never did — the only
+  client-side dealer available is one player's browser holding everybody's hand. During a Pi outage
+  there is no ledger either, so a betting UNO could not have paid anyone anyway.
 - **The second game the referee deals is the first MULTIPLAYER one, and its board does not report a
   result at all.** ✅ **Live and DEPLOYED to the Pi 2026-07-21** (verified from the artifact, not the exit code — see the deploy row below). Liar's Dice
   antes every human seat inside `ldStart`'s own transaction and pays the pot inside the settling
@@ -858,7 +884,11 @@ builds the thing it guards.
 | `PUT /profile` cannot set a balance, XP, stats, achievements or inventory | `boardwalk-api/tests/api.test.ts` (21) — a hostile body carrying all five is accepted and changes none of them; the opening stake is the server's `signup` grant and fires exactly once per uid; 409 (not 400) for a refusal, 400 for a missing nonce |
 | The dealt-hand seam plays the shared rulebook and hides the hole card | `tests/blackjack-seam.test.ts` (10) — the LOCAL implementation driven against the shared reducer as an oracle (deal/hit/stand/double card-for-card, the stake taken once, a double staking twice and settling over the doubled wager, a dealt natural settling inside `deal` with the odd-wager 3:2 exact), the refusals (an unaffordable stake writes NO intent, a repeated nonce replays instead of dealing again, an unknown hand refused), and the projection: a live hand carries one dealer card with the hole card and the deck absent from the serialised payload, a settled one reveals — asserted against the **shared** `viewOf` (`@boardwalk/game-logic/games/blackjack`), which all three call sites now import, so the test asks whether what the repo hands out *is* the sanctioned projection rather than whether two copies of it resemble each other |
 | The Firebase→SQLite backfill cannot lose an account or mint one | `boardwalk-api/tests/backfill.test.ts` (34) — the RTDB wire coerced (stripped-empty objects, hostile types, a missing bankroll defaulting to the opening stake rather than $0, a legacy `level` ignored); one `migration` ledger row sized to LAND on the Firebase balance; the `migration:v1` marker making a re-run a total no-op (ten runs, and a re-run that must NOT refund a loss the player has since taken); **a backfilled player signing in afterwards is refused a second signup stake**; per-uid transactions so one malformed record does not roll back the batch; a dry run that writes nothing and does not burn the marker; and `reconcile` catching two swapped balances that a matching grand total would hide |
-| The room referee arbitrates seats, and a forged uid cannot claim one | `boardwalk-api/tests/rooms.test.ts` (28, the store/seat logic) + `gateway.test.ts` (22, driven over a REAL socket) — handshake auth, host-only gating, monotonic `seq`, owner-only private hands, author-pinned chat, disconnect→seat-release |
+| The room referee arbitrates seats, and a forged uid cannot claim one | `boardwalk-api/tests/rooms.test.ts` (32, the store/seat logic) + `gateway.test.ts` (24, driven over a REAL socket) — handshake auth, host-only gating, monotonic `seq`, owner-only private hands, author-pinned chat, disconnect→seat-release |
+| A table's STAKE is the room's, chosen once, and a guest sees it before sitting | `tests/room.test.ts` `anteChoices` block — always offers "nothing" FIRST (a `betting` manifest means a game *can* be played for money, never must be; zero is also the default, because money must not leave an account because a control went unnoticed), the rungs inside the declared range (UNO's reproduces v1's NONE/$25/$100/$500/$1K), collapse-to-`[0]` when the range admits no rung (the `tableSizeChoices` rule: one option is a control that cannot change the outcome), garbage collapsed rather than rendered, an ascending non-repeating ladder, and — read off the REAL registry — every offered stake integer cents a fresh account could cover, since a fractional rung dies at `validateBet` and a rung above the opening bankroll is a betting mode nobody can open. Plus the server half in `boardwalk-api/tests/rooms.test.ts`: the ante stamped at create and visible on the snapshot, a hostile stake FLOORED to a non-negative integer before it can reach a ledger row, write-once across seats/status/state/presence (so nobody can raise the stakes on a player who already sat down — v1 pushed a retuned ante to the room on change), and on the browser's poster. And the wire, over a REAL socket in `gateway.test.ts`: the stake reaches a GUEST on their own subscription before they take a chair, and an unsent one reads as `0` rather than `undefined` |
+| UNO's pot is the sum of the stakes, and the house is not in it | `tests/uno-pot.test.ts` (14) — a one-human table can never build a pot at any rung against any number of bots (v1 covered the bots FROM THE HOUSE, which on a 4-seat table is a $25 stake winning $100 — a $75 grant on a coin flip, the faucet `refillGrantFor` cost a whole plan to make impossible); the pot sums an UNEQUAL set of stakes, which has no caller today and is the whole reason it is an array rather than ante × players — it acquires one on the first short stack that shoves; a NaN stake ignored rather than poisoning the pot into a ledger row nobody can read back; and the conservation property stated AS a property — across every table shape 2..7, every mix of humans/bots/open chairs and every rung, the pot equals what the seats paid and no non-human ever contributes |
+| The referee deals UNO, and the money is its own | `boardwalk-api/tests/uno.test.ts` (25) — antes taken through the LEDGER with a wager naming the round, NO betting below two humans, an unaffordable ante refusing the WHOLE start and writing no stake (asserted on `bet` rows, not on an empty ledger — seeding a profile writes its signup grant), the nonce given back on refusal, authority by MEMBERSHIP, off-turn and illegal moves refused with the round unchanged, the pot paid to the seat the RULES say won with wagers closed by match id, `recordOutcome` once per human (the reason the board must not report), `checkSettle` refusing `uno`, a fresh ante per ROUND with the last round's winner opening the next, and the boot sweep voiding and refunding. **The replay case is UNO's own**: `applyMove` consumes randomness (an emptied deck reshuffles mid-move), so unlike Liar's Dice a re-run would deal a different table — the test drives a DRIFTING rng and asserts the reducer was never re-entered |
+| A dealt UNO table never sends a hand to anyone but its owner — the HOST included | `boardwalk-api/tests/unoGateway.test.ts` (10, over a REAL socket) — each player sent their own seven and `null` for every other seat on every frame (the assertion the whole cutover exists for: the host used to legitimately hold every hand), the public state carrying counts and a pot with no `"deck"`, `"hands"`, `"pending"` or `"ackNonce"` anywhere in the serialised payload, **a stake a client tries to name IGNORED in favour of the table's own** (falsified by letting the dealer read the frame — the pot became 2×$4,000 instead of 2×$25, a perfectly fair game at a price nobody consented to), the antes taken with the reply carrying the authoritative profile, a non-host refused the deal, a non-seated socket and an off-turn move both refused, a bot driven by the REFEREE with its hand written nowhere, and `parseMove` refusing (not coercing) anything that is not a move while dropping every hostile extra |
 | A crashed player does not strand a table, and a blip does not cost a live player their seat | `boardwalk-api/tests/gateway.test.ts` crash-recovery block (7, over a real socket **terminated** rather than closed) — a kill mid-game hands the seat to an AI *after* the grace window and the room survives with the other player told without asking; a reconnect inside the window **keeps** the seat; `'ai'`/`'open'` decided at FIRE time (a lobby that starts during the window still yields a bot); a lobby drop opens the chair; a seat claimed by a socket that **never declared presence** is still released; a second tab of one account is **not** a departure; and a crash that empties the room GCs it at once, taking its chat and hidden hands with it — the whole of "no orphaned rooms/hands/chat" on this path, since they are one record. **The mid-game AI branch had ZERO coverage before this** while the gateway's docblock claimed it |
 | The RTDB fallback arms a teardown a crashed tab cannot run — and the rules permit it | `tests/crash-recovery.test.ts` (7) — the pure `disconnectUpdates`: a guest seat armed to AI mid-game and OPEN in the lobby, a guest arming **neither** room/hands/chat, a host-alone taking all three in ONE write and **not** its own seat (the resurrection hazard `teardownPlan` documents), a seat-less spectator arming nothing, and no armed write ever carrying a `uid` (the seat validator would refuse it and the table would stall exactly as before). Plus the enforcement half in `tests/database-rules.test.ts` (4, real emulator, real rules file) — the host's atomic three-path delete **succeeds** (all three rules authorise against `meta/host`, so sequential deletes would de-authorise each other; falsified by dropping the hands delete rule), the same write from a guest is refused, a guest may arm its own seat to AI, and no-evict still refuses arming someone else's |
 | A client cannot bank more offline results than it was issued tickets for, and a replay pays once | `boardwalk-api/tests/tickets.test.ts` (37) — sign/verify round-trip, a tampered ticket, one account's ticket refused for another (the uid is in the MAC, not the string), a short signature refused rather than THROWN (`timingSafeEqual`'s length trap), non-canonical sequences (`01`/`1e0` are not second spellings of `1`), the rotation window (previous key verifies, a key rotated all the way out is refused and flagged `retired`, and selection is by `kid` — proved by a ticket that must ALSO fail on a server holding only the other key), **20 fabricated devices yielding exactly `TICKET_BATCH` between them**, a sequence never issued refused (the key-leak bound), the gate refusing a client-minted nonce while enforcement is on and ACCEPTING one while it is off, `/bet`+`/daily` untouched by the gate, spend accounting not doubling on a replay, and **the attack itself: bank a settle, re-send it five times, assert one ledger row, `played` 1, `won` 1** |
@@ -947,7 +977,7 @@ gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
 cd boardwalk-api && npm ci
 npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
 npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
-npm test            # vitest — 315
+npm test            # vitest — 350
 npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 

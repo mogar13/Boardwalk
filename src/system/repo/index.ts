@@ -173,6 +173,10 @@ export const repos: Repos = {
    * so; `modes` cannot include a fallback that does not exist.
    */
   liarsDice: wsRooms ? wsRooms.liarsDice : null,
+  // NULL WITHOUT THE GAME SERVER, and there is no fallback by design: the only client-side dealer
+  // available for UNO is one player's browser holding everybody's hand, which is what the referee
+  // replaced. The board renders "needs the game server" rather than degrading into that.
+  uno: wsRooms ? wsRooms.uno : null,
 };
 
 /**

@@ -10,17 +10,21 @@ import type { UnoLevel } from '@boardwalk/game-logic/games/uno';
  * only consumer of the private `hands/` channel Phase 5 shipped with no caller, and of the two hooks
  * that wrap it (`useRoom().writeHand`, `useHand`).
  *
- * The model is HOST-AS-DEALER: the host holds the complete game (every hand plus the draw pile) in
- * memory, runs the pure `logic/uno.ts` reducer, projects a public view (top card, counts, whose
- * turn — never a hidden card) to `state/data`, and deals each hand to its owner's private node.
- * Non-hosts render the projection plus their own hand and submit a move as an intent the host acks.
- * So the deck never touches the wire at all — strictly more private than v1, whose deck was public.
+ * The model WAS host-as-dealer and is now THE REFEREE. Declaring `betting` below is what moved it:
+ * a 4-seat $25 table pays 4× a player's stake where the generic ceiling is 3×, and a host who can
+ * see every hand and also moves the money is a player who cannot lose. So the gateway holds the
+ * complete game (every hand plus the draw pile), runs the pure rulebook, projects a public view
+ * (top card, counts, whose turn, the pot — never a hidden card) to room state, and deals each hand
+ * to its owner's private node. Every seated human, the host included, sends a move and reads the
+ * result off the same subscription. The deck never touches the wire at all — strictly more private
+ * than v1, whose deck was public — and now neither does any other player's hand.
  *
  * `as const satisfies GameManifest` freezes `id` to `'uno'`, so the registry key, the stats key, the
  * room path `rooms/uno/…`, the hand path `hands/uno/…` and the `/play/uno` route are all one string.
  *
- * `pier: 'tables'` — a skill/party game, no stakes. `betting` is ABSENT (like Chess): `reportResult`
- * moves XP and a stat but never the bankroll. `seats { min: 2, max: 7 }`. `modes: ['ai', 'online']`
+ * `pier: 'tables'`. `betting` IS PRESENT, and the board does NOT call `reportResult` — the referee
+ * banks the stat, the XP and the badges inside the settle transaction, so a report would be a client
+ * claiming a result the server already recorded. `seats { min: 2, max: 7 }`. `modes: ['ai', 'online']`
  * — NOT hot-seat: hidden hands and one shared screen are contradictory (a screen everyone sees cannot
  * hide a hand from anyone), which is the honest reason UNO omits the mode Chess exists to prove.
  */
@@ -33,6 +37,20 @@ export const unoManifest = {
   pier: 'tables',
   seats: { min: 2, max: 7 },
   modes: ['ai', 'online'],
+  /**
+   * THE POT (plans/UNO_POT.md). Every human seat antes at the deal and the winner takes the whole
+   * thing — v1's ante, and the first half of v1's pot; raise/call/fold is a second slice.
+   *
+   * The range is the LADDER the lobby offers, not a stake this file picks: `anteChoices` filters the
+   * one shared rung list to it, so UNO's control reads NONE / $25 / $100 / $500 / $1K — exactly what
+   * v1 asked. The host chooses at CREATE, it is stamped on the room, and every joiner sees the price
+   * before taking a chair; the referee reads it from there, so `unoStart` carries no stake at all.
+   *
+   * DECLARING `betting` IS WHAT MOVED THE DEAL TO THE REFEREE. A 4-seat $25 table pays 4× a player's
+   * stake and a 7-seat one pays 7×, where the generic `/settle` ceiling is 3× — and the host held
+   * every hand. Both had to go, together; see `domain/uno.ts`.
+   */
+  betting: { min: 2_500, max: 100_000 },
   /**
    * The SECOND caller of AI difficulty, and the reason it was built at all: V1_FEATURE_GAPS #1 says
    * not to abstract a tier system until a second AI game exists, because one driver is not enough
