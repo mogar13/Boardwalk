@@ -1,8 +1,10 @@
 # UNO house rules — stacking, ranked places, and betting the house
 
-**Status:** DESIGN. No code yet. Written after [UNO_POT.md](UNO_POT.md) shipped, and it changes what
-every one of these costs: the referee deals UNO now, so **three of the four items below are rulebook
-changes that land on the Pi**, and the Pi goes first.
+**Status:** slices 1–4 SHIPPED (the seam, stacking, ranked places, the house-odds simulation); slice
+5, betting a bot table, is the remainder and is now unblocked. Written after
+[UNO_POT.md](done/UNO_POT.md) shipped, and it changes what every one of these costs: the referee
+deals UNO now, so **three of the four items below are rulebook changes that land on the Pi**, and
+the Pi goes first.
 
 Asked for by the owner (and Steve). Decisions taken before any code:
 
@@ -12,8 +14,8 @@ Asked for by the owner (and Steve). Decisions taken before any code:
 | Stacking | **+2 on +2 and +4 on +4.** Cross-stacking (+4 onto a +2) is a separate toggle, default off. See [§2](#2-stacking). |
 | Ranked places | **A house rule (`playToLast`), default OFF**, so today's round is unchanged unless asked for. **BUILT.** See [§3](#3-ranked-places). |
 | How a ranked pot splits | **The top HALF of the paying places, weighted `k, k-1, … 1`** — so two and three payers are still winner-takes-all and today's tables do not move. See [§3](#the-pot). |
-| Betting a bot table | **House odds with the bot tier PINNED** — Blackjack's model, not v1's faucet. See [§4](#4-betting-the-house). |
-| The multiple | **Measured, not guessed.** A simulation sets it before the feature ships. See [§4.2](#42-the-number-is-an-empirical-question-not-a-design-one). |
+| Betting a bot table | **House odds with the bot tier PINNED** — Blackjack's model, not v1's faucet. **Unblocked:** the edge is measured and real. See [§4](#4-betting-the-house). |
+| The multiple | **Measured, not guessed — and now measured: `M = N × 2/3`.** Break-even is 0.813; the margin is what pays for the player a simulation cannot play. See [§4.2](#42-the-number-is-an-empirical-question-not-a-design-one). |
 
 ---
 
@@ -313,6 +315,11 @@ would then be wide open on a 2-seat one.
 
 ### 4.2 The number is an empirical question, not a design one
 
+**Status: MEASURED (slice 4).** `tests/uno-house-odds.test.ts` (8). The number exists, the answer is
+**yes, §4 can ship**, and the recommended multiple is **`M = N × 2/3`**. What follows is the
+question as it was posed, then what the harness actually found — including two things it was not
+looking for, one of which changes how slice 5 has to be built.
+
 `M = N × edge` assumes a player wins about `1/N` against `sharp` bots. **That assumption is the
 entire safety of the feature and nobody has measured it.** `sharp` is deliberately simple — play a
 non-wild first, save the wilds, always call UNO — and a person who counts colours may well beat
@@ -327,7 +334,81 @@ hand and may not be symmetric. The multiple is then set from that number with an
 what else moves. A tier change that quietly re-prices the house is the same class of bug as a
 mastery chain added without a Pi deploy.
 
-Until that number exists, this item is not ready to build. §1–§3 are.
+#### What it measures, and the one thing it cannot
+
+It measures **policies, not people**, so every rate below is a **lower bound** on what a human
+extracts and no arrangement of seeds turns it into an upper one. That limit is not a caveat bolted
+on at the end — it is what decides the whole shape of the answer, because a lower bound alone
+licenses nothing. What makes it usable is the *second* measurement rather than the first: the
+harness also plays a deliberately modest **challenger** (counts its own colours, watches hand sizes,
+saves wilds, calls UNO — §4.2's *"a person who counts colours"*, built to be exactly that person and
+no better), and the gap it opens over `sharp` is small while the gap `sharp` opens over `casual` is
+large. **A game whose skill gradient has already flattened by `sharp` is one where the unmeasured
+human tail is short**, and that ordering — not any single win rate — is what prices the house.
+
+The challenger lives in the test and not in `ai.ts`, deliberately: it is an instrument, not a tier,
+and a third `UnoLevel` with no manifest choice behind it would be `loadout.color`.
+
+#### The numbers
+
+2,000 seeded rounds per cell, every game through the real reducer and the real bots. "Lift" is a
+seat's win rate as a multiple of its fair share, so 1.00 is exactly fair — the one form of the
+number that is comparable across table sizes. `M = N × edge` is safe exactly while lift < `1/edge`.
+
+| Seats | Fair | `sharp` lead, one round | `sharp` vs a `casual` table | **Challenger, worst** | Break-even `M` | `M` at 2/3 | House edge |
+|---|---|---|---|---|---|---|---|
+| 2 | .5000 | 1.005× | 1.237× | **1.093×** | 1.83 | 1.33 | 27.1% |
+| 3 | .3333 | 1.035× | 1.379× | **1.109×** | 2.71 | 2.00 | 26.1% |
+| 4 | .2500 | 1.078× | 1.412× | **1.130×** | 3.54 | 2.67 | 24.7% |
+| 5 | .2000 | 1.157× | 1.552× | **1.170×** | 4.27 | 3.33 | 22.0% |
+| 6 | .1667 | 1.209× | 1.626× | **1.230×** | 4.88 | 4.00 | 18.0% |
+| 7 | .1429 | 1.095× | 1.638× | **1.179×** | 5.93 | 4.67 | 21.4% |
+
+Worst challenger lift anywhere: **1.230** (six seats). Break-even `edge`: **0.813**. Stacking moves
+nothing material — it is inside the challenger column, which takes the worse of `stack` on and off.
+
+#### Three findings
+
+1. **The null holds — but only over a session.** Identical `sharp` policies share a table equally,
+   every seat within a few percent of `1/N`, at every table size and under both rule sets. So `1/N`
+   is the right base and the multiple does not have to be priced against a favoured chair.
+2. **The lead is worth real money for exactly one round, and it evaporates over a session.** The
+   opening seat lifts up to **1.209×** in an independent round — and flat over a session, because
+   `deal` hands the lead to whoever just won, so every seat holds it in proportion to its own wins
+   and the effect cancels. **This is the finding that changes slice 5** (see below).
+3. **The skill gradient saturates at `sharp`.** `casual` → `sharp` is worth 1.24–1.64×; `sharp` →
+   challenger only 1.09–1.23×. The room *below* `sharp` is three to seven times the room *above* it.
+   That is the shape of a game where hidden hands and forced moves cap what attention buys, and it
+   is the whole reason a lower bound is enough to decide this.
+
+#### The decision
+
+**`M = N × 2/3`**, the payout floored to integer cents (`potSplit`'s discipline — floor the money,
+never the rate, and flooring only ever favours the house). Break-even is 0.813, so **2/3 clears the
+measured bound by 22%** where 3/4 would clear it by 8%.
+
+The extra quarter-turn is the point rather than timidity: the challenger is a lower bound, so the
+margin is not padding around a known number — **it is the only protection against the player the
+harness cannot play.** A real person has to be a further 22% better than an attentive-human proxy
+that already beats `sharp` before the house starts losing.
+
+The cost is named rather than hidden: this implies an **18–27% house edge**, steep beside
+Blackjack's. That is the correct trade and not a compromise — Blackjack's edge is computed against a
+rulebook that is fully known, and this one against an opponent nobody has measured.
+
+#### The thing the design did not know, and slice 5 has to
+
+**Re-dealing to keep the lead is free, so the bound must be the ONE-ROUND number.** A player who
+creates a fresh table for every round always holds seat 0 and always leads — worth up to 1.209× at
+six seats — while a player who sits and plays on gets the flat session rate. Nothing stops the
+former: leaving and re-creating a bot table costs a click. So the harness takes the **maximum** over
+both regimes at every cell, and the table above is that maximum; pricing off the session number
+alone would have handed a 21% edge to anybody who noticed. It is not an exploit to be patched later
+— it is the regime the multiple is set in.
+
+The other guard that came out of building this: the harness asserts **no round ever stalls**, at
+every table size, under both rule sets. Without it a policy that hangs the table would simply appear
+to win less often, and every rate above would be wrong in the quiet direction.
 
 ---
 
@@ -378,11 +459,27 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    flag, because "did the round end" is the only question an old client knows how to ask and
    removing the field would blank the result panel for every one of them during the window between
    the two deploys.
-4. **The house-odds simulation** — a test that reports `sharp`'s true win rate per seat count, with
-   and without stacking. Read the number, then decide whether §4 ships and at what multiple. It
-   imports from `ai.ts` now rather than `uno.ts`; slice 3 moved the bots out when the rulebook's
-   front door reached the 800-line ceiling.
-5. **Betting the house** — only if step 4 says the edge is real.
+4. ~~**The house-odds simulation**~~ — **DONE.** `tests/uno-house-odds.test.ts` (8), and **no deploy
+   of any kind**: it adds no shared code, touches no rulebook and moves no money, which is what makes
+   it the one slice here that could be built and merged in a single pass. The answer is in §4.2 —
+   the edge is real, `M = N × 2/3`, break-even 0.813, cleared by 22%.
+   **Three things worth carrying into slice 5.** The bound is the **one-round** number, not the
+   session one, because re-dealing to keep the lead is free (§4.2) — that is a design input, not a
+   caveat. The measurement is a **lower bound on human skill** and always will be, so the margin is
+   load-bearing and a future retune of `sharp` must come back here and re-read the table rather than
+   widen a band. And the pricing guard is deliberately split in two: an absolute safety assertion
+   (lift < 1.50, which must never be wrong) and a **review trigger** at 1.15 that fires long before
+   the house starts losing, because every figure is seeded and a band pinned to the last measurement
+   goes red on changes that move the number without moving the risk.
+5. **Betting the house** — the edge is real, so this is live work rather than a conditional. What it
+   still owes, none of which slice 4 built: `M = N × 2/3` as a shared constant **with its caller**
+   (a constant landing before its reader is `loadout.color`, which is why slice 4 deliberately left
+   the number in the test); the payout inside the dealer's own transaction with a per-match ceiling
+   computed from the match's own seat count (§4.1); the ante path for a table with ONE human, which
+   `stakePerSeat` currently floors to zero by `MIN_HUMANS_TO_BET` — that rule is right for a
+   human pot and is exactly what a house-funded one has to route around; the difficulty control
+   pinned to `sharp` whenever a stake is set, and saying why; and the lobby copy. **It is a money
+   change in `boardwalk-api`, so the Pi goes first** — unlike slices 2 and 4, and like slice 3.
 
 Every slice ends green, and each of 2 and 3 is a **shared-rulebook change**, which means the Pi
 carries it before the frontend that depends on it — the ordering rule Phase D paid ten minutes of
