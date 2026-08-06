@@ -10,6 +10,7 @@ import {
   type Move,
   type UnoGame,
   DEFAULT_HOUSE_RULES,
+  winnerOf,
 } from '@boardwalk/game-logic/games/uno';
 import { cardLabel, linesFor } from '@/games/uno/log';
 
@@ -35,7 +36,7 @@ function rigged(hands: readonly (readonly Card[])[], top: Card, turn = 0): UnoGa
     turn,
     direction: 1,
     calledUno: hands.map(() => false),
-    winner: -1,
+    finished: [],
     pendingDraw: 0,
     houseRules: DEFAULT_HOUSE_RULES,
   };
@@ -168,7 +169,7 @@ describe('describeMove', () => {
       card('t', 'red', 'number', 9)
     );
     const { after, event } = step(g, 0, { type: 'play', cardId: 'a', declareUno: true });
-    expect(after.winner).toBe(0);
+    expect(winnerOf(after)).toBe(0);
     expect(event.winner).toBe(0);
   });
 

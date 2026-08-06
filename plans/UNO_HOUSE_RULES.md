@@ -10,7 +10,8 @@ Asked for by the owner (and Steve). Decisions taken before any code:
 |---|---|
 | Where a house rule lives | **A create-time room parameter**, the road `anteCents` already built — not `manifest.options`. See [§1](#1-where-a-house-rule-lives). |
 | Stacking | **+2 on +2 and +4 on +4.** Cross-stacking (+4 onto a +2) is a separate toggle, default off. See [§2](#2-stacking). |
-| Ranked places | **A house rule (`playToLast`), default OFF**, so today's round is unchanged unless asked for. See [§3](#3-ranked-places). |
+| Ranked places | **A house rule (`playToLast`), default OFF**, so today's round is unchanged unless asked for. **BUILT.** See [§3](#3-ranked-places). |
+| How a ranked pot splits | **The top HALF of the paying places, weighted `k, k-1, … 1`** — so two and three payers are still winner-takes-all and today's tables do not move. See [§3](#the-pot). |
 | Betting a bot table | **House odds with the bot tier PINNED** — Blackjack's model, not v1's faucet. See [§4](#4-betting-the-house). |
 | The multiple | **Measured, not guessed.** A simulation sets it before the feature ships. See [§4.2](#42-the-number-is-an-empirical-question-not-a-design-one). |
 
@@ -183,6 +184,13 @@ The guard ran as specified, over `stack` and `crossStack`, and stayed green.
 
 ## 3. Ranked places
 
+**Status: BUILT (slice 3).** `packages/game-logic/src/games/uno/logic/places.ts` +
+`tests/uno-places.test.ts` (35), and the referee half in `boardwalk-api/tests/uno.test.ts` (33).
+What the design got right, what it under-specified, and the one thing it left out entirely are
+recorded below at the point each is claimed. **`boardwalk-api` needed one real change** — the settle
+— which is the difference between this and stacking: a rotation rule reaches the referee for free
+through the shared package, a MONEY rule does not.
+
 Today a round ends the instant somebody goes out. Ranked keeps playing: 1st sits out, the rest play
 on for 2nd, then 3rd, and the last player standing is last.
 
@@ -201,16 +209,37 @@ interface UnoGame { readonly finished: readonly number[]; /* seats, in placement
 `winner: number` goes away rather than living alongside it — two sources of truth for one fact is
 the defect this repo names most often. `winner` becomes `finished[0] ?? -1` at the read sites.
 
+**As built, "the read sites" turned out to be TWO QUESTIONS, not one substitution.** Every existing
+`winner !== -1` meant "this round has ended", and under `playToLast` that stops being the same thing
+as "somebody has gone out" — for most of a ranked round first place is decided and the round is not
+over. So there are two readers, `winnerOf` (who came first) and `roundOver` (is anybody still
+playing), and each existing site had to be assigned to one of them deliberately. The reducer's own
+guard, the referee's settle trigger and the bot timer are all `roundOver`; only the payout seat, the
+next round's leader and the log's winner line are `winnerOf`. Substituting mechanically would have
+paid the pot out with two players still holding cards.
+
 Two rules stop being about SEATS and start being about LIVE seats:
 
-1. `seatAfter` must skip finished seats.
+1. `seatAfter` must skip finished seats. **As built it was REPLACED rather than joined**
+   (`seatAfterLive`), because with nobody out the two are identical — asserted directly — so there is
+   no second rotation for a call site to pick the wrong one of. Three sites read it: the turn
+   advance, a non-stacking draw-two's victim, and the log's skip detection.
 2. **A reverse acts as a skip at two LIVE players, not two seated ones.** This is the exact line
    [UNO_POT §2](UNO_POT.md#2-why-ante-only-first) named as the reason raise/call/fold was deferred —
    a folded seat leaves the rotation the same way a finished one does. **Doing ranked first makes
    the pot's slice 2 cheaper**, because the rotation surgery is done once and both features read it.
 
 The round ends when `finished.length === liveSeatCount - 1`; the straggler is placed last without
-having to play a final unwinnable hand against nobody.
+having to play a final unwinnable hand against nobody. **As built the straggler is appended by the
+same move**, so the terminal condition is simply a full podium and `roundOver` stays a question about
+the list rather than about the list plus a special case.
+
+**THE THING THE DESIGN LEFT OUT: the debt.** Slice 2 clears `pendingDraw` when the round ends, on the
+argument that a debt no seat will be asked to pay is a fact that has stopped being one. Under
+`playToLast` going out on a +2 does NOT end the round, and the stack must pass to the next live seat —
+which is stacking's own rule ("you answer what is coming at you or you take it") read against a
+rotation that no longer contains whoever laid it. The condition moved from "somebody went out" to
+`roundOver`, and it is the only line where the two rules touch.
 
 ### The pot
 
@@ -218,6 +247,27 @@ A pure shared `potSplit(potCents, places)` beside `potFor`, with the same conser
 asserted as a property: **the split sums to exactly the pot at every table size and every stake**,
 remainder to 1st, integer cents throughout. That is the one thing a percentage split gets wrong by
 default, and the ledger cannot absorb a rounding error.
+
+**As built, the design's `places` was ambiguous and the disambiguation is the whole rule.** It is not
+the number of chairs and not the number of humans: it is **the paying seats that PLACED, in the order
+they placed**. A bot stakes nothing and so takes nothing — it is absent from the ladder rather than
+allocated a share that would then have to go somewhere, which is the only version that conserves.
+That single sentence also covers the ordinary game without a case of its own: `finished` holds one
+seat, so a human winner is `potSplit(pot, 1)` — the whole pot, unchanged to the cent — and a BOT
+going out first means no paying seat placed, `places` is 0, and the pot goes to nobody, which is what
+this game already did and is already asserted.
+
+**The ladder — the top HALF of the paying places, weighted `k, k-1, … 1`** — is a decision the design
+did not take, and it buys two properties. Two and three payers collapse to winner-takes-all
+(`floor(k/2)` is 1), so **the tables that exist today do not move whether or not places are on**: a
+house rule that re-prices a game nobody asked to re-price is the default-change mistake in a different
+hat. And placing badly costs you, because a ladder paying every position hands last place a rebate for
+losing — a softer version of the faucet §4 exists to refuse.
+
+The BOARD does not quote a per-place payout, deliberately. It could compute the split, but it would
+have to guess which seats ANTED, and a seat that changed hands after the deal makes the guess wrong —
+the same reason `potCents` is the server's number on the projection rather than `potFor(seats, ante)`
+recomputed locally.
 
 Stats: only 1st place counts as `won`. Placing 2nd of 4 is not a win, and inventing a
 half-win would put a second meaning into a number four leaderboards already rank.
@@ -308,8 +358,24 @@ way, and neither will a deploy record — `md5sum` the `src` trees against a cle
    reach that branch (the first draft played a number, entered nothing, and passed while the bug was
    live). And `mustDraw`/`chooseAiMove` both came out unchanged, which is the evidence that a house
    rule belongs inside `canPlay` rather than beside it.
-3. **Ranked places** — `finished[]`, the live-seat rotation, `potSplit` and its conservation
-   property, the result UI. Pi first, then merge. Makes the pot's slice 2 cheaper.
+3. ~~**Ranked places**~~ — **BUILT.** `finished[]`, the live-seat rotation, `potSplit` and its
+   conservation property, the podium in the result panel, the log's placement lines. **The Pi deploy
+   is owed** — see below.
+   **Three things worth carrying into slice 4.** `winner !== -1` was never one question (see §3), and
+   the two it split into are now the vocabulary the rest of this plan should use. `uno.ts` reached
+   the 800-line ceiling, so the AI moved to `ai.ts` — mechanical, re-exported by `index.ts`, no
+   caller changed a line, and it is the third file `uno.ts` has shed after `stacking.ts` and
+   `places.ts`; the simulation in step 4 will import from it. And the rotation surgery UNO_POT §2
+   deferred raise/call/fold for is now DONE, so that slice is cheaper than it was written to be.
+   **The deploy degrades benignly in BOTH directions, which is by construction and tested rather
+   than hoped for.** A new client against an old referee reads no `finished`, `placesOf` normalises
+   it to an empty podium, and every board renders exactly what it renders today — the toggle is a
+   control that does nothing, which is a UI that lies, which is why the Pi still goes first. An OLD
+   client against a NEW referee is the direction that decided a design: `UnoState.winner` is KEPT on
+   the wire (derived, `roundOver ? finished[0] : -1`) rather than replaced by `finished` + an `over`
+   flag, because "did the round end" is the only question an old client knows how to ask and
+   removing the field would blank the result panel for every one of them during the window between
+   the two deploys.
 4. **The house-odds simulation** — a test that reports `sharp`'s true win rate per seat count, with
    and without stacking. Read the number, then decide whether §4 ships and at what multiple.
 5. **Betting the house** — only if step 4 says the edge is real.

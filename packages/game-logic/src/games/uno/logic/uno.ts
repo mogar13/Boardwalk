@@ -23,6 +23,7 @@
  */
 
 import { DEFAULT_HOUSE_RULES, resolveHouseRules, type UnoHouseRules } from './houseRules';
+import { placesOf, roundOver, seatAfterLive, winnerOf } from './places';
 import { answersStack, drawDebt, type UnoTable } from './stacking';
 
 // ── Cards ────────────────────────────────────────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ export interface Card {
   readonly value: number;
 }
 
-const isWild = (c: Card): boolean => c.kind === 'wild' || c.kind === 'wild4';
+/** Exported for `ai.ts` alone — a rules predicate, kept here beside the cards it asks about. */
+export const isWild = (c: Card): boolean => c.kind === 'wild' || c.kind === 'wild4';
 
 /**
  * A fresh, ORDERED 108-card deck with stable ids. Ordered on purpose: `shuffle` is the only
@@ -160,8 +162,22 @@ export interface UnoGame {
   readonly turn: number;
   readonly direction: 1 | -1;
   readonly calledUno: readonly boolean[];
-  /** The seat that emptied its hand, or `-1` while play continues (sentinel, never null). */
-  readonly winner: number;
+  /**
+   * THE SEATS THAT HAVE GONE OUT, IN THE ORDER THEY DID — empty while everybody is still holding
+   * cards. This REPLACED `winner: number`; the two did not ship side by side, because a placement
+   * list and a winner are one fact stored twice and the award site that appends to one but forgets
+   * the other is the `recordWin` defect reborn.
+   *
+   * Ordinarily it never holds more than one seat: the round ends the moment somebody empties their
+   * hand, so `[3]` means "seat 3 won and it is over". Playing for places it fills up — `[3, 0, 1]`
+   * is 1st, 2nd, 3rd — and the last player standing is appended without having to play a final
+   * unwinnable hand against nobody.
+   *
+   * Read it through `placesOf`, and ask `winnerOf`/`roundOver` rather than inspecting it: for most
+   * of a ranked round first place is settled and the round is NOT over, so "who won" and "is it
+   * finished" stop being the same question.
+   */
+  readonly finished: readonly number[];
   /**
    * CARDS OWED to the seat on turn by a stack that has not been taken yet; `0` when nothing is
    * owed, which is every position at a table not playing `stack`. Read it through `drawDebt`.
@@ -237,11 +253,6 @@ function drawCards(
   return { drawn, deck: d, discard: pile };
 }
 
-/** The seat `steps` positions from `turn` in `direction`, wrapping the table. */
-function seatAfter(turn: number, steps: number, direction: 1 | -1, seatCount: number): number {
-  return (((turn + direction * steps) % seatCount) + seatCount) % seatCount;
-}
-
 /**
  * Deal a fresh round: shuffle, seven to each seat, and flip the first NON-action, non-wild card as
  * the starting discard (so the opening card never skips or reverses the leader into a rules corner —
@@ -302,7 +313,9 @@ export function deal(
     turn: lead,
     direction: 1,
     calledUno: hands.map(() => false),
-    winner: -1,
+    // NOBODY HAS PLACED. Stated rather than carried over for the same reason `pendingDraw` is: a
+    // round is dealt from scratch, and last round's podium is last round's.
+    finished: [],
     // A fresh round owes nobody anything, whatever the last one ended holding. It is stated rather
     // than inherited because a round is dealt from scratch — there is no state to carry over.
     pendingDraw: 0,
@@ -338,11 +351,15 @@ export function applyMove(
   move: Move,
   rng: () => number = Math.random
 ): UnoGame {
-  if (game.winner !== -1) return game;
+  if (roundOver(game)) return game;
   if (seat !== game.turn) return game;
   const hand = game.hands[seat];
   if (hand === undefined) return game;
   const seatCount = game.hands.length;
+  // WHO IS ALREADY OUT — read once, normalised once (a match row dealt before places existed has no
+  // list at all), and carried forward on every path so a legacy round acquires one on its first move
+  // instead of staying a hole the rest of the reducer has to keep re-deciding about.
+  const out = placesOf(game);
 
   const table = tableOf(game);
   const owed = drawDebt(table);
@@ -373,7 +390,8 @@ export function applyMove(
       hands: setAt(game.hands, seat, hand.concat(drawn)),
       calledUno: setAt(game.calledUno, seat, false),
       pendingDraw: 0,
-      turn: seatAfter(game.turn, 1, game.direction, seatCount),
+      finished: out,
+      turn: seatAfterLive(game.turn, 1, game.direction, seatCount, out),
     };
   }
 
@@ -404,7 +422,11 @@ export function applyMove(
     steps = 2;
   } else if (card.kind === 'reverse') {
     direction = (game.direction * -1) as 1 | -1;
-    steps = seatCount === 2 ? 2 : 1; // heads-up reverse acts as a skip
+    // A REVERSE ACTS AS A SKIP AT TWO LIVE PLAYERS, not two seated ones. This is the exact line
+    // UNO_POT §2 named as the reason raise/call/fold was deferred — a folded seat leaves the
+    // rotation the same way a finished one does — so doing places first is what makes that slice
+    // cheaper: the rotation surgery is done once and both features read it.
+    steps = seatCount - out.length === 2 ? 2 : 1;
   } else if (card.kind === 'draw2' || card.kind === 'wild4') {
     const n = card.kind === 'draw2' ? 2 : 4;
     if (rules.stack) {
@@ -415,7 +437,9 @@ export function applyMove(
       pendingDraw = owed + n;
       steps = 1;
     } else {
-      const victim = seatAfter(game.turn, 1, game.direction, seatCount);
+      // The victim is the next LIVE seat: a player who has already gone out holds no hand to deal
+      // into, and dealing them two would put cards back in a hand the projection reports as empty.
+      const victim = seatAfterLive(game.turn, 1, game.direction, seatCount, out);
       const pulled = drawCards(deck, discardPile, n, rng);
       deck = pulled.deck;
       discardPile = pulled.discard;
@@ -426,12 +450,20 @@ export function applyMove(
     }
   }
 
-  // UNO call + penalty, and win detection, on the player's NEW hand size.
+  // UNO call + penalty, and PLACEMENT, on the player's NEW hand size.
   const newHand = hands[seat];
   const newLen = newHand === undefined ? 0 : newHand.length;
-  let winner = game.winner;
+  let finished = out;
   if (newLen === 0) {
-    winner = seat;
+    finished = out.concat(seat);
+    // PLAYING FOR PLACES, the round goes on — unless this leaves one seat holding cards, in which
+    // case that straggler is placed last HERE rather than being made to play a final hand against
+    // nobody. Doing it in the same move is also what keeps `roundOver` a question about the list
+    // instead of a question about the list plus a special case.
+    if (rules.playToLast && seatCount - finished.length === 1) {
+      for (let s = 0; s < seatCount; s += 1)
+        if (!finished.includes(s)) finished = finished.concat(s);
+    }
   } else if (newLen === 1) {
     if (move.declareUno === true) {
       calledUno = setAt(calledUno, seat, true);
@@ -448,20 +480,28 @@ export function applyMove(
     calledUno = setAt(calledUno, seat, false);
   }
 
+  // OVER, ASKED OF THE RESULT rather than of "did somebody go out". Under `playToLast` those stop
+  // being the same question the instant first place is decided, and every line below reads this.
+  const over = roundOver({ ...game, hands, finished });
+
   return {
     hands,
     deck,
     discard: discardPile,
     color,
-    turn: winner === -1 ? seatAfter(game.turn, steps, direction, seatCount) : game.turn,
+    // The turn stops when the round does; otherwise it advances past whoever has gone out — which
+    // now includes this player, if the card they just laid was their last.
+    turn: over ? game.turn : seatAfterLive(game.turn, steps, direction, seatCount, finished),
     direction,
     calledUno,
-    winner,
-    // A WON ROUND OWES NOBODY. Going out on a +2 with a stack live leaves a debt no seat will ever
-    // be asked to pay — the turn has stopped and the round is over — so carrying it would leave the
-    // board announcing "+6" over a finished hand. Clearing it is not a rules decision; it is
-    // refusing to state a fact that has stopped being one.
-    pendingDraw: winner === -1 ? pendingDraw : 0,
+    finished,
+    // A FINISHED ROUND OWES NOBODY. Going out on a +2 with a stack live leaves a debt no seat will
+    // ever be asked to pay — the turn has stopped and the round is over — so carrying it would
+    // leave the board announcing "+6" over a finished hand. Clearing it is not a rules decision; it
+    // is refusing to state a fact that has stopped being one. Playing for places the round is NOT
+    // over, so the debt passes to the next live seat, which is the whole of stacking's rule: you
+    // answer what is coming at you or you take it, whoever laid it and wherever they went.
+    pendingDraw: over ? 0 : pendingDraw,
     // CARRIED, because this branch rebuilds the game field by field rather than spreading it. A
     // field added to `UnoGame` and not added here is not a type error (the literal is complete
     // either way once it is written) and not a visible bug on move one — the rules would simply be
@@ -469,107 +509,6 @@ export function applyMove(
     // a stacking table would quietly stop stacking the moment anybody played a card. Guarded.
     houseRules: game.houseRules,
   };
-}
-
-// ── AI (host-driven occupant) ────────────────────────────────────────────────────────────────────
-
-/**
- * How hard the bots play (V1_FEATURE_GAPS #1). Two tiers, not three, because there are only two
- * honest ones here: a bot that thinks about its hand and one that does not. UNO's vocabulary is its
- * own — Tic-Tac-Toe's third tier is `perfect`, a word that means nothing in a game of hidden hands
- * and a shuffled deck — which is exactly why the SDK does not hard-code a tier enum (v1's `easy /
- * normal / hard` vs `easy / medium / hard` vs `normal / hard` across 22 games).
- *
- * `sharp` is what UNO's bots have always played and stays the DEFAULT, so the shipped table is
- * unchanged unless a player asks for something easier.
- */
-export type UnoLevel = 'casual' | 'sharp';
-
-/** Injected randomness, so `casual` is deterministic in a test. The same shape `applyMove` takes. */
-export type Rng = () => number;
-
-/** Pick from `xs` with `rng`, clamping garbage (NaN, 1, negatives) into range rather than trusting it. */
-function pickOne<T>(xs: readonly T[], rng: Rng): T | undefined {
-  if (xs.length === 0) return undefined;
-  const r = rng();
-  const i = Number.isFinite(r)
-    ? Math.min(xs.length - 1, Math.max(0, Math.floor(r * xs.length)))
-    : 0;
-  return xs[i];
-}
-
-/**
- * Pick a move for an AI `seat` at a given level. Draws when nothing is playable, at either level.
- *
- * - `sharp` — deterministic given the hand order, and unit-testable for it: play a legal non-wild
- *   first (saving wilds), then an action, then a wild as a last resort; the wild colour is the
- *   bot's most-held; and it declares UNO whenever the play leaves exactly one card, so it never
- *   pays its own penalty.
- * - `casual` — a random legal card and a random colour on a wild. It saves nothing for later and
- *   names a colour it may hold none of, which is how a beginner plays.
- *
- * IT STILL CALLS UNO, and that is not an oversight — the first draft skipped the call, on the
- * reasoning that eating the standard +2 is a difficulty made of the game's own rules rather than a
- * handicap invented for the bot. It makes the bot UNWINNABLE: a hand only reaches zero by playing
- * its last card, a hand only reaches one by playing down to it, and going to one undeclared is
- * exactly what the +2 punishes — so an undeclaring bot bounces off one card back to three, forever.
- * A four-casual table ran 3,000 turns with hands sitting at 3–4 and no winner. That is v1's
- * `[5,5,5,5]` Liar's Dice literal in another costume (a match nobody can win), and the test below
- * that plays whole dealt games to a winner is what caught it and what keeps it caught.
- *
- * At BOTH levels the returned move is one `applyMove` accepts — asserted in `tests/uno.test.ts`
- * over whole played-out games, because an action the reducer refuses is a no-op on a bot's turn and
- * a no-op on a bot's turn stalls the table forever.
- */
-export function chooseAiMove(
-  game: UnoGame,
-  seat: number,
-  level: UnoLevel = 'sharp',
-  rng: Rng = Math.random
-): Move {
-  const hand = game.hands[seat];
-  if (hand === undefined) return { type: 'draw' };
-  // BOTH TIERS ANSWER A STACK, and neither needed a line of code for it: `canPlay` has already
-  // collapsed the legal set to the cards that answer the debt, so `playable` IS the set of answers
-  // and "nothing playable → draw" is "cannot answer → take it". That is the factoring earning its
-  // keep — the alternative was a stacking branch in each tier, which is two more places for
-  // `casual` to acquire a rule that makes the game unwinnable. Guarded by playing whole dealt games
-  // to a WINNER at both tiers with `stack` on.
-  const playable = hand.filter((c) => canPlay(c, tableOf(game)));
-  if (playable.length === 0) return { type: 'draw' };
-
-  if (level === 'casual') {
-    const card = pickOne(playable, rng);
-    if (card === undefined) return { type: 'draw' };
-    const declareUno = hand.length === 2; // see above: without this the bot can never win
-    if (!isWild(card)) return { type: 'play', cardId: card.id, declareUno };
-    return {
-      type: 'play',
-      cardId: card.id,
-      chosenColor: pickOne(COLORS, rng) ?? 'red',
-      declareUno,
-    };
-  }
-
-  const rank = (c: Card): number => (isWild(c) ? 2 : c.kind === 'number' ? 0 : 1);
-  const pick = playable.slice().sort((a, b) => rank(a) - rank(b))[0];
-  if (pick === undefined) return { type: 'draw' };
-
-  const declareUno = hand.length === 2; // this play empties us to one
-  if (!isWild(pick)) return { type: 'play', cardId: pick.id, declareUno };
-  return { type: 'play', cardId: pick.id, chosenColor: bestColor(hand, pick.id), declareUno };
-}
-
-/** The colour the AI holds most of (excluding the wild it is about to play); ties break by COLORS order. */
-function bestColor(hand: readonly Card[], playingId: string): UnoColor {
-  const tally: Record<UnoColor, number> = { red: 0, blue: 0, green: 0, yellow: 0 };
-  for (const c of hand) {
-    if (c.id === playingId) continue;
-    if (c.color !== 'wild') tally[c.color] += 1;
-  }
-  let best: UnoColor = 'red';
-  for (const color of COLORS) if (tally[color] > tally[best]) best = color;
-  return best;
 }
 
 // ── The public projection (the `TPublic` on the wire) ────────────────────────────────────────────
@@ -628,8 +567,24 @@ export interface UnoEvent {
   readonly calledUno: boolean;
   /** The actor took the +2 for going to one card silently. */
   readonly penalty: boolean;
-  /** The seat that emptied its hand on this move, or `-1`. */
+  /**
+   * The seat that WON, on the move that ENDED the round — or `-1`.
+   *
+   * Playing for places those come apart: first place is settled several moves before the round is,
+   * and this stays `-1` until the last card of the last live hand goes down. That is deliberate,
+   * because a log line reading "X went out and WINS!" three moves after X left the table is a
+   * sentence about the wrong moment. Going out is `place`, below; winning is here.
+   */
   readonly winner: number;
+  /**
+   * WHAT PLACE THE ACTOR TOOK by going out on this move — `1` for first, `0` if they did not go out.
+   *
+   * The ordinary game only ever produces `1`, on the move that also sets `winner`. Playing for
+   * places it counts up, and it is the only thing that can say "2nd" — the state carries the whole
+   * podium, but the log is a running commentary and a commentary that can only report the end of a
+   * round says nothing at all for most of a ranked one.
+   */
+  readonly place: number;
   /**
    * CARDS NOW OWED to whoever is on turn, after this move; `0` when nothing is. The running total
    * a stacking table needs said out loud — under stacking a +2 deals nobody anything and skips
@@ -674,6 +629,7 @@ export const DEAL_EVENT: UnoEvent = {
   calledUno: false,
   penalty: false,
   winner: -1,
+  place: 0,
   stacked: 0,
   took: 0,
   leads: -1,
@@ -697,7 +653,21 @@ export interface UnoState extends UnoTable {
   readonly counts: readonly number[];
   readonly deckCount: number;
   readonly calledUno: readonly boolean[];
+  /**
+   * The seat that won, once the round is OVER; `-1` while anybody is still playing.
+   *
+   * It is DERIVED here (`roundOver ? finished[0] : -1`) rather than stored, so there is one fact and
+   * one place that decides it — the projection's own job, the same way `counts` and `deckCount` are
+   * derived. It stays on the wire, rather than being replaced by `finished` + an `over` flag, for a
+   * reason the deploy order makes concrete: the Pi ships by hand and the frontend on push, so a
+   * client that predates ranked places WILL read this projection, and "did the round end" is the
+   * only question it knows how to ask. Removing the field would blank the result panel for every one
+   * of them; keeping it means they play the ordinary game exactly as before and simply do not draw
+   * the podium.
+   */
   readonly winner: number;
+  /** The podium: seats in the order they went out. See `UnoGame.finished`; read it via `placesOf`. */
+  readonly finished: readonly number[];
   readonly round: number;
   /**
    * WHAT IS IN THE POT, in integer cents; `0` for a table not playing for money.
@@ -735,7 +705,13 @@ export function toPublic(
     counts: game.hands.map((h) => h.length),
     deckCount: game.deck.length,
     calledUno: game.calledUno,
-    winner: game.winner,
+    // See `UnoState.winner`: who came first is known long before the round ends under `playToLast`,
+    // and this field has always meant "it is over".
+    winner: roundOver(game) ? winnerOf(game) : -1,
+    // NORMALISED, like `houseRules` and `pendingDraw` below and for the same reason: a match dealt
+    // before places existed has no list, and the wire must carry a real empty array rather than the
+    // `undefined` every client would then have to decide about on its own.
+    finished: placesOf(game),
     round,
     potCents,
     // RESOLVED, NOT PASSED THROUGH. `game` here has usually just come back out of

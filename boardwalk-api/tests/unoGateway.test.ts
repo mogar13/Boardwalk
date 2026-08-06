@@ -21,13 +21,20 @@ import WebSocket from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RoomGateway } from '../src/rooms/gateway';
 import { RoomStore } from '../src/rooms/store';
-import { parseMove, parseLevel } from '../src/rooms/unoDealer';
+import { parseMove, parseLevel, UnoDealer, type UnoDealerHost } from '../src/rooms/unoDealer';
 import { decodeFrame } from '../src/rooms/protocol';
 import { openDb, type Db } from '../src/db/db';
 import { upsertProfile, balanceOf } from '../src/domain/profile';
 import { STARTING_BANKROLL_CENTS } from '../src/domain/economy';
-import { GAME_ID } from '../src/domain/uno';
-import type { UnoState } from '@boardwalk/game-logic/games/uno';
+import { GAME_ID, playAiTurn, playMove, startMatch } from '../src/domain/uno';
+import type { Seat } from '../src/rooms/types';
+import {
+  chooseAiMove,
+  placesOf,
+  roundOver,
+  type UnoGame,
+  type UnoState,
+} from '@boardwalk/game-logic/games/uno';
 
 const ANTE = 2_500;
 
@@ -358,7 +365,13 @@ describe('the UNO dealer, over a real socket', () => {
       anteCents: 0,
     });
     const roomId = created.value as string;
-    await ada.request({ t: 'claimSeat', gameId: GAME_ID, roomId, index: 0, who: { uid: 'ada', name: 'Ada' } });
+    await ada.request({
+      t: 'claimSeat',
+      gameId: GAME_ID,
+      roomId,
+      index: 0,
+      who: { uid: 'ada', name: 'Ada' },
+    });
     await ada.request({ t: 'setAi', gameId: GAME_ID, roomId, index: 1, name: 'CPU' });
     ada.fire({ t: 'subscribe', gameId: GAME_ID, roomId });
     ada.fire({ t: 'subPrivate', gameId: GAME_ID, roomId, index: 1 }); // the bot's seat
@@ -383,9 +396,9 @@ describe('parseMove / parseLevel — refuse, never coerce', () => {
       cardId: 'r5',
       declareUno: false,
     });
-    expect(parseMove({ type: 'play', cardId: 'w1', chosenColor: 'blue', declareUno: true })).toEqual(
-      { type: 'play', cardId: 'w1', declareUno: true, chosenColor: 'blue' }
-    );
+    expect(
+      parseMove({ type: 'play', cardId: 'w1', chosenColor: 'blue', declareUno: true })
+    ).toEqual({ type: 'play', cardId: 'w1', declareUno: true, chosenColor: 'blue' });
     // A hostile frame's extras have nowhere to go — not validated and rejected, simply absent.
     expect(
       parseMove({ type: 'play', cardId: 'r5', payoutCents: 999, outcome: 'win', winner: 0 })
@@ -395,7 +408,16 @@ describe('parseMove / parseLevel — refuse, never coerce', () => {
   it('refuses anything that is not a move rather than coercing it to one', () => {
     // The reducer is total, so a coerced malformed move would be a silent no-op — which reads to
     // the player as a click that did nothing rather than an error.
-    for (const bad of [null, 'draw', 42, [], {}, { type: 'fold' }, { type: 'play' }, { type: 'play', cardId: '' }]) {
+    for (const bad of [
+      null,
+      'draw',
+      42,
+      [],
+      {},
+      { type: 'fold' },
+      { type: 'play' },
+      { type: 'play', cardId: '' },
+    ]) {
       expect(parseMove(bad)).toBeNull();
     }
     expect(parseMove({ type: 'play', cardId: 'w1', chosenColor: 'octarine' })).toEqual({
@@ -412,3 +434,102 @@ describe('parseMove / parseLevel — refuse, never coerce', () => {
   });
 });
 
+/**
+ * THE DEALER'S CLOCK, WITH PLACES ON — the one branch ranked places could stall a table through,
+ * and the one the compiler could not force right.
+ *
+ * `schedule` used to stop scheduling when `game.winner !== -1`, and removing that field made every
+ * such site a compile error — but "which predicate replaces it" was still a choice, and here the
+ * wrong choice is invisible: the round is legal, every human can still move, and a BOT's turn simply
+ * never comes. That is the stall `unoDealer.ts` exists to prevent, arriving through the front door.
+ *
+ * It is driven against the dealer directly rather than over a socket because `AI_DELAY_MS` is 900ms
+ * of real time and this needs exactly one bot move — the socket half is already proved elsewhere,
+ * and what is under test here is a scheduling decision, not a frame.
+ */
+describe("the dealer keeps driving bots after first place — ranked places' stall", () => {
+  const RANKED = { playToLast: true };
+
+  it('schedules a bot move on a ranked round that somebody has already gone out of', async () => {
+    const db = openDb(':memory:');
+    upsertProfile(db, 'ada', { name: 'ada', avatar: '👤', equipped: {} }, { now: 1 });
+    const seats: Seat[] = [
+      { kind: 'human', uid: 'ada', name: 'Ada' },
+      { kind: 'ai', uid: null, name: 'CPU 1' },
+      { kind: 'ai', uid: null, name: 'CPU 2' },
+    ];
+    // A fake host is the whole point of `UnoDealerHost`: the dealer never imports the store, so the
+    // room can be three constants and a pair of sinks.
+    const host: UnoDealerHost = {
+      seatsOf: () => seats,
+      hostOf: () => 'ada',
+      statusOf: () => 'playing',
+      anteOf: () => 0,
+      rulesOf: () => RANKED,
+      publish: () => undefined,
+      deal: () => undefined,
+    };
+    const dealer = new UnoDealer(db, host, () => 1_000);
+
+    const started = startMatch(
+      db,
+      'ada',
+      {
+        nonce: 'n-clock',
+        gameId: GAME_ID,
+        roomId: 'CLCK',
+        seats: seats.map((s) => ({ kind: s.kind, uid: s.uid })),
+        anteCents: 0,
+        level: 'sharp',
+        houseRules: RANKED,
+      },
+      1_000
+    );
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const matchId = started.value.matchId;
+
+    const gameNow = (): UnoGame =>
+      (
+        JSON.parse(
+          (
+            db.prepare('SELECT state_json FROM uno_matches WHERE id = ?').get(matchId) as {
+              state_json: string;
+            }
+          ).state_json
+        ) as { game: UnoGame }
+      ).game;
+
+    // Reach the position by PLAYING to it — one seat placed, the round still live, a bot on turn —
+    // rather than hand-writing a state, so the round the dealer is handed is one the rules produced.
+    for (let i = 0; i < 8_000; i += 1) {
+      const game = gameNow();
+      if (placesOf(game).length >= 1 && !roundOver(game) && seats[game.turn]?.kind === 'ai') break;
+      if (roundOver(game)) throw new Error('the round ended before a bot was on turn');
+      if (seats[game.turn]?.kind === 'human') {
+        playMove(
+          db,
+          'ada',
+          matchId,
+          `c${String(i)}`,
+          chooseAiMove(game, game.turn, 'sharp'),
+          2_000 + i
+        );
+      } else if (playAiTurn(db, matchId, 2_000 + i) === null) {
+        throw new Error('the referee refused to drive a bot');
+      }
+    }
+    const before = gameNow();
+    expect(placesOf(before).length).toBeGreaterThanOrEqual(1);
+    expect(roundOver(before)).toBe(false);
+    expect(seats[before.turn]?.kind).toBe('ai');
+
+    // Now hand it to the DEALER and let its own clock run. Nothing else will move this table.
+    dealer.onSeatsChanged(GAME_ID, 'CLCK');
+    await sleep(1_400);
+    dealer.cancel(GAME_ID, 'CLCK');
+
+    const after = gameNow();
+    expect(after).not.toEqual(before); // the bot moved because the referee scheduled it
+  });
+});

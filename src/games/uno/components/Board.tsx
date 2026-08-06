@@ -14,6 +14,7 @@ import {
   canPlay,
   drawDebt,
   mustDraw,
+  placesOf,
   type Card as UnoCard,
   type Move,
   type UnoColor,
@@ -28,6 +29,7 @@ import { SeatView } from '@/games/uno/components/SeatView';
 import { TableCentre } from '@/games/uno/components/TableCentre';
 import { PenaltyFlash, RoundResult, TurnCue, UnoShout } from '@/games/uno/components/UnoOverlays';
 import { opponentSlots, slotsOn, type UnoSeatSide } from '@/games/uno/seatLayout';
+import { ordinal } from '@/games/uno/log';
 import { useGameOptions } from '@/system/options/useGameOptions';
 import { unoBotLevel } from '@/games/uno/manifest';
 
@@ -257,6 +259,15 @@ export function Board() {
   const myTurn = state.winner < 0 && isMyTurn(state.turn);
   const finished = state.winner >= 0;
   const event = state.lastEvent;
+  // THE PODIUM. Through the rulebook's own reader, never `state.finished`: an old referee sends no
+  // list at all, and deciding what that means is exactly what `placesOf` exists to do once. Playing
+  // the ordinary game it holds one seat once the round is over and nothing before that, so every
+  // line below is inert on a table that did not ask for places.
+  const places = placesOf(state);
+  const myPlace = places.indexOf(mySeatIndex) + 1;
+  // I am out and the table is still playing — a state that could not exist before ranked places, and
+  // one an empty fan otherwise reads as "still loading" rather than "you are done".
+  const outEarly = myPlace > 0 && !finished;
   // What the table owes whoever is on turn. Through the rulebook's own reader, never
   // `state.pendingDraw`: an old referee that has never heard of the field sends nothing at all, and
   // deciding what that means is exactly what `drawDebt` exists to do once.
@@ -439,6 +450,15 @@ export function Board() {
 
       {mySeatIndex < 0 && <p className="text-bw-muted text-sm">Watching — every hand is hidden.</p>}
 
+      {/* OUT, BUT THE ROUND IS NOT. Without this the seat that just went out looks identical to a
+          seat whose private hand has not arrived — an empty fan and no turn — which is the same
+          confusion the "nothing matches, drawing…" line exists to fix one state earlier. */}
+      {outEarly && (
+        <p className="text-secondary text-sm font-semibold" aria-live="polite">
+          You went out {ordinal(myPlace)} — playing on for the rest of the places.
+        </p>
+      )}
+
       <MoveLog lines={lines} mySeat={mySeatIndex} />
 
       {finished && (
@@ -447,11 +467,23 @@ export function Board() {
             won={state.winner === mySeatIndex}
             text={
               state.winner === mySeatIndex
-                ? state.potCents > 0
-                  ? `You went out — you win ${formatMoney(state.potCents)}!`
+                ? // A ranked pot is SHARED, so the winner's line cannot quote the whole of it. What
+                  // it can say without guessing is that the pot went their way; the top bar carries
+                  // the authoritative figure, which is the referee's and not this board's.
+                  state.potCents > 0
+                  ? places.length > 1
+                    ? 'You went out first — you take the pot!'
+                    : `You went out — you win ${formatMoney(state.potCents)}!`
                   : 'You went out — you win!'
-                : `${names[state.winner] ?? 'A player'} wins`
+                : myPlace > 0
+                  ? `You finished ${ordinal(myPlace)}`
+                  : `${names[state.winner] ?? 'A player'} wins`
             }
+            places={places.map((seat) => ({
+              seat,
+              name: names[seat] ?? `Player ${String(seat + 1)}`,
+              you: seat === mySeatIndex,
+            }))}
           />
           {/* Every human at the table has to ask for the next deal — the guests used to have no say
               at all here, only the host's button and a line telling them to wait for it. The dealer

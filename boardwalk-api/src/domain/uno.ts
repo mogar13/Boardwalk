@@ -38,8 +38,12 @@ import {
   deal,
   dealEvent,
   describeMove,
+  placesOf,
   potFor,
+  potSplit,
+  roundOver,
   toPublic,
+  winnerOf,
   type Move,
   type UnoEvent,
   type UnoGame,
@@ -291,7 +295,7 @@ export function startMatch(
     // The last round's winner opens this one (v1's rule). `deal` floors an out-of-range seat to 0,
     // which is what makes a table that shrank between rounds safe without a check here.
     const previous = lastMatchInRoom(db, input.gameId, input.roomId);
-    const leader = previous === undefined ? 0 : Math.max(0, stateOf(previous).game.winner);
+    const leader = previous === undefined ? 0 : Math.max(0, winnerOf(stateOf(previous).game));
     const round = previous === undefined ? 0 : previous.round + 1;
 
     // The table's rules are stamped onto the round HERE, once, so the match is played under what it
@@ -401,7 +405,7 @@ export function playMove(
     if (seat < 0) return deny('you are not in that round');
 
     const before = stateOf(row);
-    if (before.game.winner !== -1) return deny('that round is over');
+    if (roundOver(before.game)) return deny('that round is over');
     if (before.game.turn !== seat) return deny('not your turn');
 
     const after = applyMove(before.game, seat, move, rng);
@@ -415,10 +419,13 @@ export function playMove(
       nonce
     );
 
-    if (after.winner !== -1) settleMatch(db, matchId, stored, now);
+    // `roundOver` and not "somebody went out": playing for places, first place is settled several
+    // moves before the round is, and settling there would pay the pot with the table still playing.
+    const over = roundOver(after);
+    if (over) settleMatch(db, matchId, stored, now);
     return {
       ok: true,
-      value: { matchId, match: stored, row: rowAfter(row, stored, after.winner !== -1 ? 1 : 0), replayed: false },
+      value: { matchId, match: stored, row: rowAfter(row, stored, over ? 1 : 0), replayed: false },
     };
   });
 
@@ -457,7 +464,7 @@ export function playAiTurn(
       .get(matchId) as MatchRow | undefined;
     if (row === undefined || row.settled === 1) return null;
     const before = stateOf(row);
-    if (before.game.winner !== -1) return null;
+    if (roundOver(before.game)) return null;
 
     const seat = before.game.turn;
     const move = chooseAiMove(before.game, seat, before.level, rng);
@@ -466,11 +473,12 @@ export function playAiTurn(
 
     const stored = advanceLog(before, after, seat, move);
     persist(db, matchId, stored, now);
-    if (after.winner !== -1) settleMatch(db, matchId, stored, now);
+    const over = roundOver(after);
+    if (over) settleMatch(db, matchId, stored, now);
     return {
       matchId,
       match: stored,
-      row: rowAfter(row, stored, after.winner !== -1 ? 1 : 0),
+      row: rowAfter(row, stored, over ? 1 : 0),
       replayed: false,
     };
   });
@@ -482,15 +490,24 @@ export function playAiTurn(
 /**
  * Pay the pot and record the outcome for every human in the round.
  *
- * The payout has no argument a request can reach: it is the pot this round's own antes built, paid
- * to the seat the REDUCER says won. Wagers close by `match_id` rather than oldest-first, for
- * blackjack's reason — an abandoned round's open stake would otherwise be consumed by a later,
- * unrelated settlement.
+ * The payout has no argument a request can reach: it is the pot this round's own antes built, split
+ * by the PLACEMENTS the reducer recorded, through the shared `potSplit` — so the ladder the lobby
+ * describes and the cents the ledger moves are one piece of arithmetic. Wagers close by `match_id`
+ * rather than oldest-first, for blackjack's reason: an abandoned round's open stake would otherwise
+ * be consumed by a later, unrelated settlement.
+ *
+ * ONE RULE COVERS BOTH MODES — the pot is split among the seats that PAID and PLACED, in the order
+ * they placed. Ordinarily `finished` holds one seat, so that is `[winner]` and `potSplit(pot, 1)` is
+ * the whole pot: winner takes all, unchanged to the cent. Playing for places every human is on the
+ * podium and the top half share it. And when a bot goes out first in the ordinary game, no paying
+ * seat placed, so nobody is paid and the humans simply lose their antes — which is what this game
+ * already did, now a consequence of the rule rather than a case of its own.
  *
  * `recordOutcome` is the shared one, so stats/XP/achievements cannot drift from the generic path.
- * Every human gets a row: the winner a win, everyone else a loss. A bot gets nothing, having no
- * account to record against. This is also why the BOARD does not call `reportResult` — the stat,
- * the XP and the badges are banked here, before any client learns the round ended.
+ * ONLY FIRST PLACE IS A `win`: placing 2nd of 4 is not a win, and inventing a half-win would put a
+ * second meaning into a number four leaderboards already rank. A bot gets nothing, having no account
+ * to record against. This is also why the BOARD does not call `reportResult` — the stat, the XP and
+ * the badges are banked here, before any client learns the round ended.
  */
 export function settleMatch(db: Db, matchId: number, match: StoredMatch, now: number): void {
   const row = db
@@ -500,7 +517,17 @@ export function settleMatch(db: Db, matchId: number, match: StoredMatch, now: nu
 
   const players = playersOf(db, matchId);
   const pot = row.pot_cents;
-  const winnerSeat = match.game.winner;
+  const winnerSeat = winnerOf(match.game);
+
+  // The paying seats, in the order they went out. A bot on the podium is simply not here: it staked
+  // nothing, so it takes nothing, and it does not consume a share that would have to go somewhere.
+  const paid = new Set(players.map((p) => p.seat));
+  const ranked = placesOf(match.game).filter((seat) => paid.has(seat));
+  const split = potSplit(pot, ranked.length);
+  const payoutOf = (seat: number): number => {
+    const place = ranked.indexOf(seat);
+    return place < 0 ? 0 : (split[place] ?? 0);
+  };
 
   db.prepare('UPDATE uno_matches SET settled = 1, state_json = ?, updated_at = ? WHERE id = ?').run(
     JSON.stringify(match),
@@ -514,7 +541,7 @@ export function settleMatch(db: Db, matchId: number, match: StoredMatch, now: nu
 
   for (const player of players) {
     const won = player.seat === winnerSeat;
-    const payout = won ? pot : 0;
+    const payout = payoutOf(player.seat);
     if (payout > 0) appendLedger(db, player.uid, GAME_ID, payout, 'settle', now);
     recordOutcome(db, player.uid, GAME_ID, won ? 'win' : 'loss', player.ante_cents, payout, [], now);
   }
