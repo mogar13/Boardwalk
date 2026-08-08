@@ -527,9 +527,37 @@ lint rule that matches nothing reports success.
   The lobby owns create/join/seats/chat/start and the one `<RoomProvider>` subscription; the board
   renders inside it once `status === 'playing'`, which is how the board's `useRoom`/`useSeats` reach
   the subscription without the game registering a listener.
+- **EVERY GAME IS ENTERED THROUGH ONE MODAL, AND THE CARD THAT OPENS IT IS STILL A LINK.** ✅ Live
+  ([plans/done/GAME_LAUNCH_MODAL.md](plans/done/GAME_LAUNCH_MODAL.md)). Clicking a game used to
+  navigate to `/play/:id`, which mounts the game, which mounts `<Lobby>`, whose no-table branch is a
+  full PAGE of create/join panels — so three of the six games answered "I want to play UNO" with a
+  form, and the form arrived behind a route change and a lazy chunk. The entrance is v1's
+  `openLaunchPanel` rebuilt on the kit: the hub card opens `<GameLaunchModal>`, the modal offers the
+  game's ways in, and a room mode swaps to the setup step. It is instant because the manifest is a
+  static import on the hub, where at `/play/uno` it would arrive only after the chunk did — **an
+  entrance that makes you wait is not an entrance.** Four things are rules rather than decoration.
+  The ways in ARE `manifest.modes`, labelled once in `src/system/room/modes.ts` and read by BOTH the
+  modal and the lobby (the lobby rendered the raw union member for five phases, so the screen said
+  "ai"); **every registered game gets one**, single-mode games included, because the modal is the
+  entrance to a game and not a picker — a game with one way in shows one way in, and Blackjack's
+  depth landing later is a manifest change this draws for free. The panel behind it is `<TableSetup>`
+  and there is exactly ONE of it, mounted by the modal and by `<Lobby>`'s no-table branch (which
+  `/play/uno` typed directly and a dead table link both still reach); it takes
+  `{ manifest, mode, onEntered }` and never learns which home it is in, because the version that
+  would rot is the one nobody reaches by clicking. And **the hub card stays an `<a>`** — the modal
+  intercepts the plain click only (`isPlainClick`), so ctrl/cmd-click, middle-click and "open in new
+  tab" still belong to the browser; a `<button>` takes all of that away silently and nobody files a
+  bug, they just stop doing it.
 - **A pre-game option is manifest DATA, and the OS draws the control.** ✅ Live —
   `manifest.options` (a `GameOptionsSpec`), `<GameOptions>` renders it, `useGameOptions()` reads it
-  back, and `<GameShell>` holds the values. A game never draws its own picker and never learns what
+  back, and **the values live in the URL** (`?o.<id>=`, `optionParams.ts`) with `<GameShell>` holding
+  no copy at all — `readOptionValues(spec, params)` IS the value and `writeOptionValues` is the
+  write. It used to be state in the shell, seeded from nowhere, and the launch modal is what made
+  that untenable: a tier is picked on the HUB and the game that reads it mounts one route later. A
+  seed plus state plus a sync is two sources of truth for one fact, which is `<Lobby>`'s own
+  `roomId ?? linkedTable` war story, and deriving is the same fix. It also closed a live bug for
+  free — a mid-lobby refresh used to reset the tier to its default while the host believed they had
+  picked one. A game never draws its own picker and never learns what
   a control looks like; what it does own is what a value MEANS (`solitaireDrawCount('3') → 3`,
   next to the reducer it feeds, pure). Solitaire's draw-1/draw-3 was the first caller — it
   had already hand-rolled the picker into its header, which is the shape v1 repeated across ~20
@@ -553,9 +581,11 @@ lint rule that matches nothing reports success.
   drift (easy/normal/hard vs easy/medium/hard vs normal/hard across 22 games) is why the SDK
   hard-codes no tier enum. Each game's **default is the level it already shipped**, guarded, so
   adding the option retuned nothing. The lobby renders `<GameOptions>` for the **host only**, in
-  the waiting branch only — the values live in `<GameShell>`, which is per-client, and today's
+  the waiting branch only — the values live in the URL, which is per-client, and today's
   only room-game option is read exclusively by the host (`aiSeatsToDrive` is host-only); the day a
   guest must read one, it belongs in room state, and that is a real change rather than a nuance.
+  (A shared table link now carries the host's `?o.` keys to whoever opens it, which is harmless for
+  exactly that reason and would stop being harmless the moment a guest read one.)
   Rendering it only before the deal is also what makes a mid-game retune unspellable — v1's Chess
   reached the same place by queueing a difficulty change to the next game.
 - **A HOUSE RULE THAT CHANGES THE LEGAL SET CHANGES THE SIGNATURE THAT COMPUTES IT.** ✅ Live —
@@ -676,7 +706,7 @@ lint rule that matches nothing reports success.
   pure function plus a button row because the count was already plumbed end to end (`create` →
   protocol → gateway → store).
 - **A TABLE COMES UP SEATED, AND THE PREVIEW IS THE PLAN — not a drawing of it.** ✅ Live (slice 3
-  of [plans/GAME_LAUNCH_MODAL.md](plans/GAME_LAUNCH_MODAL.md)). An AI table used to mean claiming a
+  of [plans/done/GAME_LAUNCH_MODAL.md](plans/done/GAME_LAUNCH_MODAL.md)). An AI table used to mean claiming a
   chair and then pressing "Add CPU" once per remaining seat before Start would light — six clicks on
   a 7-seat UNO table, to play alone — and Chess hot-seat had the same shape one level over: you sat
   yourself down twice. Now one pure `plannedSeats({seatCount, host, fill})` says what the chairs
@@ -705,8 +735,8 @@ lint rule that matches nothing reports success.
   a table nobody configures is the table that already exists.** Slice 1 was the seam and changed
   nothing observable; **slice 2 (STACKING) is the first rule the reducer enforces**, and **slice 3
   (RANKED PLACES) is the first that reaches the MONEY**. All three ride the same seam. The options seam is the declared home for a pre-game choice and is the wrong one
-  here, for the reason this file already states as its one limit: option values live in
-  `<GameShell>`, which is per-CLIENT — fine for an AI tier only the host reads, wrong for a rule the
+  here, for the reason this file already states as its one limit: option values live in the
+  URL, which is per-CLIENT — fine for an AI tier only the host reads, wrong for a rule the
   REFEREE enforces and every guest's `canPlay` has to agree with. A guest running a different
   rulebook from the dealer greys out a card the referee would have accepted and offers clicks it
   refuses; nothing crashes and the table is unplayable for one seat. So a house rule rides **exactly
@@ -1184,6 +1214,7 @@ builds the thing it guards.
 | Phase D is deployed to the Pi | **DONE 2026-07-18.** The unverified half resolved to the bad case — the Pi is a standalone `~/boardwalk-api` directory, not a git checkout — so `packages/game-logic/` is now rsync'd to `~/packages/game-logic` beside it and the relative `file:` dependency resolves. `ExecStart` never moved. Procedure + the `--omit=optional` trap are in [BACKEND_PLAN.md](plans/done/BACKEND_PLAN.md#the-deploy-delta-phase-d--done-and-what-it-turned-out-to-be). **The Pi deploys by hand while the frontend deploys on push, so the Pi goes FIRST** — merging Phase D before it broke prod blackjack for ten minutes |
 | `PascalCase.tsx` / `camelCase.ts` | unguarded — convention only |
 | The kit/lobby renders correctly in a real browser | unguarded, but Phase 5 added the surface: `VITE_USE_EMULATOR=1` + `/_dev/lobby` drives the whole room flow against the emulator (a manual Playwright pass, not a build guard) |
+| **The ENTRANCE works, for all six games, on the path prod uses** | unguarded by construction — this is the row the launch modal's slice 4 exists to fill, and every line of it is a fact no static tool in this repo can see. Driven 2026-08-08 on the **WS referee** (emulator + a locally-run `boardwalk-api` + Vite, the recipe in Develop — the emulator-only loop tests the RTDB fallback, which is not the path prod uses), with the API gate relaxed for the run so the economy and the dealt hands were the referee's too. **Zero console errors and zero 4xx across every script.** All six cards open a modal offering exactly their labelled ways in, at `sm`, URL unchanged, Escape-closable with no dead scroll. Then each way in end to end: Tic-Tac-Toe AI created SEATED (Start lit with no Add-CPU click) and played to a win against the `casual` bot the modal picked — a tier that only reached the engine through `?o.house=casual`, which a `perfect` bot would have made impossible; Chess hot-seat came up with both local chairs and played both colours from one screen; UNO AI at 3 seats, Stacking on and a $25 ante dealt with the bankroll going $5,000 → $4,975 and the stored match carrying `pot_cents 5000`, `houseRules {stack:true,…}` and `level "sharp"` — the seat count, the house rule, the stake and the pin all arriving from the modal at the referee; Liar's Dice AI dealt its cups and took a bid; Solitaire's Draw 3 emptied a 24-card stock in **8** clicks where `?o.draw=1` took **24**, which is the URL round trip proved in the reducer rather than in a query string; Blackjack, having nothing to ask, navigated on the click and dealt a server-dealt hand. **Online** was driven with two accounts: the host's table came up with an OPEN chair and Start dark (§5.3's decline, visible), the guest found it in the room browser INSIDE the modal, joined by the shared-link code path, sat, and moves crossed both ways. Plus the three claims only a browser can answer — a ctrl-click opened a second tab and NO modal (the card is still an anchor), "Fill with CPUs" turned three open chairs into `CPU 2/3/4` and lit Start (the label the preview promises, written by the other package), and the tallest panel measured 876px unscrolled at 1080p and 388px = viewport − padding with its header pinned at 900×420. The modal's own behaviour too: back returns to the ways in, a REOPEN lands on the ways in with the panel state reset (it is keyed by game id), and another card opens as itself |
 
 **The gap Phase 1 leaves, named rather than papered over.** Most guards above are static. The worst
 bug in Phase 1 was not: a bare `grid` on `<dialog>` overrode the UA's `dialog:not([open]){display:none}`,
@@ -1295,8 +1326,11 @@ green and deployed. **Phase 6 is complete: Tic-Tac-Toe, Blackjack, Chess, UNO an
 shipped. The launch set of five is done — the next game is built only because one sounds fun, never
 to reach a number (see Scope discipline).**
 
-**Every plan in this repo is now closed** — Phases 0–6, backend Phases A–D, and the Progression
-Overhaul P1–P5. What outlived them is in [plans/ROADMAP.md](plans/ROADMAP.md), ordered by what goes
+**Every plan in `plans/` that was ever started is closed** — Phases 0–6, backend Phases A–D, the
+Progression Overhaul P1–P5, and (2026-08-08) the launch modal, all four slices. The one file left
+beside the ROADMAP is [plans/DOMINOES_BRIEF.md](plans/DOMINOES_BRIEF.md), which is a brief for a
+session that has not happened rather than work in flight — and it is a game, so it is optional
+forever by the same rule as any other. What outlived the phases is in [plans/ROADMAP.md](plans/ROADMAP.md), ordered by what goes
 wrong if it is never done — and **both items that could still cost data or chips are now closed**:
 offline replay-hardening (deployed and enforcing) and room crash-recovery (built and guarded), each
 with its design doc in `plans/done/`. What remains cannot move a chip: the *decision* of whether to

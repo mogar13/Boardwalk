@@ -3,7 +3,7 @@ import type { Seat } from '@/system/room/types';
 
 /**
  * THE TABLE YOU ARE ABOUT TO CREATE, drawn before it exists — v1's lobby preview
- * (plans/GAME_LAUNCH_MODAL.md §5.1), which is the half of that screen worth keeping.
+ * (plans/done/GAME_LAUNCH_MODAL.md §5.1), which is the half of that screen worth keeping.
  *
  * It renders `plannedSeats(…)` and nothing else. That is deliberate and it is the whole design:
  * the array on screen is the array the create path produces, so the preview cannot promise a

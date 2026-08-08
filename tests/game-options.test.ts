@@ -203,7 +203,7 @@ describe('the AI difficulty declarations', () => {
 });
 
 /**
- * AN OPTION VALUE LIVES IN THE URL (plans/GAME_LAUNCH_MODAL.md §4), because a tier is chosen in a
+ * AN OPTION VALUE LIVES IN THE URL (plans/done/GAME_LAUNCH_MODAL.md §4), because a tier is chosen in a
  * modal on the HUB and read by a game the play route mounts one navigation later. `<GameShell>`
  * derives from here and writes back here, holding no copy — so what these cases protect is the one
  * property that makes that safe: the round trip is lossless, and everything else is defaults.

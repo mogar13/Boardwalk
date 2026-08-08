@@ -22,7 +22,7 @@ import type { TicTacToeLevel } from '@boardwalk/game-logic/games/tic-tac-toe';
  * folding it in here would test the same `sharedScreen` path twice while leaving this game's point
  * — "is the SDK cheap?" — no better answered.
  *
- * `seats: { min: 2, max: 2 }` — TWO CHAIRS, and it used to say `min: 1` (plans/GAME_LAUNCH_MODAL.md
+ * `seats: { min: 2, max: 2 }` — TWO CHAIRS, and it used to say `min: 1` (plans/done/GAME_LAUNCH_MODAL.md
  * §5.5). That read as "one human is enough", which is true of the GAME and false of the TABLE, and
  * the two are different facts: `modes` already carries "you can play this alone" (`'ai'`), while
  * `seats` is how many chairs there are. Conflating them shipped a real defect — `tableSizeChoices`

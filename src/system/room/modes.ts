@@ -4,7 +4,7 @@ import type { GameManifest } from '@/games/registry';
  * WHAT A WAY IN IS CALLED — the one place the words are written.
  *
  * The lobby used to render its mode buttons as the raw union member, so the screen literally said
- * "ai" and "online" (plans/GAME_LAUNCH_MODAL.md §2). That was invisible for as long as the only way
+ * "ai" and "online" (plans/done/GAME_LAUNCH_MODAL.md §2). That was invisible for as long as the only way
  * to a table was a page nobody looked at twice; the launch modal puts the same row at eye level on
  * the entrance screen, where a lowercase enum member reads as a bug.
  *

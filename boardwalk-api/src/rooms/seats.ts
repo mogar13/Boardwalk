@@ -63,7 +63,7 @@ export function releaseSeat(seats: readonly Seat[], index: number, fallback: 'ai
 
 /**
  * Sit the house in every EMPTY chair — the one-shot version of pressing "Add CPU" six times
- * (plans/GAME_LAUNCH_MODAL.md §5.2). Used at create, so a table asked for as an AI table comes up
+ * (plans/done/GAME_LAUNCH_MODAL.md §5.2). Used at create, so a table asked for as an AI table comes up
  * playable instead of asking for six clicks first.
  *
  * Only `open` chairs are touched. A human is never displaced (that would be `claimSeat`'s

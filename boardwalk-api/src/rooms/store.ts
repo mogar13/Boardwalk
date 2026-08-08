@@ -204,7 +204,7 @@ export class RoomStore {
    * Its keys are not the server's to understand; its shape and size are.
    *
    * `fillAi` SEATS THE HOUSE IN EVERY REMAINING CHAIR, in this same construction
-   * (plans/GAME_LAUNCH_MODAL.md §5.2). It is here and not a loop of `setAi` calls from the client
+   * (plans/done/GAME_LAUNCH_MODAL.md §5.2). It is here and not a loop of `setAi` calls from the client
    * for two reasons: the table is seated ATOMICALLY — there is no window where a 7-seat AI table
    * exists half-filled and a stranger can walk into a chair the host is about to fill — and the
    * seat array stays the referee's, which is the property every other seat rule in this file rests

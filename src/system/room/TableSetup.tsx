@@ -29,7 +29,7 @@ import type { RoomVisibility } from '@/system/room/types';
 
 /**
  * THE WAYS TO A TABLE — create one, browse for one, or type its code. ONE implementation
- * (plans/GAME_LAUNCH_MODAL.md §2), mounted in two places:
+ * (plans/done/GAME_LAUNCH_MODAL.md §2), mounted in two places:
  *
  *   • `<GameLaunchModal>`, over the hub — the entrance, where a click on a game card lands.
  *   • `<Lobby>`, on the play route — because `/play/uno` typed directly, and a shared table link
@@ -102,7 +102,7 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
   const houseBanks = manifest.betting?.house === true;
 
   /**
-   * WHAT THE EMPTY CHAIRS COME UP HOLDING (plans/GAME_LAUNCH_MODAL.md §5.2). The one place in the
+   * WHAT THE EMPTY CHAIRS COME UP HOLDING (plans/done/GAME_LAUNCH_MODAL.md §5.2). The one place in the
    * app that turns a mode into a fill — `seats.ts` deliberately refuses to, because "below this
    * line there is no mode, only seats".
    *

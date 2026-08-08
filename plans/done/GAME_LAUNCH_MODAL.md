@@ -1,10 +1,10 @@
 # The launch modal — one entrance to every game, and a table that comes up seated
 
-**Status: OPEN.** Written 2026-08-07. Moves to `plans/done/` when slice 4 lands and the browser
-pass is recorded in §10.
+**Status: DONE.** Written 2026-08-07, closed 2026-08-08 — all four slices shipped, and the browser
+pass is in §10.
 
 Clicking a game on the hub navigates to `/play/:gameId`, which mounts the game, which mounts
-[`<Lobby>`](../src/system/room/Lobby.tsx), whose no-table branch is a full PAGE of create/join
+[`<Lobby>`](../../src/system/room/Lobby.tsx), whose no-table branch is a full PAGE of create/join
 panels. Three of the six games therefore answer "I want to play UNO" with a form, and the form
 takes a route change and a lazy chunk to arrive.
 
@@ -17,7 +17,7 @@ Two smaller complaints ride along because they are the same work:
 
 - **The kit's modal is too small to hold a setup panel.** Every dialog in the app is pinned to
   `max-w-lg` with the body capped at `max-h-[60vh]`
-  ([Modal.tsx:46](../src/ui/Modal.tsx#L46), [:170](../src/ui/Modal.tsx#L170)). v1's host panel
+  ([Modal.tsx:46](../../src/ui/Modal.tsx#L46), [:170](../../src/ui/Modal.tsx#L170)). v1's host panel
   needed two scrolls on a desktop and this would inherit that exactly.
 - **A table does not come up seated.** An AI table means claiming a chair and then pressing "Add
   CPU" once per remaining seat before Start will light. On a 7-seat UNO table that is six clicks to
@@ -86,7 +86,7 @@ card, navigate, and let the play route open a setup modal — keeps create/join 
 extraction. It is wrong for one concrete reason: the play route mounts the game's **lazy chunk**,
 and it is the game that renders `<Lobby>`. So a setup modal at `/play/uno` arrives *after* a chunk
 fetch, behind the "Dealing you in…" fallback. On the hub the manifest is a static import
-([registry.ts:230](../src/games/registry.ts#L230)) and the modal is instant. An entrance that makes
+([registry.ts:230](../../src/games/registry.ts#L230)) and the modal is instant. An entrance that makes
 you wait is not an entrance.
 
 **But the create panel must not exist twice.** `/play/uno` typed directly, and a shared table link
@@ -120,7 +120,7 @@ copy lives in one place.
 ## 3. The kit change, and why it is the kit's
 
 Both screenshots that prompted this show scrolling inside a modal on a desktop with room to spare.
-That is not the launch panel's fault; it is [Modal.tsx](../src/ui/Modal.tsx) — one width for every
+That is not the launch panel's fault; it is [Modal.tsx](../../src/ui/Modal.tsx) — one width for every
 dialog, and a body clamped to 60% of the viewport whether or not the content needs it.
 
 Two changes, both in the kit, so every future modal inherits them:
@@ -148,8 +148,8 @@ nothing outside `src/ui` hand-rolls a `<dialog>`.
 ## 4. An option chosen before the navigation
 
 The setup step draws the bot-level control, which is `manifest.options` rendered by
-[`<GameOptions>`](../src/system/options/GameOptions.tsx). Its values live in `<GameShell>`
-([GameShell.tsx:40](../src/system/economy/GameShell.tsx#L40)), which the **play route** mounts. A
+[`<GameOptions>`](../../src/system/options/GameOptions.tsx). Its values live in `<GameShell>`
+([GameShell.tsx:40](../../src/system/economy/GameShell.tsx#L40)), which the **play route** mounts. A
 tier picked in a hub modal therefore has nowhere to live across the navigation that follows.
 
 **The values ride in the URL, next to `?table=` and `?mode=`.** That is not a new idea being
@@ -181,7 +181,7 @@ UNO pins `sharp` for. Same function the lobby and the referee agree through — 
 
 ### 5.1 The plan IS the preview
 
-One pure function in [`seats.ts`](../src/system/room/seats.ts), v1's `buildSeats` with the
+One pure function in [`seats.ts`](../../src/system/room/seats.ts), v1's `buildSeats` with the
 mode folded in:
 
 ```ts
@@ -199,7 +199,7 @@ worth a guard because the two executions differ (below).
 ### 5.2 Two fills, two mechanisms, and why
 
 **AI → a server field.** `store.create` seats the host and leaves the rest open
-([store.ts:209](../boardwalk-api/src/rooms/store.ts#L209)). The create frame gains one optional
+([store.ts:209](../../boardwalk-api/src/rooms/store.ts#L209)). The create frame gains one optional
 `fillAi?: boolean`; the store fills the remaining chairs in the same construction. It is atomic,
 and the seat array stays the referee's.
 
@@ -290,7 +290,7 @@ with its guards, and leaves the app in a shippable state. A session picks up the
 slice and stops when it lands — do not chain two because the first looked small.
 
 **Slice 0 — the Pi.** ✅ **DONE and DEPLOYED 2026-08-08**, verified from the artifact — the row in
-[../CLAUDE.md](../CLAUDE.md#enforcement) carries the evidence. `create` takes an optional `fillAi`
+[../../CLAUDE.md](../../CLAUDE.md#enforcement) carries the evidence. `create` takes an optional `fillAi`
 and `fillWithAi` seats the house in every empty chair, in the same construction as the host —
 atomic, and the seat array stays the referee's. Guarded in the store, over a real socket, and in
 both places for the absent-field default; falsified four ways. **Slice 3 is now unblocked**: the
@@ -353,10 +353,22 @@ wire is keyed on the fields that carry something now, and the rules case below i
 that path. **Slice 2's Tic-Tac-Toe seat-range fix (§5.5) is deliberately still slice 2's**: a
 1-chair AI table fills nothing and behaves exactly as it does today, so nothing here made it worse.
 
-**Slice 4 — the browser pass, then the docs.** Drive all six games against the emulator on the WS
-path (the recipe in [../CLAUDE.md](../CLAUDE.md#develop) — emulator + API + Vite; the emulator-only
-recipe tests the RTDB fallback, which is not the path prod uses). Then CLAUDE.md's Enforcement
-table, and this doc moves to `plans/done/`.
+**Slice 4 — the browser pass, then the docs.** ✅ **DONE 2026-08-08.** All six games driven on the
+**WS referee** (emulator + a locally-run `boardwalk-api` + Vite, the recipe in
+[../../CLAUDE.md](../../CLAUDE.md#develop) — the emulator-only recipe tests the RTDB fallback, which is not
+the path prod uses), both room modes, both solo games, and the three claims no static guard can
+reach. Written up in §10, and the Enforcement table carries the same evidence in one row.
+
+**It found nothing, and that is worth one sentence rather than a shrug.** Slice 1's browser pass
+found a real bug that every unit assertion called green (§10), so this one was not a formality —
+but slices 2 and 3 landed with their guards written against the REAL registry rather than fixtures,
+which is where this repo keeps putting the load, and the two things a browser adds on top (does it
+mount, does the value survive the navigation) had already been pulled into
+`tests/launch-modal.test.ts` as a `renderToStaticMarkup` and a `playPath` → `readOptionValues`
+round trip. What the browser still had to answer was the part those cannot phrase: whether the
+tier the modal shows is the tier the ENGINE plays (Solitaire's 8-vs-24 clicks, Tic-Tac-Toe losing
+to a `casual` bot), whether the stake and the house rule the modal shows are the ones the REFEREE
+deals (the stored match row), and whether a modified click still belongs to the browser.
 
 ---
 
@@ -419,7 +431,41 @@ cannot make — Tailwind generates a utility only from a name it scanned. And th
 dead scroll**: the profile page's own `scrollHeight - clientHeight` was 1637 with the dialog closed
 and 1637 with it open, which is the Phase-1 `open:grid` signature staying clean.
 
-*(Slices 2–4 fill in the rest.)*
+### Slice 4, the entrance end to end (2026-08-08)
+
+The setup is the one that matters and it is the one this repo keeps getting wrong: `VITE_USE_EMULATOR=1`
+alone drives the **RTDB fallback**, which is not the path prod uses and on which two of the six games
+do not run at all. So: the emulator, a `boardwalk-api` of its own (fresh DB, its own port), Vite from
+an isolated worktree with `VITE_WS_ROOMS=1`, and the `!useEmulator` gate in `src/system/repo/index.ts`
+relaxed **for the run only** so the economy, the tickets and the dealt hands were the referee's too —
+reverted before the first commit, and the reason it must be is that `tests/deploy-env.test.ts` would
+have caught a drive-only env var but nothing catches a relaxed boolean.
+
+**Zero console errors and zero 4xx across every script**, every run on a real headless Chromium, with
+a `response` listener rather than a bare console listener (a console listener says "Failed to load
+resource" with no URL, which is unactionable).
+
+| What | Result |
+|---|---|
+| Every card, every way in | Six modals, each offering exactly its `manifest.modes` LABELLED — Solo / AI · Play Online (Tic-Tac-Toe, UNO, Liar's Dice), Same screen · Play Online (Chess), Play (Blackjack, Solitaire). 448px (`sm`), URL unchanged, Escape closes, `scrollHeight - clientHeight` **0** before and after |
+| Tic-Tac-Toe, AI | Created SEATED — Start lit with **zero** Add-CPU clicks — and played to a win against the `casual` house. That tier reached the engine only through `?o.house=casual`; `perfect` never loses |
+| Chess, hot-seat | Preview promised you + Player 2, no seat picker (one size), Create ran the client claim loop, and four moves were played from one screen — both colours, which is the second local seat being real |
+| UNO, AI at a stake | 3 seats · Stacking · $25. Bankroll **$5,000 → $4,975** at the deal, board reading "the house banks the pot" and `POT $50.00`, and the stored match row carrying `pot_cents 5000`, `houseRules {stack:true,crossStack:false,playToLast:false}` and `level "sharp"`. Four separate modal controls, all four arriving at the referee |
+| Liar's Dice, AI | 3-seat table seated, cups dealt by the referee, a bid placed and answered |
+| Solitaire | `?o.draw=3` emptied a 24-card stock in **8** clicks; `?o.draw=1` took **24**. The in-game control agreed with the URL |
+| Blackjack | One way in and nothing to ask, so the click NAVIGATED rather than opening an empty step — then a server-dealt hand with the hole card drawn as a back |
+| Online, two accounts | The host's table came up with an OPEN chair and Start dark (§5.3, visible rather than argued); the guest found it in the room browser **inside the modal**, joined through the shared-link code path, sat, and ✕/◯ crossed both ways |
+| The card is still an anchor | ctrl-click opened a second tab and **no** modal, with the hub URL unmoved; a plain click opened the modal |
+| Fill with CPUs (§5.4) | Three open chairs on a 4-seat online table became `CPU 2`, `CPU 3`, `CPU 4` and Start lit — the labels the preview promises, written by the other package |
+| The modal's own behaviour | Back returns to the ways in; a REOPEN lands on the ways in with the panel reset (a 6-seat pick did not survive, because the body is keyed by game id); another card opens as itself |
+| §3's ask, measured | UNO's AI setup — the tallest panel in the app — is **876px and does not scroll** at 1920×1080, with Create in the viewport. At 900×420 the box is **388px = viewport − the dialog's `p-4`**, header pinned and visible, body scrolling, and **0** dead scroll behind it |
+
+Two notes for whoever reads this next. The Solitaire measurement is the shape of check worth copying:
+a URL parameter and a control that agrees with it prove only that the query string parsed, where
+counting clicks to empty the stock asks the REDUCER what rules it is running. And the first attempt at
+it reported 12 — not because the option failed, but because the selector clicked the wrong element;
+a browser assertion that can fail for two reasons has to be re-run against a known-different input
+(`o.draw=1` → 24) before it means anything.
 
 ---
 

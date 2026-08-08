@@ -26,7 +26,7 @@ import { cx } from '@/ui/cx';
  *
  * THREE WIDTHS, NOT A `className` WIDTH. Every dialog in the app used to be pinned
  * to one width, which is fine for a confirm and wrong for a panel — the launch
- * modal's setup step (plans/GAME_LAUNCH_MODAL.md §3) holds a seat picker, a stake
+ * modal's setup step (plans/done/GAME_LAUNCH_MODAL.md §3) holds a seat picker, a stake
  * row, house-rule toggles and a seat preview, and at `max-w-lg` that is a form you
  * scroll. The fix is three rungs and not a free width, for the reason the kit
  * exists at all: a per-caller width is how five modals end up five sizes.
