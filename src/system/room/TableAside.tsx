@@ -36,18 +36,46 @@ const AsideSlot = createContext<HTMLElement | null>(null);
 export interface TableAsideProps {
   /** The panel's heading, in the chat's own style so the column reads as one thing. */
   readonly title: string;
+  /**
+   * The scrolling body's ref and scroll handler — `useTailPin`'s `attach`/`onScroll`, when the
+   * panel is a log that should follow its own tail. Omitted for a panel that simply scrolls.
+   */
+  readonly scroll?: {
+    readonly attach: (el: HTMLDivElement | null) => void;
+    readonly onScroll: () => void;
+  };
+  /** Pinned under the body, outside the scroll — a "jump to now" control, say. */
+  readonly footer?: ReactNode;
   readonly children: ReactNode;
 }
 
-export function TableAside({ title, children }: TableAsideProps) {
+export function TableAside({ title, scroll, footer, children }: TableAsideProps) {
   const slot = useContext(AsideSlot);
   if (slot === null) return null;
   return createPortal(
-    <Card className="flex flex-col gap-3 p-4">
-      <h3 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
+    <Card className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <h3 className="font-display text-bw-muted text-xs shrink-0 font-semibold tracking-[0.2em] uppercase">
         {title}
       </h3>
-      {children}
+      {/* THE SCROLL CONTAINER IS THE OS'S, not the game's, and that is the whole of the height
+          rule made unspellable rather than checked. A panel that sizes to its content grows the
+          column, the column grows the page, and the second panel ends up below the fold — which
+          has now happened twice. A game hands over lines; where they stop is not its decision. */}
+      <div
+        ref={scroll?.attach}
+        onScroll={scroll?.onScroll}
+        // `role="log"` rather than a hand-written `aria-live`: it is exactly what this is, it
+        // implies `polite` for free, and it means a reader announces only what was APPENDED rather
+        // than re-reading the panel. It moved here with the box — the move log carried its own
+        // label and live region until the OS took the container, and a scrolling region with no
+        // accessible name is one a screen-reader user cannot find.
+        role="log"
+        aria-label={title}
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain"
+      >
+        {children}
+      </div>
+      {footer !== undefined && <div className="shrink-0">{footer}</div>}
     </Card>,
     slot
   );

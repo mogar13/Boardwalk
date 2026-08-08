@@ -21,7 +21,7 @@ import { cx } from '@/ui/cx';
  * blue would read as information; this lit blue tube reads as the thing to press. If you
  * want the DaisyUI meaning of a word, you want a different word.
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'exit' | 'quiet';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /**
@@ -82,6 +82,19 @@ const VARIANTS: Record<ButtonVariant, string> = {
     'bg-error text-error-content',
     'shadow-glow-error inset-shadow-rim',
     'hover:brightness-110'
+  ),
+
+  // THE WAY OUT. `ghost`'s unlit tube wearing error's colour, and it is a third thing rather than a
+  // quieter `danger`: leaving is not destruction (nothing is lost) and it is not neutral either
+  // (you land somewhere else, and clicking again does not undo it). It has to be FINDABLE without
+  // ever reading as the action — which is the exact gap the exit fell through when it was `quiet`,
+  // a control with no border and no colour that was reported as missed while sitting at the top of
+  // the page. It does not glow: the budget is blue=act, cyan=here, gold=money, and none of those is
+  // "out". Hover fills the tube rather than striking it, so it behaves like `ghost` and not like a
+  // second `danger`.
+  exit: cx(
+    'border-error/50 text-error border bg-transparent',
+    'hover:border-error hover:bg-error/10 hover:text-error'
   ),
 
   // No tube at all. Cancel, dismiss, "not now" — the thing next to the real action.

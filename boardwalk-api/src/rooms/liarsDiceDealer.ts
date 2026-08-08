@@ -33,11 +33,10 @@ import {
 import type { Db } from '../db/db';
 import { loadProfile } from '../domain/profile';
 import type { Profile } from '../domain/types';
+import { AI_DELAY_MS } from './aiPace';
 import type { Seat, RoomStatus } from './types';
 import type { Action, Face, LiarsDiceMatch } from '@boardwalk/game-logic/games/liars-dice';
 
-/** How long a bot "thinks". Long enough to read as a decision, short enough not to drag. */
-const AI_DELAY_MS = 1_100;
 /** How long every cup stays open after a call. The one moment the hidden information is public. */
 const REVEAL_MS = 4_000;
 

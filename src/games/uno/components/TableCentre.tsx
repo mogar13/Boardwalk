@@ -7,6 +7,12 @@ import type { Card, UnoColor } from '@boardwalk/game-logic/games/uno';
  * going. v1 put all four in the centre and it is right: these are the only facts every player needs
  * at once, and a hidden-hand game has nowhere else to put them.
  *
+ * THE DIRECTION RING IS FOUR ARROWS AND NOTHING ELSE — no track is drawn under them. A faint
+ * circle was tried, and it does make the concentricity self-evident; it also adds a second static
+ * ring to a felt that already carries a lit draw pile, a lit playable card and a glowing discard,
+ * which is one ring too many. The arrows are the reading; they just have to be big enough to be
+ * one.
+ *
  * THE DIRECTION RING is the piece that looks decorative and is not. Reverse is the one action card
  * whose effect is invisible — a skip removes a turn you can see coming, a draw-two lands on somebody,
  * but a reverse changes nothing on the felt and everything about who plays next. v1 answered with
@@ -119,13 +125,14 @@ export function TableCentre({
         aria-hidden
         className="pointer-events-none absolute top-1/2 left-1/2 size-60 -translate-x-1/2 -translate-y-1/2"
       >
-        {/* THE ORBIT, DRAWN. Four arrows alone are four specks on a big felt: they were legible on
-            a 14rem ring wrapped tight around the cards and stopped being so the moment the ring was
-            sized to clear them. A faint circle costs nothing, reads as a table marking rather than
-            a widget, and — the actual point — makes CONCENTRICITY something a player can see
-            instead of something the arithmetic promises. It does not spin, because a circle has
-            nothing to say about which way it is turning. */}
-        <div className="border-bw-line/70 absolute inset-0 rounded-full border" />
+        {/* NO CIRCLE IS DRAWN, and that was tried. Sizing the ring to clear the cards left the four
+            arrows reading as specks, so a faint circle was added under them — which does make the
+            concentricity visible and also puts a second static ring on a felt that already has a
+            lit pile, a lit playable card and a glowing discard. The arrows alone are the v1 reading
+            and the one that was asked for; what they needed was not a track to sit on but simply to
+            be legible, so they are `text-3xl` in a text token rather than `text-2xl` in a border
+            one. The geometry stays exactly as measured — four glyphs, one radius, centred on the
+            piles — it is just no longer drawn. */}
         {/* SPUN — and it carries no placement of its own, so there is nothing for the keyframe to
             overwrite. */}
         <div
@@ -137,10 +144,9 @@ export function TableCentre({
           {AT.map((at, i) => (
             <span
               key={at}
-              // Sat ON the line, so each arrow reads as a marker travelling round the circle rather
-              // than as a glyph near it — hence the base surface behind it, which is what makes the
-              // arrowhead legible against the stroke it is standing on.
-              className={cx('bg-base-200 absolute px-1 text-3xl leading-none', at)}
+              // No background: the chip behind each glyph existed only to break the drawn circle's
+              // stroke, and a filled rectangle floating on bare felt is worse than the problem.
+              className={cx('absolute text-3xl leading-none', at)}
             >
               {GLYPHS[direction][i]}
             </span>

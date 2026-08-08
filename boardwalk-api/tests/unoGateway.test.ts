@@ -19,6 +19,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import WebSocket from 'ws';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AI_DELAY_MS } from '../src/rooms/aiPace';
 import { RoomGateway } from '../src/rooms/gateway';
 import { RoomStore } from '../src/rooms/store';
 import { parseMove, parseLevel, UnoDealer, type UnoDealerHost } from '../src/rooms/unoDealer';
@@ -443,7 +444,7 @@ describe('parseMove / parseLevel — refuse, never coerce', () => {
  * wrong choice is invisible: the round is legal, every human can still move, and a BOT's turn simply
  * never comes. That is the stall `unoDealer.ts` exists to prevent, arriving through the front door.
  *
- * It is driven against the dealer directly rather than over a socket because `AI_DELAY_MS` is 900ms
+ * It is driven against the dealer directly rather than over a socket because `AI_DELAY_MS` is real
  * of real time and this needs exactly one bot move — the socket half is already proved elsewhere,
  * and what is under test here is a scheduling decision, not a frame.
  */
@@ -525,8 +526,14 @@ describe("the dealer keeps driving bots after first place — ranked places' sta
     expect(seats[before.turn]?.kind).toBe('ai');
 
     // Now hand it to the DEALER and let its own clock run. Nothing else will move this table.
+    //
+    // THE WAIT IS DERIVED FROM THE DEALER'S OWN BEAT, never a literal. It was `sleep(1_400)`,
+    // chosen as "comfortably more than 900ms", so slowing the bots to 1,500 turned this red — a
+    // test failing because a tuning constant moved, which is a test coupled to a number rather than
+    // to a behaviour. What is being asserted is "the referee scheduled a move at all"; how long
+    // that takes is `AI_DELAY_MS`'s business.
     dealer.onSeatsChanged(GAME_ID, 'CLCK');
-    await sleep(1_400);
+    await sleep(AI_DELAY_MS + 500);
     dealer.cancel(GAME_ID, 'CLCK');
 
     const after = gameNow();
