@@ -265,26 +265,42 @@ export function TableCentre({
             alt="Top of the pile"
             className="animate-pitch relative h-28 w-auto rounded-md"
           />
-          {/* WHAT COLOUR A WILD WAS CALLED AS. Pinned to the card rather than placed under the
-              column, so it reads as a label ON the discard — which is the thing it is describing —
-              and so it cannot drift away from it when the table's spacing changes. See the header
-              for why it is drawn here and nowhere else. */}
-          {colourless && (
-            <span
-              className={cx(
-                'font-display absolute -bottom-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap',
-                'rounded-full border px-3 py-1 text-xs font-semibold tracking-[0.14em] uppercase',
-                TINT[color]
-              )}
-            >
-              <span
-                aria-hidden
-                className={cx('mr-1.5 inline-block size-2 rounded-full', SWATCH[color])}
-              />
-              {color}
-            </span>
-          )}
         </div>
+
+        {/* WHAT COLOUR A WILD WAS CALLED AS — UNDER THE PILES, not clipped onto the discard.
+            It first sat `-bottom-3.5` inside the discard's own box, straddling the card's bottom
+            edge, and that is the one placement it must not have: a rounded pill cutting across the
+            corner radius of the card it labels reads as a badge that has come loose, and it lands
+            on the art rather than on the felt. It is also the only element on this table that
+            covers a card.
+
+            THE ANCHOR IS THE ROW, NOT THE COLUMN AND NOT THE CARD. `top-full` on the pile row is
+            the cards' own bottom edge, so the pill still travels with the piles — the property the
+            old placement was reaching for — while `left-1/2` centres it on the PAIR rather than on
+            the discard, which is what the fact is about: the colour is the table's, not that one
+            card's, and the halo is already the discard's own copy of it.
+
+            `mt-4` IS MEASURED RATHER THAN CHOSEN. The band below the cards is ~49px of clear air:
+            the draw pile's deck-count badge hangs 8px past the card bottom, and the ring's bottom
+            arrow starts its em-box 105px below the piles' centre (the cards end 56px below it).
+            16px down puts the pill's 26px in the middle of that — 8px clear of the badge above and
+            ~7px clear of the arrow below — so it lands on bare felt with nothing to fight. See the
+            header for why it is drawn at all, and only here. */}
+        {colourless && (
+          <span
+            className={cx(
+              'font-display absolute top-full left-1/2 z-10 mt-4 -translate-x-1/2 whitespace-nowrap',
+              'rounded-full border px-3 py-1 text-xs font-semibold tracking-[0.14em] uppercase',
+              TINT[color]
+            )}
+          >
+            <span
+              aria-hidden
+              className={cx('mr-1.5 inline-block size-2 rounded-full', SWATCH[color])}
+            />
+            {color}
+          </span>
+        )}
       </div>
 
       {/* The halo is light, not text. A wild's chosen colour is information a reader would otherwise
