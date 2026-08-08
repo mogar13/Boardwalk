@@ -79,88 +79,101 @@ export function TableCentre({
   onDraw,
 }: TableCentreProps) {
   return (
-    <div className="relative flex flex-col items-center gap-3 py-2">
-      {/* The ring, behind the piles and out of the hit-testing path. */}
-      <div
-        aria-hidden
-        className={cx(
-          'text-bw-line-strong pointer-events-none absolute top-1/2 left-1/2 size-64 -translate-x-1/2 -translate-y-1/2',
-          'animate-spin [animation-duration:14s]',
-          direction === -1 && '[animation-direction:reverse]'
-        )}
-      >
-        {AT.map((at, i) => (
-          <span key={at} className={cx('absolute text-2xl leading-none', at)}>
-            {GLYPHS[direction][i]}
-          </span>
-        ))}
-      </div>
+    <div className="flex flex-col items-center gap-3 py-2">
+      {/* THE RING IS CENTRED ON THE PILES, not on this whole column, and it is the reason the
+          wrapper below exists. It used to be absolutely placed against the outer box — which
+          includes the colour pill — so it sat ~1.25rem BELOW the cards it is supposed to orbit,
+          and its top arrow landed in the far seat's hand instead of on the felt between them.
+          Wrapping the piles gives it a box whose centre is the piles' centre, and the piles row is
+          `relative` so it paints over the ring rather than under it.
 
-      <div className="relative flex items-center gap-8">
-        {/* DRAW PILE — a real stack, because "how much deck is left" is a thing players watch. */}
-        <button
-          type="button"
-          disabled={!canDraw}
-          onClick={onDraw}
-          aria-label={
-            pending > 0
-              ? `Take the stack — ${String(pending)} cards`
-              : `Draw a card — ${String(deckCount)} left in the deck`
-          }
+          SIZE IS A CLEARANCE, not a look: at 14rem the arrows orbit ~6.25rem out, which is 0.75rem
+          clear of the discard and ~2.75rem above the cards — the gap the seats are then placed
+          outside of (see the table's spacing in Board.tsx). The old 16rem ring reached further than
+          the seats did, which is most of why the felt read as empty in the middle and crowded at
+          the edges. */}
+      <div className="relative">
+        <div
+          aria-hidden
           className={cx(
-            'group relative rounded-box transition',
-            canDraw
-              ? 'hover:-translate-y-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary'
-              : 'cursor-default brightness-75'
+            'text-bw-line-strong pointer-events-none absolute top-1/2 left-1/2 size-56 -translate-x-1/2 -translate-y-1/2',
+            'animate-spin [animation-duration:14s]',
+            direction === -1 && '[animation-direction:reverse]'
           )}
         >
-          {/* The two cards UNDER the top one. They are darkened, not faded: a translucent card
+          {AT.map((at, i) => (
+            <span key={at} className={cx('absolute text-2xl leading-none', at)}>
+              {GLYPHS[direction][i]}
+            </span>
+          ))}
+        </div>
+
+        <div className="relative flex items-center gap-8">
+          {/* DRAW PILE — a real stack, because "how much deck is left" is a thing players watch. */}
+          <button
+            type="button"
+            disabled={!canDraw}
+            onClick={onDraw}
+            aria-label={
+              pending > 0
+                ? `Take the stack — ${String(pending)} cards`
+                : `Draw a card — ${String(deckCount)} left in the deck`
+            }
+            className={cx(
+              'group relative rounded-box transition',
+              canDraw
+                ? 'hover:-translate-y-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary'
+                : 'cursor-default brightness-75'
+            )}
+          >
+            {/* The two cards UNDER the top one. They are darkened, not faded: a translucent card
               shows the felt through the sliver of it that sticks out, which reads as a smudge
               rather than a deck. Brightness keeps them opaque, so the stack reads as depth. */}
-          <img
-            src={unoBackSrc()}
-            alt=""
-            aria-hidden
-            className="absolute top-1 left-1 h-28 w-auto rounded-md brightness-50"
-          />
-          <img
-            src={unoBackSrc()}
-            alt=""
-            aria-hidden
-            className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md brightness-75"
-          />
-          <img
-            src={unoBackSrc()}
-            alt=""
-            aria-hidden
-            className={cx(
-              'relative h-28 w-auto rounded-md transition',
-              canDraw && 'group-hover:shadow-glow-primary'
-            )}
-          />
-          <span className="bg-base-100/90 border-bw-line text-bw-muted absolute -right-2 -bottom-2 rounded-full border px-1.5 py-0.5 text-[0.65rem] tabular-nums">
-            {deckCount}
-          </span>
-          {/* WHAT THE PILE OWES YOU. The deck-count badge's own treatment mirrored to the opposite
+            <img
+              src={unoBackSrc()}
+              alt=""
+              aria-hidden
+              className="absolute top-1 left-1 h-28 w-auto rounded-md brightness-50"
+            />
+            <img
+              src={unoBackSrc()}
+              alt=""
+              aria-hidden
+              className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md brightness-75"
+            />
+            <img
+              src={unoBackSrc()}
+              alt=""
+              aria-hidden
+              className={cx(
+                'relative h-28 w-auto rounded-md transition',
+                canDraw && 'group-hover:shadow-glow-primary'
+              )}
+            />
+            <span className="bg-base-100/90 border-bw-line text-bw-muted absolute -right-2 -bottom-2 rounded-full border px-1.5 py-0.5 text-[0.65rem] tabular-nums">
+              {deckCount}
+            </span>
+            {/* WHAT THE PILE OWES YOU. The deck-count badge's own treatment mirrored to the opposite
               corner, because it is the same kind of fact about the same object — how many cards are
               coming off it. FLAT `warning` and no glow: the budget is blue=act, cyan=here,
               gold=money, and a stack is a threat rather than any of the three. It is also the one
               number on the felt that makes the dimmed fan legible — without it, a hand where only
               the +2s light up reads as a bug. */}
-          {pending > 0 && (
-            <span className="bg-base-100/90 border-warning text-warning absolute -top-2 -left-2 rounded-full border px-1.5 py-0.5 text-[0.7rem] font-bold tabular-nums">
-              +{pending}
-            </span>
-          )}
-        </button>
+            {pending > 0 && (
+              <span className="bg-base-100/90 border-warning text-warning absolute -top-2 -left-2 rounded-full border px-1.5 py-0.5 text-[0.7rem] font-bold tabular-nums">
+                +{pending}
+              </span>
+            )}
+          </button>
 
-        {/* DISCARD — keyed on the card's id so a new top card MOUNTS and plays `pitch` once. */}
-        <img
-          key={top.id}
-          src={unoCardSrc(top)}
-          alt="Top of the pile"
-          className="animate-pitch h-28 w-auto rounded-md"
-        />
+          {/* DISCARD — keyed on the card's id so a new top card MOUNTS and plays `pitch` once. */}
+          <img
+            key={top.id}
+            src={unoCardSrc(top)}
+            alt="Top of the pile"
+            className="animate-pitch h-28 w-auto rounded-md"
+          />
+        </div>
       </div>
 
       <span

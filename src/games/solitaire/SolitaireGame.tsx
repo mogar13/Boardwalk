@@ -3,6 +3,7 @@ import { Button, Card, useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGame } from '@/system/economy/useGame';
+import { GameResult } from '@/system/game/GameResult';
 import type { GameProps } from '@/games/registry';
 import { Board } from '@/games/solitaire/components/Board';
 import { GameOptions } from '@/system/options/GameOptions';
@@ -102,24 +103,27 @@ export default function SolitaireGame({ onExit }: GameProps) {
         <Board state={state} dispatch={dispatch} play={play} />
       </Card>
 
-      {state.won ? (
-        <Card className="flex flex-col items-start gap-3 p-6">
-          <p className="font-display text-base-content text-lg font-bold tracking-[0.04em]">
-            You win — all four suits home in {state.moves} moves.
-          </p>
-          <Button variant="primary" onClick={newGame}>
-            Deal again
+      {showAutoFinish && (
+        <div className="flex">
+          <Button variant="primary" onClick={() => dispatch({ type: 'autoComplete' })}>
+            Auto-finish
           </Button>
-        </Card>
-      ) : (
-        showAutoFinish && (
-          <div className="flex">
-            <Button variant="primary" onClick={() => dispatch({ type: 'autoComplete' })}>
-              Auto-finish
-            </Button>
-          </div>
-        )
+        </div>
       )}
+
+      {/* THE WIN IS THE OS'S SURFACE, not a card under a tableau that is already taller than the
+          fold. This is where it hurt most: clearing the board scrolled the "Deal again" button off
+          the bottom of the page at the exact moment somebody wanted to press it. A solo game passes
+          a plain button rather than `<Rematch>` — there is nobody to agree with. */}
+      <GameResult
+        over={state.won}
+        tone="win"
+        title={`You win — all four suits home in ${String(state.moves)} moves.`}
+      >
+        <Button variant="primary" onClick={newGame}>
+          Deal again
+        </Button>
+      </GameResult>
     </div>
   );
 }

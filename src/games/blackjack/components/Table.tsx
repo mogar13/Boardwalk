@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Button, Card, cx } from '@/ui';
+import { Button, Card } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
+import { GameResult } from '@/system/game/GameResult';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useBlackjackTable } from '@/system/economy/useBlackjackTable';
 import { useBankroll } from '@/system/profile/useProfile';
@@ -66,6 +67,8 @@ export function Table({ onExit }: { onExit: () => void }) {
   }, [hand, play]);
 
   const settled = hand !== null && hand.phase === 'settled' && hand.result !== null;
+  /** The settled hand's result, or null while one is live — what `<GameResult>` opens on. */
+  const result = settled && hand !== null ? hand.result : null;
   // One back for the hole card while the hand is live. Not `2 - dealer.length`: the dealer draws
   // more cards on the reveal, and the reveal is exactly when the count goes to zero.
   const holeCards = hand !== null && !settled ? 1 : 0;
@@ -104,64 +107,57 @@ export function Table({ onExit }: { onExit: () => void }) {
       <Card felt={felt} className="flex flex-col gap-8 p-6 sm:p-8">
         <Hand cards={hand?.dealer ?? []} faceDown={holeCards} label={dealerLabel} />
         <Hand cards={hand?.player ?? []} label={playerLabel} />
-
-        {settled && hand.result !== null && (
-          <div className="flex flex-col gap-1">
-            <p
-              className={cx(
-                'font-display text-lg font-bold tracking-[0.04em]',
-                hand.result === 'lose' ? 'text-bw-muted' : 'text-base-content'
-              )}
-            >
-              {RESULT_COPY[hand.result]}
-            </p>
-            <p className="text-bw-muted text-sm" data-money>
-              {netCents >= 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)} this hand
-            </p>
-          </div>
-        )}
       </Card>
 
-      {hand === null ? (
-        <BetRack onDeal={deal} disabled={busy} />
-      ) : (
+      {/* THE SETTLE IS THE OS'S SURFACE — the result line, what the hand paid, and the way into the
+          next one, in the one place that is never below the fold. All three used to live at the
+          bottom of this column, which is under a felt tall enough to push them off a phone.
+          Dismissing it puts you back on the dealer's revealed hand, which is the reason to. */}
+      <GameResult
+        over={result !== null}
+        tone={result === 'lose' ? 'loss' : result === 'push' ? 'draw' : 'win'}
+        title={result === null ? '' : RESULT_COPY[result]}
+        detail={
+          <p className="text-bw-muted" data-money>
+            {netCents >= 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)} this hand.
+          </p>
+        }
+      >
+        <Button variant="primary" disabled={busy} onClick={nextHand}>
+          Play again
+        </Button>
+      </GameResult>
+
+      {hand === null && <BetRack onDeal={deal} disabled={busy} />}
+      {hand !== null && hand.phase === 'player' && (
         <div className="flex flex-wrap gap-3">
-          {hand.phase === 'player' && (
-            <>
-              {/* Every action disables while a request is in flight. The dealer is idempotent on
-                  the nonce, so a double-tap could not deal twice anyway — but a button that stays
-                  live through a round trip reads as a table that ignored you. */}
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() => {
-                  play('deal');
-                  move('hit');
-                }}
-              >
-                Hit
-              </Button>
-              <Button variant="secondary" disabled={busy} onClick={() => move('stand')}>
-                Stand
-              </Button>
-              {canDoubleNow && (
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    play('chip');
-                    play('deal');
-                    move('double');
-                  }}
-                >
-                  Double
-                </Button>
-              )}
-            </>
-          )}
-          {settled && (
-            <Button variant="primary" disabled={busy} onClick={nextHand}>
-              Play again
+          {/* Every action disables while a request is in flight. The dealer is idempotent on the
+              nonce, so a double-tap could not deal twice anyway — but a button that stays live
+              through a round trip reads as a table that ignored you. */}
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              play('deal');
+              move('hit');
+            }}
+          >
+            Hit
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={() => move('stand')}>
+            Stand
+          </Button>
+          {canDoubleNow && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                play('chip');
+                play('deal');
+                move('double');
+              }}
+            >
+              Double
             </Button>
           )}
         </div>

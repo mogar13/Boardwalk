@@ -111,59 +111,40 @@ export interface PlaceRow {
 }
 
 /**
- * The round's result — a STATE, not a flash, so it stays up until the table asks for another deal.
- * v1 auto-dismissed after 2.2s and then reset the board out from under whoever was still reading it;
- * `<Rematch>` renders under this and is what clears it.
+ * THE PODIUM — who finished where, and nothing else.
  *
- * THE PODIUM IS ONLY DRAWN WHEN THERE IS ONE. Playing the ordinary game exactly one seat ever
- * places, and a standings list of one entry is a heading with nothing under it — so `places` comes
- * back empty there and this renders precisely what it always did. It also renders nothing extra
- * against a referee that has not learned about places yet, which is the same thing for a different
- * reason and is what makes shipping this ahead of the Pi harmless.
+ * It used to be a `RoundResult` panel that drew the verdict too, in a bordered box at the bottom of
+ * the board with `<Rematch>` underneath it. Both of those are the OS's now (`<GameResult>`), and
+ * the reason is the one that panel could not fix from inside a game: it was below the move log,
+ * which is below the hand, which is below the felt — so the result of a round you had just played
+ * was a scroll away. What is left here is the part that IS UNO's, because no other game has one.
+ *
+ * ONLY DRAWN WHEN THERE IS A PODIUM. Playing the ordinary game exactly one seat ever places, and a
+ * standings list of one entry is a heading with nothing under it — so `places` comes back empty
+ * there and the modal shows the verdict alone. It also renders nothing against a referee that has
+ * not learned about places yet, which is what makes shipping this ahead of the Pi harmless.
  *
  * NO PER-PLACE PAYOUT, deliberately. The board could compute the split — `potSplit` is shared — but
  * it would have to guess which seats ANTED, and a seat that changed hands after the deal makes that
  * guess wrong. Quoting a player a figure the ledger did not pay them is worse than quoting none; the
  * pot total is on the felt and the bankroll in the top bar is the server's own number.
  */
-export function RoundResult({
-  won,
-  text,
-  places = [],
-}: {
-  readonly won: boolean;
-  readonly text: string;
-  readonly places?: readonly PlaceRow[];
-}) {
+export function Podium({ places }: { readonly places: readonly PlaceRow[] }) {
+  if (places.length <= 1) return null;
   return (
-    <div
-      className={cx(
-        'rounded-box flex flex-col items-center gap-3 border-2 px-6 py-3 text-center',
-        won
-          ? 'border-accent text-accent shadow-glow-accent bg-base-300'
-          : 'border-bw-line-strong text-bw-muted bg-base-200'
-      )}
-      role="status"
-    >
-      <p className="font-display text-xl font-black tracking-[0.15em] uppercase">{text}</p>
-      {places.length > 1 && (
-        <ol className="flex flex-col gap-0.5 text-sm">
-          {places.map((row, index) => (
-            <li
-              key={row.seat}
-              className={cx(
-                'flex items-center gap-2 tabular-nums',
-                row.you ? 'text-secondary font-semibold' : 'text-base-content/70'
-              )}
-            >
-              <span className="font-display w-8 text-right tracking-widest">
-                {ordinal(index + 1)}
-              </span>
-              <span>{row.name}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+    <ol className="flex flex-col gap-0.5 text-sm">
+      {places.map((row, index) => (
+        <li
+          key={row.seat}
+          className={cx(
+            'flex items-center gap-2 tabular-nums',
+            row.you ? 'text-secondary font-semibold' : 'text-base-content/70'
+          )}
+        >
+          <span className="font-display w-8 text-right tracking-widest">{ordinal(index + 1)}</span>
+          <span>{row.name}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
