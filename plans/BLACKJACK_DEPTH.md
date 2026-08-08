@@ -1,6 +1,12 @@
 # Blackjack's depth — the game that pays, and the three things it will not offer you
 
-**Status: OPEN.** Written 2026-08-08. Three slices (§8). **ONE SLICE PER SESSION.**
+**Status: OPEN — slice 1 SHIPPED, slice 2 MEASURED AND DECLINED, slice 3 open.** Written
+2026-08-08.
+
+**Slice 2's answer was no, and that is the plan working rather than failing.** §4.3 said the tier
+ships only if a harness prices every rung non-negative, and refused to name a payout in advance
+precisely so the measurement could say otherwise. It did. The numbers, the reasoning and the
+permanent guard that came out of it are in §4.5 and in `tests/blackjack-house-odds.test.ts`.
 
 [done/GAME_LAUNCH_MODAL.md](done/GAME_LAUNCH_MODAL.md) closed with a rider from the owner attached
 to its Decision 3: *"right now Blackjack is very bare bones… it should be like that for all games,
@@ -288,6 +294,43 @@ And it must import the tier table rather than restate it, which is the correctio
 UNO house rules made to its own harness: while the constant lived in the test, the bound was a
 bound on a number the ledger did not necessarily pay at.
 
+### 4.5 What the harness actually said, and why the tier does not exist
+
+Built, run, and decisive. Measured at 3:2 with a computed near-optimal proxy, 120k hands a cell:
+
+| dealer stands on | 14 | 15 | 16 | **17** | 18 | 19 |
+|---|---|---|---|---|---|---|
+| house edge | −5.57% | −4.59% | −0.86% | **+0.50%** | −5.49% | −18.18% |
+
+**17 is the dealer's optimal stand value, so every alternative favours the PLAYER, in both
+directions.** Standing lower leaves the dealer on weak totals a standing player beats; standing
+higher forces it to hit 17 and 18, which bust on 36 of the 52 cards in the deck. §1.2 guessed that
+v1's labels were backwards and it was worse than that: there is no harder table available at all,
+so a ladder built on this knob can only give money away. v1's "Hard" hands the player **16.24%**.
+
+**And §4.2's lever cannot reach.** A natural is ~4.8% of hands, so 3:2 → 1:1 is worth about 2.4% —
+enough for the 16 table, nowhere near 15, 18 or 19, which stay player-positive even when a
+blackjack pays even money. That leaves exactly two priceable candidates and neither is shippable:
+
+- *stands-16, pays 6:5* — three seeds at 300k hands: **+0.16% / +0.75% / +0.42%**. The swing is
+  wider than the number, on a surface that moves real money, and the proxy's residual bias still
+  points the unsafe way. Nominally safe, not knowably safe.
+- *stands-16, pays 1:1* — **+1.57%**, comfortably safe, and strictly worse for the player than
+  classic. Nobody would ever choose it, which makes it a control that cannot change the outcome.
+
+Meaningless-and-unsafe, or safe-and-pointless. So the tier does not ship, and the plumbing went
+with it. **The measurement is what remains**, as `tests/blackjack-house-odds.test.ts`: it now guards
+the shipped game's edge, which nothing else in the suite can see — every other blackjack test proves
+a rule is followed, and only this one proves the rules add up to a game the house wins.
+
+Two notes for whoever revisits this. The first draft of the dealer distribution **bucketed totals
+from 17**, which told the proxy a standing 16 loses to a dealer 16 where it actually pushes; the
+proxy then over-hit, and the measured house edge came out flattering to the house by up to two
+percentage points at the low stand values — the unsafe direction, under a comment claiming it was
+the safe one. And the per-hand variance is larger than it looks: a single 400k-hand run swings ±0.2
+percentage points on an edge of 0.5%, which is why the surviving guard asserts its bound per seed
+and its margin on the pooled estimate.
+
 ### 4.4 The referee still does not trust the client, and the tier and its price are ONE record
 
 The deal request names a tier **id from a closed set** — never a raw stand value, which would let a
@@ -386,10 +429,7 @@ Every row is a failure that typechecks, lints and renders.
 | `tests/blackjack.test.ts` — **insurance**: offered only on an ace up with two cards, never twice, stake is `floor(w/2)` on an ODD wager, pays 2:1 **plus** the stake back, and a losing insurance costs exactly the side stake and changes the hand's result by nothing | v1's three defects, one assertion each. The odd wager is the `parseInt` chip; the "changes nothing" case is what stops a side bet leaking into the main settle |
 | `tests/blackjack.test.ts` — `canInsure` is **identical across two states differing only in `dealer[1]`** | The offer must not be a function of the hole card. A predicate that peeked would leak the bit §3.3 says is bought, and it would look completely correct |
 | `boardwalk-api/tests/blackjack.test.ts` — insurance moves through the LEDGER with its own `wagers` row closed by `hand_id`, an unaffordable one is refused whole leaving the hand playable, replay pays once, and **`recordOutcome` still fires exactly ONCE per hand** | The `recordWin` defect: a side bet that records a win inflates `played`/`won` and the mastery chain that counts them. The refusal case is the `return`-out-of-a-transaction-COMMITS trap the double already pays for |
-| `tests/blackjack-house-odds.test.ts` — the measured edge at every tier and its proposed payout is **≥ 0**; the standard table is unchanged; the proxy **beats a mimic-the-dealer baseline**; the proxy takes the TIER | §4.3. A proxy weaker than a real player turns the upper bound into a lower one and inverts the entire safety argument — and it would do so silently, by measuring an edge that is not there |
-| `tests/blackjack-house-odds.test.ts` — the harness **imports** the tier table rather than restating it | Slice 5 of the UNO house rules made exactly this correction to its own harness: a bound on a restated constant is not a bound on what the ledger pays |
-| `packages/game-logic` — a tier's rule and its payout are ONE record, and a test asserts every declared `manifest.options` choice for the tier resolves to one | §4.4. A tier applied at the standard payout is the faucet, and it is one missing lookup away |
-| `boardwalk-api/tests/blackjack.test.ts` — an **unknown or absent** tier id deals the STANDARD table | The deploy-order default. An old client sends none, and a referee that guessed generously would pay a rate nobody chose |
+| ✅ `tests/blackjack-house-odds.test.ts` — the shipped game never pays a near-optimal player more than they stake, on three seeds; the margin holds on the pooled estimate; the proxy **beats a mimic-the-dealer baseline**; the dealer's stand value is READ OFF the rulebook rather than restated; insurance is measured EV-negative | §4.3/§4.5. A proxy weaker than a real player turns the upper bound into a lower one and inverts the safety argument silently. Falsified with v1's own "Hard" rule and with a 5:2 natural. What it deliberately does not catch — a dealer taught to hit soft 17, which makes the house richer and stays in band — is pinned hand-by-hand in `tests/blackjack.test.ts` instead |
 | `tests/game-options.test.ts` (existing) | Acquires a new subject for free: unique ids, the default is one of the choices, and the URL round trip. Nothing to write — but check it went red when you broke it, because a sweep over the registry is the kind of guard that silently stops covering a game |
 | `boardwalk-api/tests/blackjackGateway.test.ts` (slice 3) — every seat sees every player's cards and **no seat sees the hole card**, a non-seated socket is refused, and a bot seat is driven by the REFEREE | The dealt-game shape, minus the private channel. The hole card is the only hidden thing and it is hidden from everyone, which is easier to get right and just as fatal to get wrong |
 
@@ -401,18 +441,21 @@ Falsify each before trusting it.
 
 **ONE SLICE PER SESSION.** Each ends green, with its guards, and leaves the app shippable.
 
-**Slice 1 — insurance, and the peek.** The reducer settles a dealt dealer natural; `'insure'`
+**Slice 1 — insurance, and the peek.** ✅ **DONE 2026-08-08.** The reducer settles a dealt dealer natural; `'insure'`
 joins `Move`; `canInsure`/`insurance` join `HandView`; the referee stakes, resolves and settles it
 in the transaction it already runs. The board grows one button and one line. **Pi first.** Ends
 with a game that plays the hand a real table plays, and with the house no longer taking a second
 stake off a double against a natural.
 
-**Slice 2 — the tier, measured and priced.** The harness and the tier land TOGETHER, because a
-constant arriving before its reader is `loadout.color` and because the harness is what decides
-whether the tier ships at all. `payoutCents` takes the table; the tier table lives in
-`packages/game-logic`; the referee reads both halves from it; `manifest.options` declares the
-choices and the entrance draws them with no code. **Pi first.** Ends with
-[done/GAME_LAUNCH_MODAL.md](done/GAME_LAUNCH_MODAL.md) §6's *nothing yet* row replaced.
+**Slice 2 — the tier, measured and priced.** ❌ **MEASURED AND DECLINED, 2026-08-08.** The harness
+was built, the tier was built with it, and the harness priced it out of existence — see §4.5. The
+plumbing (a `TABLES` record, `tableId` on the state and the wire, a `table` argument threaded
+through `dealerShouldHit` and `payoutCents`) was **reverted rather than left standing**, because a
+seam built for a feature the evidence says not to build is `loadout.color` with more steps. What
+shipped instead is `tests/blackjack-house-odds.test.ts`, pointed at the game that does exist.
+[done/GAME_LAUNCH_MODAL.md](done/GAME_LAUNCH_MODAL.md) §6's *nothing yet* row therefore stays as it
+is unless slice 3 lands, which is honest: Blackjack has nothing to ask because there is nothing
+safe to ask about.
 
 **Slice 3 — seats.** Blackjack becomes the third dealt game: `modes` gains `'ai'`/`'online'`, the
 lobby, a dealer on the referee, per-seat stakes, turn order, bots. **Optional, and last.** If it is
