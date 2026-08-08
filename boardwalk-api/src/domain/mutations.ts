@@ -180,7 +180,19 @@ export function recordOutcome(
   wagerCents: number,
   payoutCents: number,
   feats: readonly string[] | undefined,
-  now: number
+  now: number,
+  /**
+   * Money this hand made or lost OUTSIDE the main bet — today only blackjack insurance, and 0
+   * everywhere else. It exists because the two achievements downstream want different numbers and
+   * folding a side bet into either one corrupts the other.
+   *
+   * `high_roller` reads `lastWagerCents` and its description is *"Put $500 on the line in one
+   * bet"* — a side bet is not that bet, so adding insurance to the wager would fire it on a $400
+   * hand. `big_win` reads `lastNetCents` and is THE badge this repo names as the one v1 could not
+   * fire; leaving insurance out of the net credits a 2:1 win without its cost, so a player who
+   * insured a hand and broke even would read as up $250. One number each, and neither lies.
+   */
+  sideNetCents = 0
 ): void {
   // Stats: one row per (uid, game). The outcome decides which counter moves; `played` always
   // does. Computed HERE from the outcome — the client sends an outcome, never a count, so it
@@ -213,7 +225,7 @@ export function recordOutcome(
     uid,
     { bankrollCents: balanceOf(db, uid), xp: xpOf(db, uid) },
     wagerCents,
-    payoutCents - wagerCents
+    payoutCents - wagerCents + sideNetCents
   );
   awardAchievements(db, uid, view, feats, now);
 }

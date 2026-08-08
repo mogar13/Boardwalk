@@ -20,7 +20,7 @@
  * cannot be forwarded by accident. It cannot be spelled.
  */
 import type { BlackjackState, Card, Phase, Result } from './blackjack';
-import { canDouble } from './blackjack';
+import { canDouble, canInsure, insuranceStake } from './blackjack';
 
 export interface HandView {
   /**
@@ -43,6 +43,19 @@ export interface HandView {
   readonly result: Result | null;
   /** Whether the table would OFFER a double. Affordability is checked again at the move. */
   readonly canDouble: boolean;
+  /**
+   * Whether the table is offering INSURANCE. True only in the `'insurance'` phase, which the deal
+   * enters off the UP-CARD alone — so this boolean carries nothing about the hole card, which is
+   * the one thing it must not do while that card is being withheld two fields up.
+   */
+  readonly canInsure: boolean;
+  /** What insuring would cost, or what it did cost once taken — quoted so the button can name a
+   *  price rather than the board re-deriving `floor(wager/2)` and eventually disagreeing. */
+  readonly insuranceCents: number;
+  /** Gross cents the insurance returned; 0 for "never insured" AND for "insured and lost". */
+  readonly insurancePaidCents: number;
+  /** Whether this hand's insurance has been decided — what tells those two zeroes apart. */
+  readonly insured: boolean;
 }
 
 /**
@@ -64,5 +77,12 @@ export function viewOf(handId: number, state: BlackjackState): HandView {
     doubled: state.doubled,
     result: state.result,
     canDouble: canDouble(state),
+    canInsure: canInsure(state),
+    // While the offer stands this is the PRICE; once taken it is what was paid. They are the same
+    // number, and quoting the price from the same function the reducer stakes with is what stops a
+    // button reading "$12" on an odd wager the dealer charges $12 for by a different rounding.
+    insuranceCents: canInsure(state) ? insuranceStake(state.wagerCents) : state.insuranceCents,
+    insurancePaidCents: state.insurancePaidCents,
+    insured: state.insuranceCents > 0,
   };
 }

@@ -12,7 +12,10 @@ import {
   type Rank,
   type Suit,
   canDouble,
+  canInsure,
   dealerShouldHit,
+  insurancePayout,
+  insuranceStake,
   drawOne,
   freshDeck,
   handValue,
@@ -240,5 +243,174 @@ describe('reducer', () => {
     expect(next.player).toHaveLength(0);
     expect(next.handId).toBe(1); // preserved, so the next deal is handId 2
     expect(canDouble(next)).toBe(false);
+  });
+});
+
+// ── The peek, and insurance ──────────────────────────────────────────────────────────────────────
+//
+// Two rules that are really one: the dealer looks at the hole card for a natural, and insurance is
+// the bet you are offered because that look is about to happen. They landed together for that
+// reason, and the peek is the half that was MISSING rather than new — see `peek` in the rulebook
+// for what its absence was costing.
+
+describe('the peek', () => {
+  it('settles a dealt DEALER natural at the deal, and the player never gets to double into it', () => {
+    // Dealer K,A = 21 with the KING up, so there is no insurance offer in the way — this is the
+    // plain peek. Before this rule the hand ran on to `phase: 'player'`.
+    const deck = stackedDeck(hand('5', 'K', '9', 'A')); // player 5,9=14 ; dealer K,A = natural
+    const s = reducer(initialState(), { type: 'deal', deck, wagerCents: 1000 });
+
+    expect(s.phase).toBe('settled');
+    expect(s.result).toBe('lose');
+
+    // THE MONEY HALF, and the whole reason this is a defect rather than a tidiness point. The hand
+    // is over, so `canDouble` is false and a double is a no-op — where before it was offered on the
+    // opening two cards regardless, took a SECOND stake, and `settle` then took both. A real table
+    // ends the hand before anyone acts and takes one.
+    expect(canDouble(s)).toBe(false);
+    expect(reducer(s, { type: 'double' })).toBe(s);
+    expect(s.wagerCents).toBe(1000);
+    expect(s.doubled).toBe(false);
+  });
+
+  it('does NOT peek behind an ACE, because that is the hand insurance exists for', () => {
+    // The same dealer natural, dealt the other way round: A up, K in the hole. Peeking here would
+    // end the hand before the offer could be made, and insurance would be unreachable forever.
+    const deck = stackedDeck(hand('5', 'A', '9', 'K')); // dealer A,K = natural, ACE showing
+    const s = reducer(initialState(), { type: 'deal', deck, wagerCents: 1000 });
+
+    expect(s.phase).toBe('insurance');
+    expect(s.result).toBeNull();
+    expect(canInsure(s)).toBe(true);
+  });
+
+  it('leaves an ordinary hand exactly where it was', () => {
+    // Additivity: the overwhelming majority of hands have neither an ace up nor a dealer natural,
+    // and this rule must be invisible to every one of them.
+    const deck = stackedDeck(hand('5', 'K', '9', '7')); // dealer K,7 = 17
+    const s = reducer(initialState(), { type: 'deal', deck, wagerCents: 1000 });
+    expect(s.phase).toBe('player');
+    expect(canInsure(s)).toBe(false);
+  });
+
+  it('still settles a PLAYER natural against an ace up, rather than offering insurance', () => {
+    // The documented simplification: a real table would offer even money here. Declining it is the
+    // honest outcome, and this asserts we take that branch rather than stranding a won hand in the
+    // insurance phase.
+    const deck = stackedDeck(hand('A', 'A', 'K', '9')); // player A,K = natural ; dealer A,9 = soft 20
+    const s = reducer(initialState(), { type: 'deal', deck, wagerCents: 1000 });
+    expect(s.phase).toBe('settled');
+    expect(s.result).toBe('blackjack');
+  });
+});
+
+describe('insurance', () => {
+  /** A hand sitting on the insurance offer, with the hole card chosen by the caller. */
+  const offered = (holeCard: Rank, wagerCents = 1000) =>
+    reducer(initialState(), {
+      type: 'deal',
+      deck: stackedDeck(hand('5', 'A', '9', holeCard)),
+      wagerCents,
+    });
+
+  it('costs half the wager, FLOORED, on an odd stake', () => {
+    // v1 wrote `currentBets[activeSeat] / 2` and put a half-chip into a float bankroll. This is the
+    // same defect as the 3:2 `parseInt` chip with the sign flipped, so it gets the same treatment.
+    expect(insuranceStake(1001)).toBe(500);
+    expect(insuranceStake(1000)).toBe(500);
+    expect(insuranceStake(1)).toBe(0);
+    expect(Number.isInteger(insuranceStake(333))).toBe(true);
+    expect(offered('K', 1001).insuranceCents).toBe(0); // not staked until taken
+    expect(reducer(offered('K', 1001), { type: 'insure' }).insuranceCents).toBe(500);
+  });
+
+  it('pays 2:1 PLUS the stake back when the dealer has the natural, and the hand is still LOST', () => {
+    const s = reducer(offered('K'), { type: 'insure' });
+    expect(s.phase).toBe('settled');
+    expect(s.insuranceCents).toBe(500);
+    expect(s.insurancePaidCents).toBe(1500); // 500 back + 1000 at 2:1
+    expect(insurancePayout(500)).toBe(1500);
+
+    // THE SIDE BET DOES NOT WIN THE HAND. `settle` is never told about it, which is what keeps
+    // "did this player beat the dealer" a question about the cards. v1 called `recordWin` here.
+    expect(s.result).toBe('lose');
+  });
+
+  it('is simply lost when the dealer has no natural, and the hand plays on', () => {
+    const s = reducer(offered('7'), { type: 'insure' }); // dealer A,7 = soft 18
+    expect(s.phase).toBe('player');
+    expect(s.insuranceCents).toBe(500);
+    expect(s.insurancePaidCents).toBe(0);
+    expect(s.result).toBeNull();
+    expect(canDouble(s)).toBe(true); // the hand is live and ordinary from here
+  });
+
+  it('declining stakes nothing and triggers the same peek', () => {
+    const caught = reducer(offered('K'), { type: 'decline' });
+    expect(caught.phase).toBe('settled');
+    expect(caught.result).toBe('lose');
+    expect(caught.insuranceCents).toBe(0);
+    expect(caught.insurancePaidCents).toBe(0);
+
+    const safe = reducer(offered('7'), { type: 'decline' });
+    expect(safe.phase).toBe('player');
+    expect(safe.insuranceCents).toBe(0);
+  });
+
+  it('changes NOTHING about the hand it is placed on', () => {
+    // Insured and uninsured, same cards: the hand's own result and stake must be identical, because
+    // insurance is a separate bet that happens to be settled at the same table.
+    const insured = reducer(offered('7'), { type: 'insure' });
+    const declined = reducer(offered('7'), { type: 'decline' });
+    const finish = (s: typeof insured) => reducer(s, { type: 'stand' });
+
+    expect(finish(insured).result).toBe(finish(declined).result);
+    expect(finish(insured).wagerCents).toBe(finish(declined).wagerCents);
+    expect(finish(insured).dealer).toEqual(finish(declined).dealer);
+  });
+
+  it('the OFFER cannot see the hole card', () => {
+    // The security property, asserted directly. `canInsure` is sent to a client while `dealer[1]`
+    // is deliberately withheld, so an offer that consulted the dealer's TOTAL would hand over the
+    // bit the player is supposed to be paying for — and nothing on screen would look wrong.
+    // Two states differing in exactly one card, one of them a natural.
+    const natural = offered('K');
+    const not = offered('7');
+    expect(natural.dealer[0]).toEqual(not.dealer[0]); // same up-card
+    expect(natural.dealer[1]).not.toEqual(not.dealer[1]); // different hole card
+    expect(canInsure(natural)).toBe(canInsure(not));
+    expect(canInsure(natural)).toBe(true);
+  });
+
+  it('is a no-op outside its own phase, in both directions', () => {
+    // The reducer's totality discipline: an illegal action returns the SAME REFERENCE rather than
+    // throwing, so a double-clicked button is harmless and the caller can detect "nothing happened".
+    const live = reducer(initialState(), {
+      type: 'deal',
+      deck: stackedDeck(hand('5', 'K', '9', '7')), // no ace up → straight to 'player'
+      wagerCents: 1000,
+    });
+    expect(reducer(live, { type: 'insure' })).toBe(live);
+    expect(reducer(live, { type: 'decline' })).toBe(live);
+
+    // And the hand cannot be played while the offer stands — the peek has not happened yet, so a
+    // hit here would draw against a dealer who might already be holding a finished hand.
+    const waiting = offered('7');
+    expect(reducer(waiting, { type: 'hit' })).toBe(waiting);
+    expect(reducer(waiting, { type: 'stand' })).toBe(waiting);
+    expect(reducer(waiting, { type: 'double' })).toBe(waiting);
+    expect(canDouble(waiting)).toBe(false);
+
+    // Twice is not allowed either: the first `insure` leaves the offer behind.
+    const once = reducer(waiting, { type: 'insure' });
+    expect(reducer(once, { type: 'insure' })).toBe(once);
+  });
+
+  it('does not mutate the state it was given', () => {
+    const before = offered('K');
+    const snapshot = JSON.parse(JSON.stringify(before)) as unknown;
+    reducer(before, { type: 'insure' });
+    reducer(before, { type: 'decline' });
+    expect(JSON.parse(JSON.stringify(before))).toEqual(snapshot);
   });
 });

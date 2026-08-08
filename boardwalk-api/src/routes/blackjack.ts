@@ -36,7 +36,7 @@ const nonceOf = (v: unknown): string | null =>
 const intOf = (v: unknown): number =>
   typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : Number.NaN;
 
-const MOVES: readonly Move[] = ['hit', 'stand', 'double'];
+const MOVES: readonly Move[] = ['hit', 'stand', 'double', 'insure', 'decline'];
 const moveOf = (v: unknown): Move | null =>
   typeof v === 'string' && (MOVES as readonly string[]).includes(v) ? (v as Move) : null;
 
