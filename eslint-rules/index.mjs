@@ -16,6 +16,7 @@ import noCrossGameImports from './no-cross-game-imports.mjs';
 import noDaisyuiClasses from './no-daisyui-classes.mjs';
 import noFirebaseImports from './no-firebase-imports.mjs';
 import noImpureLogic from './no-impure-logic.mjs';
+import noRawDialog from './no-raw-dialog.mjs';
 import noRawPalette from './no-raw-palette.mjs';
 
 export default {
@@ -25,6 +26,7 @@ export default {
     'no-daisyui-classes': noDaisyuiClasses,
     'no-firebase-imports': noFirebaseImports,
     'no-impure-logic': noImpureLogic,
+    'no-raw-dialog': noRawDialog,
     'no-raw-palette': noRawPalette,
   },
 };
