@@ -1,4 +1,4 @@
-import { Card } from '@/ui';
+import { Card, FIELDSET_LEGEND } from '@/ui';
 import type { Seat } from '@/system/room/types';
 
 /**
@@ -28,12 +28,21 @@ export function SeatPreview({ seats }: SeatPreviewProps) {
   // is more honest as an absence than as an empty frame.
   if (seats.length === 0) return null;
 
+  /*
+    A PANEL IN ITS OWN RIGHT, the same construction as "Join a table" beside it — `<Card p-6>` with
+    the heading INSIDE rather than a bare heading above a small inset box. It used to be the second
+    shape, wedged between the house-rule toggles and the Create button at the bottom of a long
+    left-hand column, where it read as one more setting rather than as the answer to "what am I
+    about to make". Two panels of the same weight side by side is a page you can take in at a
+    glance; a column of eight controls with a box near the end is not.
+
+    It is still `plannedSeats(…)` and nothing else — see above. Where it is drawn is the caller's,
+    what it says is the array's, and this component still has no opinion about either.
+  */
   return (
-    <div className="flex flex-col gap-2">
-      <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-        At this table
-      </span>
-      <Card className="flex flex-col gap-1 p-3">
+    <Card className="flex flex-col gap-4 p-6">
+      <h2 className={FIELDSET_LEGEND}>At this table</h2>
+      <div className="flex flex-col gap-1">
         {seats.map((seat, i) => (
           <div key={i} className="flex items-center justify-between gap-3 text-sm">
             <span className="flex items-center gap-2">
@@ -53,7 +62,7 @@ export function SeatPreview({ seats }: SeatPreviewProps) {
             )}
           </div>
         ))}
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 }

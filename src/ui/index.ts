@@ -19,6 +19,9 @@ export type { ButtonProps, ButtonVariant, ButtonSize } from '@/ui/Button';
 export { Card } from '@/ui/Card';
 export type { CardProps } from '@/ui/Card';
 
+export { Fieldset, FIELDSET_LEGEND } from '@/ui/Fieldset';
+export type { FieldsetProps } from '@/ui/Fieldset';
+
 export { Input } from '@/ui/Input';
 export type { InputProps } from '@/ui/Input';
 

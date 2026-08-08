@@ -134,8 +134,23 @@ const DIALOG = cx(
  * `min-h-0` is the load-bearing half of `flex-1`: a flex item's default `min-height: auto` refuses
  * to shrink below its content, so without it the body ignores its own `overflow-y-auto` and pushes
  * the footer off the bottom of the box.
+ *
+ * AND IT RESERVES ROOM FOR A GLOW ON ALL FOUR SIDES, which is what `pt-5` is doing here and why it
+ * is not cosmetic. `overflow-y-auto` makes this element a scroll container, and a scroll container
+ * CLIPS at its padding box — including the box-shadow of anything sitting against that edge. Every
+ * lit control in this kit is a `--shadow-glow-*` tube whose bloom reaches ~18px, so the body used
+ * to have `px-6 pb-5` and NO top padding at all: the launch modal's first "Solo / AI" button had
+ * its entire top halo shaved off against the scrollport, which reads as a button that has been cut
+ * in half rather than as a clipped shadow. Measured in Chrome before the fix — the button's top
+ * edge and the scrollport's top edge were the same pixel, headroom 0.
+ *
+ * Nothing static can see this. The classes were all correct, the shadow token resolves, and the
+ * same button one row down rendered perfectly. The header gives its bottom padding back so the
+ * gap between a description and the first control barely moves — but it keeps it when there is no
+ * body at all (the confirm host renders a Modal with none), which is the whole reason that padding
+ * is a ternary and not a constant.
  */
-const BODY = 'text-base-content/90 min-h-0 flex-1 overflow-y-auto px-6 pb-5 text-sm';
+const BODY = 'text-base-content/90 min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-5 text-sm';
 
 export function Modal({
   open,
@@ -197,8 +212,17 @@ export function Modal({
     >
       <div className={cx(BOX, MODAL_WIDTH[size], className)}>
         {/* `shrink-0` on both: with the body at `flex-1` they are the only two items that must
-            keep their natural height, and a flex item shrinks by default. */}
-        <header className="flex shrink-0 items-start gap-4 px-6 pt-5 pb-4">
+            keep their natural height, and a flex item shrinks by default.
+
+            The bottom padding is the BODY's when there is one — see BODY, where the scrollport has
+            to own its own edge so a glow is not clipped. With no body (the confirm host) there is
+            nothing below to own it, and a header sitting 4px off the footer rule looks broken. */}
+        <header
+          className={cx(
+            'flex shrink-0 items-start gap-4 px-6 pt-5',
+            children !== undefined ? 'pb-1' : 'pb-4'
+          )}
+        >
           <div className="min-w-0 flex-1">
             <h2
               id={titleId}

@@ -23,8 +23,8 @@ import {
   tableSizeChoices,
 } from '@/system/room/seats';
 import { registry } from '@/games/registry';
-import { ANTE_RUNGS_CENTS, anteChoices, DEFAULT_ANTE_CENTS } from '@/system/room/ante';
-import { STARTING_BANKROLL_CENTS } from '@boardwalk/game-logic';
+import { ANTE_RUNGS_CENTS, anteChoices, DEFAULT_ANTE_CENTS, parseAnte } from '@/system/room/ante';
+import { STARTING_BANKROLL_CENTS, validateBet } from '@boardwalk/game-logic';
 import { applyIfFresh, isFresh, nextSeq } from '@/system/room/ordering';
 import { teardownPlan } from '@/system/room/lifecycle';
 import type { RoomSnapshot, Seat } from '@/system/room/types';
@@ -513,6 +513,20 @@ describe('anteChoices — what a chair may cost', () => {
     }
   });
 
+  it('every rung a game offers is also typeable, so the two controls cannot disagree', () => {
+    // The rungs and the field are two ways to name one value, and the only thing that would make
+    // them different controls is a rung the field refuses. Read off the REAL registry so it is a
+    // fact about the games this app ships.
+    for (const { manifest } of Object.values(registry)) {
+      if (manifest.betting === undefined) continue;
+      for (const cents of anteChoices(manifest.betting)) {
+        if (cents === 0) continue; // "None" is the button's job, deliberately — see parseAnte
+        const typed = parseAnte((cents / 100).toFixed(2), manifest.betting);
+        expect(typed, `a rung of ${String(cents)} is not typeable`).toEqual({ ok: true, cents });
+      }
+    }
+  });
+
   it('every stake it offers is integer cents a fresh account could cover — read off the REAL registry', () => {
     // Two failures, both of which typecheck and neither of which throws:
     //   • a fractional rung — `validateBet` REFUSES a fractional bet rather than rounding it (v1's
@@ -525,6 +539,155 @@ describe('anteChoices — what a chair may cost', () => {
         expect(Number.isInteger(cents)).toBe(true);
         expect(cents).toBeGreaterThanOrEqual(0);
         expect(cents).toBeLessThanOrEqual(STARTING_BANKROLL_CENTS);
+      }
+    }
+  });
+});
+
+/**
+ * A HAND-TYPED STAKE — the rung ladder's finer grain, and the one control on this panel whose input
+ * is free text a person wrote.
+ *
+ * The ladder is six denominations, which is the right default and the wrong ceiling: "$25 or $100,
+ * nothing between" is a picker deciding something the people at the table are better placed to
+ * decide. What makes the field worth guarding rather than trusting is that every way it can be
+ * wrong ends at a LEDGER: a fractional result dies at `validateBet` (which refuses rather than
+ * rounds — v1's `parseInt` chip) at the exact moment money moves, with the host already sat down,
+ * and an out-of-range one is a table the game never said it could be played at.
+ */
+const UNO_BETTING = { min: 2_500, max: 100_000, house: true } as const;
+const cents = (r: ReturnType<typeof parseAnte>): number | string => (r.ok ? r.cents : r.error);
+
+describe('parseAnte — a stake somebody typed', () => {
+  it('reads the shapes a person actually types', () => {
+    expect(cents(parseAnte('250', UNO_BETTING))).toBe(25_000);
+    expect(cents(parseAnte('$250', UNO_BETTING))).toBe(25_000);
+    expect(cents(parseAnte('  250  ', UNO_BETTING))).toBe(25_000);
+    expect(cents(parseAnte('1,000', UNO_BETTING))).toBe(100_000);
+    expect(cents(parseAnte('$1,000.00', UNO_BETTING))).toBe(100_000);
+    expect(cents(parseAnte('25.5', UNO_BETTING))).toBe(2_550);
+    expect(cents(parseAnte('25.50', UNO_BETTING))).toBe(2_550);
+  });
+
+  it('lands on EXACT cents for the amounts a float multiply gets wrong', () => {
+    // `Number('12.10') * 100` is 1209.9999999999998 and `Number('770.10') * 100` is
+    // 77009.99999999999 — the obvious implementation, and it produces a fractional number of cents
+    // that `validateBet` then refuses at the exact moment money moves. Every value here is one a
+    // `.toFixed(2)` round trip produces, so it is reachable by pressing a rung and editing it.
+    //
+    // THE EXPECTED NUMBERS ARE LITERALS, and that is the whole point of this case. The first draft
+    // asserted `got === Math.round(Number(dollars) * 100)`, which is a test comparing the rule to a
+    // copy of the rule — and it stayed GREEN when the parser was falsified to exactly that
+    // expression, because `Math.round` is a correct implementation at two decimal places. What is
+    // actually being guarded is "an exact integer, and the right one", so both halves are stated
+    // without arithmetic.
+    const table: readonly (readonly [string, number])[] = [
+      ['12.10', 1_210],
+      ['770.10', 77_010],
+      ['335.70', 33_570],
+      ['29.30', 2_930],
+      ['881.10', 88_110],
+      ['0.07', 7],
+      ['1.005', -1], // three places: refused outright, never rounded to 100 or 101
+    ];
+    for (const [dollars, expected] of table) {
+      const r = parseAnte(dollars, { min: 1, max: 10_000_000 });
+      if (expected < 0) {
+        expect(r.ok, `${dollars} should be refused`).toBe(false);
+        continue;
+      }
+      expect(r.ok, dollars).toBe(true);
+      const got = r.ok ? r.cents : Number.NaN;
+      expect(Number.isInteger(got), `${dollars} → ${String(got)} is not whole cents`).toBe(true);
+      expect(got, dollars).toBe(expected);
+    }
+  });
+
+  it('refuses a third decimal place rather than rounding it away', () => {
+    // The `parseInt` war story on the INPUT side of the same number. Truncating `25.505` to $25.50
+    // is a table priced at something nobody typed; refusing it is a table priced at what they did.
+    expect(parseAnte('25.505', UNO_BETTING).ok).toBe(false);
+    expect(parseAnte('250.001', UNO_BETTING).ok).toBe(false);
+  });
+
+  it('refuses text that is not an amount, and says so rather than reading a prefix', () => {
+    // `parseFloat('25abc')` is 25 — the failure mode where a typo silently becomes a stake.
+    for (const junk of [
+      '',
+      '   ',
+      'abc',
+      '25abc',
+      '2.5.0',
+      '-250',
+      '1e3',
+      '25 000',
+      '$$250',
+      '.',
+    ]) {
+      expect(parseAnte(junk, UNO_BETTING).ok, junk).toBe(false);
+    }
+  });
+
+  it('holds the game’s own range at both ends, and refuses ZERO', () => {
+    expect(parseAnte('24.99', UNO_BETTING).ok).toBe(false);
+    expect(cents(parseAnte('25', UNO_BETTING))).toBe(2_500);
+    expect(cents(parseAnte('1000', UNO_BETTING))).toBe(100_000);
+    expect(parseAnte('1000.01', UNO_BETTING).ok).toBe(false);
+    // Not a rejection of "play for nothing" — that is the "None" rung. A field that silently means
+    // the same thing as a button is two controls for one value.
+    expect(parseAnte('0', UNO_BETTING).ok).toBe(false);
+  });
+
+  it('answers rather than throws when the game is not played for money, or says nonsense about it', () => {
+    // Unreachable from the panel (no `betting` draws no ante control), and total anyway: a branch a
+    // caller has to remember to guard is a branch somebody will not.
+    expect(parseAnte('25', undefined).ok).toBe(false);
+    expect(parseAnte('25', { min: 100_000, max: 100 }).ok).toBe(false); // reversed
+    expect(parseAnte('25', { min: Number.NaN, max: 100_000 }).ok).toBe(false);
+    expect(parseAnte('25', { min: 100, max: Number.POSITIVE_INFINITY }).ok).toBe(false);
+  });
+
+  it('every error names what to do, because a field that only says "no" makes you guess', () => {
+    // `Input`'s own rule — "Bet more than $2" beats "Invalid". The range message must carry the
+    // numbers, since "out of range" is exactly the error a reader cannot act on.
+    for (const junk of ['', 'abc', '25.505', '10']) {
+      const r = parseAnte(junk, UNO_BETTING);
+      expect(r.ok).toBe(false);
+      expect(r.ok ? '' : r.error.length, junk).toBeGreaterThan(8);
+    }
+    const low = parseAnte('10', UNO_BETTING);
+    expect(low.ok ? '' : low.error).toContain('$25');
+    expect(low.ok ? '' : low.error).toContain('$1,000');
+  });
+
+  it('anything it ACCEPTS is a bet the economy will take — the property the whole parser exists for', () => {
+    // The real bound, stated as a property rather than as a list of examples: a stake that parses
+    // and then dies at `validateBet` is a create button that works and a deal that fails, which is
+    // the worst possible place to find out. Swept over the REAL registry so it holds for the games
+    // this app ships, at a balance that can cover the table max.
+    for (const { manifest } of Object.values(registry)) {
+      const betting = manifest.betting;
+      if (betting === undefined) continue;
+      const bounds = { min: betting.min, max: betting.max };
+      for (const raw of [
+        '25',
+        '25.01',
+        '25.99',
+        '100',
+        '333.33',
+        '999.99',
+        '1000',
+        '0.005',
+        '1e2',
+        '-5',
+        '12.345',
+      ]) {
+        const parsed = parseAnte(raw, betting);
+        if (!parsed.ok) continue;
+        const check = validateBet(parsed.cents, betting.max, bounds);
+        expect(check.ok, `${raw} → ${String(parsed.cents)}: ${check.ok ? '' : check.error}`).toBe(
+          true
+        );
       }
     }
   });

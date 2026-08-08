@@ -86,9 +86,28 @@ export const unoManifest = {
       label: 'Bots',
       type: 'select',
       default: 'sharp',
+      /*
+        The hints say what the BOT DOES, not how hard it is: "Casual" and "Sharp" already say how
+        hard it is and say nothing a player can act on. Both are read off `chooseAiMove`'s two
+        branches rather than written from an impression of them — `casual` picks uniformly among
+        its playable cards and names a random colour on a wild, `sharp` sorts by
+        `number → action → wild` and takes the first, so it leads with plain numbers and keeps its
+        skips, draws and wilds back, and its wild colour is `bestColor`, the one it holds most of.
+        Getting that backwards is easy and invisible (the first draft of this line said "leads with
+        skips and draws", which is the exact opposite of the sort order), and a hint that describes
+        a policy the rulebook does not play is worse than no hint.
+      */
       choices: [
-        { value: 'casual', label: 'Casual' },
-        { value: 'sharp', label: 'Sharp' },
+        {
+          value: 'casual',
+          label: 'Casual',
+          hint: 'Plays whatever it legally can, at random — it will burn a wild on the first turn.',
+        },
+        {
+          value: 'sharp',
+          label: 'Sharp',
+          hint: 'Leads with plain numbers, keeps its skips, draws and wilds back for later, and switches to the colour it holds most of.',
+        },
       ],
       /**
        * PINNED WHEN THE HOUSE IS PAYING. `HOUSE_RETURN` was measured against `sharp` and nothing
@@ -123,12 +142,18 @@ export const unoManifest = {
     {
       id: 'stack',
       label: 'Stacking',
-      hint: 'Answer a +2 with a +2, a +4 with a +4 — the debt runs until somebody takes it.',
+      hint: 'Hit with a +2 and the next player can answer with a +2 of their own instead of drawing — passing the debt on and adding to it. Whoever cannot answer draws the whole pile.',
     },
     {
       id: 'crossStack',
       label: 'Cross-stacking',
-      hint: '…and a +4 answers a +2.',
+      // IT SAID "…and a +4 answers a +2." — five words that only parse if you have just read the
+      // line above and already know what "stacking" means, and this is the toggle people actually
+      // asked about. The rule is not common knowledge and the panel is the only place it is ever
+      // explained, so it says the whole thing, including the ASYMMETRY — which is a real rule and
+      // not a quirk: a +2 answering a +4 is the version that does not terminate, since a table
+      // holding enough +2s could keep one +4 alive forever (`tests/uno-stacking.test.ts`).
+      hint: 'Lets a +4 answer a +2 as well, so the pile can escalate. Never the other way round — a +2 cannot answer a +4, or a stack could run forever.',
       // Meaningless on its own — there is no stack to cross. The lobby will not offer it until
       // stacking is on, and `resolveHouseRules` normalises it away if it arrives set anyway.
       requires: 'stack',
@@ -136,7 +161,7 @@ export const unoManifest = {
     {
       id: 'playToLast',
       label: 'Play for places',
-      hint: 'Keep playing after 1st: 2nd, then 3rd. Last player standing is last. Playing for money, the top half of the places share the pot instead of the winner taking it all.',
+      hint: 'The round carries on after someone goes out, ranking 2nd, 3rd and so on down to the last player left holding cards. For money, the top half of the finishers split the pot instead of the winner taking all of it.',
     },
   ],
 } as const satisfies GameManifest;

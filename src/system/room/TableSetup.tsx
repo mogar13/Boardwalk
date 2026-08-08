@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Button, Card, Input, useToast } from '@/ui';
+import { Button, Card, FIELDSET_LEGEND, Fieldset, Input, useToast } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
 import { formatMoney } from '@boardwalk/game-logic';
 import { repos } from '@/system/repo';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
-import { anteChoices, DEFAULT_ANTE_CENTS, tableBacking } from '@/system/room/ante';
+import { anteChoices, DEFAULT_ANTE_CENTS, parseAnte, tableBacking } from '@/system/room/ante';
 import {
   houseRuleChoices,
   isRuleAvailable,
@@ -79,7 +79,16 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
   // Defaults to nothing (`DEFAULT_ANTE_CENTS`), so no chip ever moves because a control went
   // unnoticed.
   const anteOptions = anteChoices(manifest.betting);
-  const [anteCents, setAnteCents] = useState(DEFAULT_ANTE_CENTS);
+  const [rungCents, setRungCents] = useState(DEFAULT_ANTE_CENTS);
+  /**
+   * THE TYPED STAKE, or `null` while a rung is chosen — and it is a STRING, because it is what is
+   * in the box rather than what the box means. `parseAnte` turns one into the other and the panel
+   * holds no second copy of the answer, which is the same derivation rule `<Lobby>`'s
+   * `roomId ?? linkedTable` was fixed by and the reason `<GameShell>` stopped mirroring the URL: a
+   * value plus a parse plus a stored number is two sources of truth for one stake, and the one that
+   * goes stale is the one the Create button reads.
+   */
+  const [typedAnte, setTypedAnte] = useState<string | null>(null);
   // WHAT GAME THIS TABLE IS PLAYING. The ante's sibling, and create-time for the same reason with
   // the money taken out: a table must not change the rules under a player who already sat down.
   // Defaults to nothing on — every house rule off IS the game as it already plays, so a host who
@@ -100,6 +109,17 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
   // worth. That single flag is what lets an 'ai' table charge an ante at all — before it, betting
   // needed two humans everywhere, so a table of bots had nothing to win and the picker was hidden.
   const houseBanks = manifest.betting?.house === true;
+
+  /**
+   * WHAT THIS TABLE COSTS A CHAIR — derived, never stored. A typed stake that does not parse leaves
+   * the last rung standing for the copy below (so the panel does not blank out mid-keystroke) and
+   * BLOCKS Create, because the alternative is a host who typed `$2` at a $25 game, saw the error,
+   * pressed the lit button anyway and made a table at whatever the rung row last said. A create
+   * that quietly ignores the field you are looking at is worse than one that waits.
+   */
+  const parsedAnte = typedAnte === null ? null : parseAnte(typedAnte, manifest.betting);
+  const anteError = parsedAnte !== null && !parsedAnte.ok ? parsedAnte.error : null;
+  const anteCents = parsedAnte !== null && parsedAnte.ok ? parsedAnte.cents : rungCents;
 
   /**
    * WHAT THE EMPTY CHAIRS COME UP HOLDING (plans/done/GAME_LAUNCH_MODAL.md §5.2). The one place in the
@@ -199,10 +219,8 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
       nothing to dim, and on a narrow screen they stack back with the create panel first.
     */
     <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
-      <Card className="flex flex-col gap-4 p-6">
-        <h2 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-          New table
-        </h2>
+      <Card className="flex flex-col gap-5 p-6">
+        <h2 className={FIELDSET_LEGEND}>New table</h2>
         {/*
           HOW MANY CHAIRS (v1's "PLAYERS 2 / 3 / 4"). Only drawn when the manifest's seat range
           holds more than one size — see `tableSizeChoices`. Before this, `seats.min` was decoration
@@ -210,10 +228,19 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
           CPU chairs whether or not you wanted them.
         */}
         {sizeChoices.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-              Players
-            </span>
+          <Fieldset
+            legend="Players"
+            hint={
+              // The count is a number and a number does not say who fills the chairs, which is the
+              // one thing that differs between the ways in. The preview beside it is the full
+              // answer; this is the sentence you read while you are still choosing.
+              fill === 'ai'
+                ? 'Every other chair is a bot. Start the moment the table opens.'
+                : fill === 'local'
+                  ? 'Everyone plays from this screen, passing it round.'
+                  : 'You take one chair; the rest stay open for other people.'
+            }
+          >
             <div className="flex flex-wrap gap-2" role="group" aria-label="How many players">
               {sizeChoices.map((n) => (
                 <Button
@@ -229,7 +256,7 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
                 </Button>
               ))}
             </div>
-          </div>
+          </Fieldset>
         )}
         {/*
           HOW THIS CLIENT PLAYS — the AI tier, and whatever else a game declares. Drawn from
@@ -241,7 +268,7 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
           exactly wrong for anything a GUEST must also read — that belongs in room state, and it is
           named as a real change rather than a nuance in `manifest.houseRules`.
         */}
-        <GameOptions forMoney={backing === 'house'} />
+        <GameOptions layout="panel" forMoney={backing === 'house'} />
         {/*
           WHAT A CHAIR COSTS (v1's "ANTE: NONE / $25 / $100 / $500 / $1K"). Drawn only when the game
           declares `betting` AND the ladder holds more than one stake — `anteChoices` collapses to
@@ -254,48 +281,93 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
           a counterparty and a measured price.
         */}
         {(mode === 'online' || houseBanks) && anteOptions.length > 1 && (
-          <div className="flex flex-col gap-2">
-            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-              Ante
-            </span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="What a seat costs">
-              {anteOptions.map((cents) => (
-                <Button
-                  key={cents}
-                  size="sm"
-                  variant={cents === anteCents ? 'secondary' : 'ghost'}
-                  aria-pressed={cents === anteCents}
-                  onClick={() => {
-                    setAnteCents(cents);
-                  }}
-                >
-                  {cents === 0 ? 'None' : formatMoney(cents)}
-                </Button>
-              ))}
-            </div>
-            {/*
-              WHAT THE STAKE BUYS, said before the table exists — and it is two different sentences
-              now, because there are two counterparties. A table of people plays for each other's
-              money; a lone player plays the house, which funds the pot and prices it under fair
-              odds. Neither sentence names a multiple: the odds are a rule of the GAME (the lobby
-              must not learn one), and the exact pot is on the board the moment it is dealt.
-            */}
-            {anteCents > 0 &&
-              (mode === 'ai' ? (
-                <p className="text-bw-muted text-xs">
+          <Fieldset
+            legend="Ante"
+            hint={
+              /*
+                WHAT THE STAKE BUYS, said before the table exists — and it is two different
+                sentences, because there are two counterparties. A table of people plays for each
+                other's money; a lone player plays the house, which funds the pot and prices it
+                under fair odds. Neither sentence names a multiple: the odds are a rule of the GAME
+                (the lobby must not learn one), and the exact pot is on the board the moment it is
+                dealt.
+              */
+              anteCents === 0 ? (
+                'Free table — the game still counts for XP and stats.'
+              ) : mode === 'ai' ? (
+                <>
                   You ante {formatMoney(anteCents)} against the house, which banks the pot. The bots
                   play their best and the odds are the house&rsquo;s — win and it pays out, lose and
                   it keeps the ante.
-                </p>
+                </>
               ) : (
-                <p className="text-bw-muted text-xs">
+                <>
                   Every player antes {formatMoney(anteCents)}; the winner takes the pot.{' '}
                   {houseBanks
                     ? 'One player against bots is banked by the house instead, at the house’s odds.'
                     : 'Needs two human players — otherwise the table plays for XP alone.'}
-                </p>
-              ))}
-          </div>
+                </>
+              )
+            }
+          >
+            <div className="flex flex-wrap gap-2" role="group" aria-label="What a seat costs">
+              {anteOptions.map((cents) => {
+                // A rung is only "chosen" while nothing is typed. Otherwise a typed $25 would light
+                // the $25 button as well as filling the box, and un-typing it would leave two
+                // controls both claiming to be the answer.
+                const on = typedAnte === null && cents === rungCents;
+                return (
+                  <Button
+                    key={cents}
+                    size="sm"
+                    variant={on ? 'secondary' : 'ghost'}
+                    aria-pressed={on}
+                    onClick={() => {
+                      setRungCents(cents);
+                      setTypedAnte(null);
+                    }}
+                  >
+                    {cents === 0 ? 'None' : formatMoney(cents)}
+                  </Button>
+                );
+              })}
+              {/*
+                THE RUNG LADDER IS A DEFAULT, NOT THE VOCABULARY. Six denominations are what you
+                want when you do not care what the table costs; a field is what you want when you
+                do, and "$25 or $100, nothing between" is the picker deciding something the people
+                at the table are better placed to decide. The rungs stay because most tables never
+                touch this — the button only OPENS the field, so nothing changes for anyone who
+                does not press it.
+              */}
+              <Button
+                size="sm"
+                variant={typedAnte !== null ? 'secondary' : 'ghost'}
+                aria-pressed={typedAnte !== null}
+                onClick={() => {
+                  setTypedAnte(typedAnte === null ? '' : null);
+                }}
+              >
+                Custom
+              </Button>
+            </div>
+            {typedAnte !== null && (
+              <Input
+                label="Stake a seat"
+                // `inputMode` and not `type="number"`: a number input hands over spinner arrows, a
+                // scroll wheel that changes the value, and a browser-decided idea of what counts as
+                // a decimal. `parseAnte` is the one authority on what a stake may be, and it needs
+                // the string a person typed rather than one the field has already mangled.
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder={formatMoney(manifest.betting?.min ?? 0)}
+                value={typedAnte}
+                onChange={(e) => {
+                  setTypedAnte(e.target.value);
+                }}
+                {...(anteError !== null ? { error: anteError } : {})}
+              />
+            )}
+          </Fieldset>
         )}
         {/*
           HOUSE RULES (plans/done/UNO_HOUSE_RULES.md §1) — how this TABLE plays, as opposed to
@@ -311,29 +383,48 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
           already took a chair. Same shape as the seat count and the stake, same reason.
         */}
         {ruleSpecs.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-              House rules
-            </span>
+          <Fieldset legend="House rules">
+            {/*
+              ONE BOXED ROW PER RULE, and the box is the whole point. This was a bare column of
+              left-aligned pills of three different widths, each trailed by a full-width paragraph
+              — so a toggle, a wrapped sentence, another toggle at a different width, another
+              sentence, with nothing saying which line belonged to which control. Reading it meant
+              re-deriving the pairing on every glance. A border round each pair says it once.
+
+              A DISABLED DEPENDENT NAMES WHAT IT NEEDS. `isRuleAvailable` already refuses to let
+              "Cross-stacking" be pressed before "Stacking" is on, and drawing it disabled rather
+              than hidden was the right half of the decision (a control that materialises out of
+              nowhere reads as a bug) — but a greyed button with no reason is a control that looks
+              broken, which is the other half. The prerequisite's own LABEL is quoted, so the
+              sentence cannot name a rule id or drift from what the button above it says.
+            */}
             <div className="flex flex-col gap-2" role="group" aria-label="House rules">
               {ruleSpecs.map((spec) => {
                 const on = isRuleOn(houseRules, spec.id);
                 const available = isRuleAvailable(houseRules, spec);
+                const needs = ruleSpecs.find((s) => s.id === spec.requires)?.label;
                 return (
-                  <div key={spec.id} className="flex flex-col gap-0.5">
-                    <Button
-                      size="sm"
-                      className="self-start"
-                      variant={on ? 'secondary' : 'ghost'}
-                      aria-pressed={on}
-                      disabled={!available}
-                      onClick={() => {
-                        setHouseRules((prev) => setTableRule(prev, ruleSpecs, spec.id, !on));
-                      }}
-                    >
-                      {on ? '✓ ' : ''}
-                      {spec.label}
-                    </Button>
+                  <div
+                    key={spec.id}
+                    className="border-bw-line rounded-field flex flex-col gap-1.5 border p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={on ? 'secondary' : 'ghost'}
+                        aria-pressed={on}
+                        disabled={!available}
+                        onClick={() => {
+                          setHouseRules((prev) => setTableRule(prev, ruleSpecs, spec.id, !on));
+                        }}
+                      >
+                        {on ? '✓ ' : ''}
+                        {spec.label}
+                      </Button>
+                      {!available && needs !== undefined && (
+                        <span className="text-bw-muted text-xs">Needs {needs}</span>
+                      )}
+                    </div>
                     {spec.hint !== undefined && (
                       <p className="text-bw-muted text-xs">{spec.hint}</p>
                     )}
@@ -341,7 +432,7 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
                 );
               })}
             </div>
-          </div>
+          </Fieldset>
         )}
         {/*
           PUBLIC vs PRIVATE, chosen before the table exists (V1_FEATURE_GAPS #9). This is the one
@@ -350,75 +441,109 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
           time you change your mind. Public is the default — that is what every table was before
           the browser, and a discovery surface nobody appears on is worth nothing.
         */}
+        {/* It had no heading at all — a bare pair of pills reading "Listed / Code only" under the
+            house rules, which is the same invisibility the bot picker had and the same fix. */}
         {mode === 'online' && (
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Who can join">
-            {(['public', 'private'] as const).map((v) => (
-              <Button
-                key={v}
-                size="sm"
-                variant={v === visibility ? 'secondary' : 'ghost'}
-                aria-pressed={v === visibility}
-                onClick={() => {
-                  setVisibility(v);
-                }}
-              >
-                {v === 'public' ? 'Listed' : 'Code only'}
-              </Button>
-            ))}
-          </div>
+          <Fieldset
+            legend="Who can join"
+            hint={
+              visibility === 'public'
+                ? 'Listed in the room browser — anyone can walk up and take a chair.'
+                : 'Unlisted. Only people you send the table code to can join.'
+            }
+          >
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Who can join">
+              {(['public', 'private'] as const).map((v) => (
+                <Button
+                  key={v}
+                  size="sm"
+                  variant={v === visibility ? 'secondary' : 'ghost'}
+                  aria-pressed={v === visibility}
+                  onClick={() => {
+                    setVisibility(v);
+                  }}
+                >
+                  {v === 'public' ? 'Listed' : 'Code only'}
+                </Button>
+              ))}
+            </div>
+          </Fieldset>
         )}
-        {/*
-          THE TABLE YOU ARE ABOUT TO CREATE (§5.1) — v1's lobby preview, and the half of that
-          screen worth keeping. It sits directly above Create because that is the question it
-          answers: this is what pressing the button produces, seat for seat, before it produces it.
-
-          It is the same `plannedSeats` array the create path uses, not a drawing of one. That is
-          why a mode change redraws it (an AI table shows CPUs, an online one shows open chairs a
-          stranger can take) with nothing in this component knowing what a mode is.
-        */}
-        <SeatPreview seats={planned} />
-        <Button variant="primary" disabled={busy} onClick={createTable}>
+        <Button variant="primary" disabled={busy || anteError !== null} onClick={createTable}>
           Create table
         </Button>
       </Card>
 
       <div className="flex flex-col gap-6">
-        {/* Renders nothing when no table of this game is open, so the panel is unchanged on a
-            quiet day and the code form below is still the way in. */}
-        <RoomBrowser
-          gameId={manifest.id}
-          title="Open tables"
-          onJoin={(_gameId, joinRoomId) => {
-            onEntered(joinRoomId);
-          }}
-        />
+        {/*
+          THE TABLE YOU ARE ABOUT TO CREATE (§5.1) — v1's lobby preview, and the half of that
+          screen worth keeping. It is the same `plannedSeats` array the create path uses, not a
+          drawing of one, which is why a mode change redraws it (an AI table shows CPUs, an online
+          one shows open chairs a stranger can take) with nothing in this component knowing what a
+          mode is.
 
-        <Card className="flex flex-col gap-4 p-6">
-          <h2 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
-            Join a table
-          </h2>
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (code.trim() !== '') onEntered(code.trim().toUpperCase());
-            }}
-          >
-            <Input
-              label="Table code"
-              placeholder="ABCD"
-              value={code}
-              maxLength={4}
-              onChange={(e) => {
-                setCode(e.target.value.toUpperCase());
+          IT MOVED OUT OF THE LEFT COLUMN, and the adjacency argument it moved away from is worth
+          restating rather than deleting: it used to sit directly above Create because that is the
+          question it answers. On a wide screen it still does — it is the top of the column beside
+          the panel, at the same eye level as the controls that decide it, where before it was the
+          last thing in a column of eight and usually below the fold. What is genuinely given up is
+          the narrow layout, where the two columns stack and the preview now lands after Create.
+          That is a real cost and it buys a page you can read: eight controls on the left and two
+          panels of equal weight on the right, instead of one very long column and one nearly empty
+          one.
+        */}
+        <SeatPreview seats={planned} />
+
+        {/*
+          BOTH WAYS INTO SOMEBODY ELSE'S TABLE, and only in the mode that has one. An AI or
+          hot-seat launch used to draw a room browser and a four-character code form as well — the
+          entire right-hand half of the panel was about other people, on the two ways in whose
+          whole point is that there are none. Nothing was broken; it just answered a question
+          nobody had asked. Same reasoning as the visibility toggle being hidden here: a control
+          that cannot change the outcome is worse than no control.
+        */}
+        {mode === 'online' && (
+          <>
+            {/* Renders nothing when no table of this game is open, so the panel is unchanged on a
+                quiet day and the code form below is still the way in. */}
+            <RoomBrowser
+              gameId={manifest.id}
+              title="Open tables"
+              onJoin={(_gameId, joinRoomId) => {
+                onEntered(joinRoomId);
               }}
-              className="flex-1"
             />
-            <Button type="submit" variant="secondary" disabled={code.trim() === ''}>
-              Join
-            </Button>
-          </form>
-        </Card>
+
+            <Card className="flex flex-col gap-4 p-6">
+              <h2 className={FIELDSET_LEGEND}>Join a table</h2>
+              <form
+                className="flex items-end gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (code.trim() !== '') onEntered(code.trim().toUpperCase());
+                }}
+              >
+                <Input
+                  label="Table code"
+                  placeholder="ABCD"
+                  value={code}
+                  maxLength={4}
+                  onChange={(e) => {
+                    setCode(e.target.value.toUpperCase());
+                  }}
+                  className="flex-1"
+                />
+                <Button type="submit" variant="secondary" disabled={code.trim() === ''}>
+                  Join
+                </Button>
+              </form>
+              {/* Under the FORM, not as the field's `hint` — `Input` puts a hint inside its own
+                  column, and the row is `items-end`, so the Join button would drop a line to
+                  align with the sentence instead of with the box it submits. */}
+              <p className="text-bw-muted text-xs">Four letters, from whoever opened the table.</p>
+            </Card>
+          </>
+        )}
       </div>
     </div>
   );
