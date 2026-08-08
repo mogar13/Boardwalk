@@ -60,10 +60,30 @@ export const ticTacToeManifest = {
       label: 'House',
       type: 'select',
       default: 'perfect',
+      /*
+        Read off `chooseAiMove`'s three branches, not off the tier names — a hint that describes a
+        policy the rulebook does not play is worse than no hint (see UNO's manifest, where the
+        first draft of one got the sort order exactly backwards). `casual` is a random legal cell,
+        `sharp` takes an immediate win then blocks an immediate loss and is otherwise random (so it
+        loses to a fork, which is what makes it a middle rung rather than a second `perfect`), and
+        `perfect` is full minimax on a solved draw.
+      */
       choices: [
-        { value: 'casual', label: 'Casual' },
-        { value: 'sharp', label: 'Sharp' },
-        { value: 'perfect', label: 'Perfect' },
+        {
+          value: 'casual',
+          label: 'Casual',
+          hint: 'Plays at random. It will miss a win sitting in front of it.',
+        },
+        {
+          value: 'sharp',
+          label: 'Sharp',
+          hint: 'Takes a win, blocks yours, and plays at random otherwise — set up two threats at once and it loses.',
+        },
+        {
+          value: 'perfect',
+          label: 'Perfect',
+          hint: 'Solved. The best result available to you is a draw.',
+        },
       ],
     },
   ],

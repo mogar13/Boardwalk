@@ -154,6 +154,44 @@ describe('Modal — the body flexes instead of clamping', () => {
     expect(body.filter((c) => c.startsWith('max-h-'))).toEqual([]);
   });
 
+  it('reserves room at the body’s edges for a glow the scrollport would otherwise CLIP', () => {
+    // The body is `overflow-y-auto`, which makes it a scroll container, and a scroll container
+    // clips at its PADDING BOX — the box-shadow of anything sitting against that edge included.
+    // Every lit control in this kit is a `--shadow-glow-*` tube reaching ~18px, so with `pt-0` the
+    // launch modal's first button had its whole top halo shaved off against a hard horizontal
+    // line: it reads as a button cut in half, not as a clipped shadow. Measured in Chrome, the
+    // button's top edge and the scrollport's top edge were the same pixel.
+    //
+    // The RUNG is asserted, not the exact class — what matters is that there is enough room for a
+    // glow, and 4 (1rem) clears every visible layer of the token. Pinning `pt-5` would go red on a
+    // tidy-up that changed nothing about the property.
+    const body = bodyClasses(render());
+    for (const side of ['pt', 'pb'] as const) {
+      const found = body.filter((c) => new RegExp(`^${side}-\\d+$`).test(c));
+      expect(
+        found,
+        `the body has no ${side}-* at all, so a glow at that edge is sliced`
+      ).toHaveLength(1);
+      const rung = Number(/-(\d+)$/.exec(found[0] ?? '')?.[1] ?? '0');
+      expect(
+        rung,
+        `${found[0] ?? ''} is too tight for a --shadow-glow-* tube`
+      ).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('gives the header its bottom padding back only when there is no body to own the gap', () => {
+    // The gap between a description and the first control belongs to whichever element can hold it
+    // WITHOUT clipping — which is the body, since it is the scrollport (above). A constant on the
+    // header would either double the gap or, dropped, leave a childless confirm dialog's heading
+    // 4px off the footer rule. So it is a ternary, and both sides are pinned.
+    expect(classesOf(render(), 'header')).toContain('pb-1');
+    const childless = renderToStaticMarkup(
+      createElement(Modal, { open: true, onClose: () => undefined, title: 'Sure?' })
+    );
+    expect(classesOf(childless, 'header')).toContain('pb-4');
+  });
+
   it('pins the header and the footer so only the body scrolls', () => {
     const html = render();
     expect(classesOf(html, 'header')).toContain('shrink-0');

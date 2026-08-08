@@ -14,6 +14,7 @@
  * v1's difficulty-vocabulary drift in a new costume — easy/normal/hard vs easy/medium/hard across
  * 22 games — so there is ONE ladder, filtered to what a game says it plays for.
  */
+import { formatMoney } from '@boardwalk/game-logic';
 
 /** What a game declares about money. The OS's view of `manifest.betting` — a range and one flag. */
 export interface BettingSpec {
@@ -64,6 +65,65 @@ export function anteChoices(betting?: BettingSpec): number[] {
   const { min, max } = betting;
   if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return [0];
   return [0, ...ANTE_RUNGS_CENTS.filter((v) => v >= min && v <= max)];
+}
+
+/**
+ * A HAND-TYPED STAKE, read. Either integer cents inside the game's declared range, or a sentence
+ * saying what to do about it.
+ *
+ * The ladder is six rungs a player recognises without reading them, and it is the right default —
+ * but it is also the whole of what a table could ever be played for, and "$25 or $100, nothing
+ * between" is a picker deciding a thing the people at the table are better placed to decide. So a
+ * host may type one. The rungs stay: a ladder is what you want when you do not care, and a field is
+ * what you want when you do.
+ *
+ * IT REFUSES RATHER THAN ROUNDS, in both directions, and that is the `parseInt` war story showing
+ * up on the input side of the same number. `validateBet` REFUSES a fractional bet rather than
+ * rounding it, so a stake that arrives as `2550.4` does not become a cheaper table — it becomes a
+ * table whose deal fails at the exact moment money moves, with the host already sat down. Cents are
+ * assembled from the STRING's own digits and never from `value * 100`, because `Number('12.10') *
+ * 100` is `1209.9999999999998` and `Math.round` hiding that is how a rounding rule gets written
+ * accidentally.
+ *
+ * THE RANGE IS THE GAME'S, unchanged: `betting.min`..`betting.max` is already "the stakes this game
+ * is played for", so typing is a finer grain within it and never a way past it. Zero is NOT
+ * accepted here even though it is the ladder's first rung — "None" is a button, and a field that
+ * silently means the same thing as a button is two controls for one value.
+ *
+ * The error strings are the caller's copy and say what to do (`Input`'s own rule: "Bet more than
+ * $2" beats "Invalid"), because a field that only says a value is wrong makes the reader guess
+ * which of three rules they broke.
+ */
+export type AnteParse =
+  { readonly ok: true; readonly cents: number } | { readonly ok: false; readonly error: string };
+
+export function parseAnte(text: string, betting?: BettingSpec): AnteParse {
+  // Unreachable from the panel (no `betting` means no ante control at all), and answered rather
+  // than thrown: a total function has no branch a caller has to remember to guard.
+  if (betting === undefined) return { ok: false, error: 'This game is not played for money' };
+  const { min, max } = betting;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max < min)
+    return { ok: false, error: 'This game is not played for money' };
+
+  // A `$` and thousands separators are what a person types when asked for money, not a mistake.
+  const cleaned = text.trim().replace(/^\$/, '').replace(/,/g, '').trim();
+  if (cleaned === '') return { ok: false, error: 'Enter an amount' };
+
+  const m = /^(\d*)(?:\.(\d*))?$/.exec(cleaned);
+  const whole = m?.[1] ?? '';
+  const frac = m?.[2] ?? '';
+  if (m === null || (whole === '' && frac === ''))
+    return { ok: false, error: 'Numbers only — 250, or 12.50' };
+  if (frac.length > 2) return { ok: false, error: 'Cents only — two decimal places at most' };
+
+  const cents = Number(whole === '' ? '0' : whole) * 100 + Number((frac + '00').slice(0, 2));
+  // Past 2^53 the arithmetic above stops being exact, and an inexact number of cents is the one
+  // thing a ledger row must never hold.
+  if (!Number.isSafeInteger(cents)) return { ok: false, error: 'That is more than anyone has' };
+
+  if (cents < min || cents > max)
+    return { ok: false, error: `Between ${formatMoney(min)} and ${formatMoney(max)}` };
+  return { ok: true, cents };
 }
 
 /**

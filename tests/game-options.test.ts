@@ -117,6 +117,28 @@ describe('every declared spec in the registry', () => {
     }
   });
 
+  it('hints on ALL of an option’s choices or on none of them', () => {
+    // The control shows the CHOSEN value's hint, so an option that explains two of its three rungs
+    // draws a line that appears and vanishes as you click along the row — which reads as the panel
+    // glitching, not as "that one needed no explanation". All-or-nothing is the only arrangement
+    // where the layout does not move.
+    //
+    // Nothing else can see this. `hint?: string` typechecks with any subset, every rung renders
+    // correctly on its own, and the fault only exists in the transition between two of them.
+    for (const { manifest } of declared) {
+      for (const option of manifest.options ?? []) {
+        const hinted = option.choices.filter((c) => c.hint !== undefined);
+        expect(
+          hinted.length === 0 || hinted.length === option.choices.length,
+          `${manifest.id}/${option.id}: ${String(hinted.length)} of ${String(option.choices.length)} choices carry a hint`
+        ).toBe(true);
+        // A blank hint is the same defect wearing a value — it reserves the line and says nothing.
+        for (const c of hinted)
+          expect(c.hint?.trim(), `${manifest.id}/${option.id}/${c.value}: empty hint`).not.toBe('');
+      }
+    }
+  });
+
   it('pins a value it also offers, wherever an option pins one for money', () => {
     // The `default` guard's twin, and it fails the same silent way: a `pinnedForMoney.value` that
     // is not one of `choices` renders a locked control with nothing in it, and typechecks, because

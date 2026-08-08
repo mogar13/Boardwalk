@@ -212,10 +212,20 @@ function LaunchStep({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Absent for a game with one way in — a back button to a screen that offered no choice is a
-          step nobody took. */}
+      {/*
+        Absent for a game with one way in — a back button to a screen that offered no choice is a
+        step nobody took.
+
+        `ghost` AND NOT `quiet`. `quiet` is "no tube at all": muted text on nothing, which is
+        correct for a Cancel sitting next to a real action and wrong for the ONLY way back off a
+        screen. On the felt it rendered as grey text floating between the modal's description and
+        a bordered panel, and people did not read it as a control at all — it looks like a caption.
+        `ghost` is the unlit tube: a border, so it reads as pressable, and it strikes cyan on hover
+        like every other secondary control here. It still cannot compete with Create, which is the
+        one lit `primary` on the panel.
+      */}
       {onBack !== undefined && (
-        <Button variant="quiet" size="sm" className="self-start" onClick={onBack}>
+        <Button variant="ghost" size="sm" className="self-start" onClick={onBack}>
           ← Ways to play
         </Button>
       )}
@@ -230,8 +240,11 @@ function LaunchStep({
           }}
         />
       ) : (
-        <div className="flex flex-col items-start gap-4">
-          <GameOptions />
+        <div className="flex flex-col items-start gap-5">
+          {/* `panel` for the same reason the create panel uses it: this is a configuration panel,
+              not a game's own header row, and a small inline label with nothing above it is the
+              control people were missing. */}
+          <GameOptions layout="panel" />
           <Button
             variant="primary"
             onClick={() => {

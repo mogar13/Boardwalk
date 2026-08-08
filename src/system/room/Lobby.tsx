@@ -351,7 +351,7 @@ function LobbyRoom({
                 there is paying for anybody else's difficulty. The referee pins it either way; this
                 is what stops the screen offering a choice the deal will not honour.
               */}
-              {isHost && <GameOptions className="justify-end" forMoney={backing === 'house'} />}
+              {isHost && <GameOptions layout="panel" forMoney={backing === 'house'} />}
               <SeatList allowAi={manifest.modes.includes('ai')} />
             </>
           )}

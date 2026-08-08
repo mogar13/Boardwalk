@@ -38,6 +38,21 @@
 export interface GameOptionChoice {
   readonly value: string;
   readonly label: string;
+  /**
+   * ONE LINE SAYING WHAT PICKING THIS DOES, shown under the row while it is the chosen value.
+   *
+   * A tier's label is a WORD — `Casual`, `Sharp`, `Perfect` — and a word says which rung it is and
+   * never what the opponent will actually do. v1 had exactly this problem and never solved it: 22
+   * games with a difficulty selector, three different vocabularies between them, and not one
+   * sentence anywhere explaining what any rung meant. The answer lived in the engine.
+   *
+   * PER CHOICE RATHER THAN PER OPTION, because the useful sentence is about the value you are
+   * looking at, and a static paragraph listing all three is something nobody reads twice. It is
+   * OPTIONAL: Solitaire's "Draw 1 / Draw 3" explains itself and a padded line under it is
+   * furniture. `tests/game-options.test.ts` asserts an option is all-or-nothing about them, since a
+   * hint that appears for two rungs and vanishes for the third reads as a rendering bug.
+   */
+  readonly hint?: string;
 }
 
 /**
