@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, cx, useToast } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
@@ -7,6 +7,7 @@ import { useAudio } from '@/system/audio/useAudio';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
+import { Rematch } from '@/system/room/Rematch';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { repos } from '@/system/repo';
 import { formatMoney } from '@boardwalk/game-logic';
@@ -51,6 +52,9 @@ export function Board() {
   const dealtRef = useRef(false);
   /** Which money-moving moment this client has already synced its profile for. */
   const syncedMoment = useRef<string>('');
+  /** How many matches this client has watched begin. `round` restarts at 0; this does not. */
+  const matchEpoch = useRef(0);
+  const lastWinner = useRef(-1);
   const heardResolution = useRef<number | null>(null);
 
   const humans = seats.filter((s) => s.kind === 'human').length;
@@ -108,13 +112,43 @@ export function Board() {
    */
   useEffect(() => {
     if (state == null || mySeatIndex < 0) return;
-    const moment = state.winner >= 0 ? `settled:${String(state.round)}` : 'dealt';
+    /*
+     * A REMATCH IS A NEW MATCH, and the only signal for it is the winner going back below zero.
+     * The referee deals one as a fresh `liars_dice_matches` row whose rulebook restarts `round` at
+     * 0, and nothing else on the projection distinguishes match two from match one — so keying the
+     * deal moment on the round alone (or on the bare string it used to be) makes the SECOND ante
+     * silent: it leaves the ledger, and every top bar at the table goes on showing the old balance.
+     * That is the same hole the two moments below were written to close, one match later.
+     */
+    if (lastWinner.current >= 0 && state.winner < 0) matchEpoch.current += 1;
+    lastWinner.current = state.winner;
+
+    const epoch = String(matchEpoch.current);
+    const moment = state.winner >= 0 ? `settled:${epoch}:${String(state.round)}` : `dealt:${epoch}`;
     if (syncedMoment.current === moment) return;
     syncedMoment.current = moment;
     void repos.profile.load(myId).then((p) => {
       if (p !== null) adoptProfile(p);
     });
   }, [state, mySeatIndex, myId, adoptProfile]);
+
+  /**
+   * Deal a NEW MATCH. Host-only for de-duplication rather than privilege — the referee accepts a
+   * start from any seated human, so if every client called this an agreed rematch would deal one
+   * match per player and charge one ante per player. `<Rematch>` invokes only the host's copy.
+   *
+   * The nonce is fresh on purpose: this is a second match, not a retry of the first, and the
+   * replay path (`liveMatchInRoom`) would hand back the settled one if it reused the deal's.
+   */
+  const dealAgain = useCallback((): void => {
+    if (!isHost || repos.liarsDice === null) return;
+    void repos.liarsDice
+      .start(gameId, roomId, { nonce: mintNonce(), anteCents: ante })
+      .then((res) => {
+        if (res.ok) adoptProfile(res.value);
+        else toast.error(res.error);
+      });
+  }, [isHost, gameId, roomId, ante, toast, adoptProfile]);
 
   if (repos.liarsDice === null) {
     // Named rather than degraded. There is no RTDB version of "the server holds the dice", and a
@@ -223,13 +257,19 @@ export function Board() {
         )}
 
         {state.winner >= 0 && (
-          <p className="text-primary font-display text-xl">
-            {state.winner === mySeatIndex
-              ? betting
-                ? `You win ${formatMoney(ante * humans)}`
-                : 'You win'
-              : `${seats[state.winner]?.name ?? 'Seat'} wins`}
-          </p>
+          <>
+            <p className="text-primary font-display text-xl">
+              {state.winner === mySeatIndex
+                ? betting
+                  ? `You win ${formatMoney(ante * humans)}`
+                  : 'You win'
+                : `${seats[state.winner]?.name ?? 'Seat'} wins`}
+            </p>
+            {/* The OS owns the handshake; this game passes one thing — how to deal the next match.
+                It says "New match" rather than UNO's "Deal again" because it IS one: a fresh row,
+                a fresh set of cups, and — at a betting table — a fresh ante from everybody. */}
+            <Rematch restart={dealAgain} label="New match" />
+          </>
         )}
       </div>
 

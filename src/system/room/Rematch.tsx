@@ -1,6 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Button } from '@/ui';
-import { castVotes, haveVoted, rematchTally, type Rematchable } from '@/system/room/rematch';
+import {
+  castVotes,
+  haveVoted,
+  rematchTally,
+  restartGate,
+  type Rematchable,
+} from '@/system/room/rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 
@@ -19,8 +25,14 @@ import { useSeats } from '@/system/room/useSeats';
  * `restart(round)` is called ON THE HOST ONLY, exactly once per agreed handshake. Host-only is not
  * a privilege here, it is de-duplication: every client sees the same agreed tally at the same seq,
  * and all of them writing the next round would be a race the seq counter would happily serialise
- * into several deals. Tic-Tac-Toe and Chess pass `patch(() => initialState(round))`; UNO passes its
- * dealer's `dealAgain`, which is already host-only for the same reason.
+ * into several deals. Tic-Tac-Toe and Chess pass `patch(() => initialState(round))`; UNO and Liar's
+ * Dice pass a call to their REFEREE's deal, which is already host-only for the same reason.
+ *
+ * That last pair is why this service reaches a dealt game at all, and it cost nothing: the votes
+ * ride in room state through `patchState`, which the gateway authorises by MEMBERSHIP rather than
+ * by who holds the game. A dealt table's state is the referee's, but it stops being written the
+ * moment the match ends — there are no more actions to project — so votes cast after the result
+ * are the last word until the next deal replaces the whole projection and clears them for free.
  *
  * Restarting CLEARS the votes for free and this is by construction rather than by a cleanup step:
  * the next round is a fresh state object from the game's own `initialState`/`toPublic`, which has
@@ -46,15 +58,15 @@ export function Rematch({ restart, label = 'Play again' }: RematchProps) {
   const tally = rematchTally(votes, seats);
   const mine = haveVoted(votes, localSeatIds);
 
-  // Fire the restart once per agreed handshake. The ref keys on `round` so the effect cannot deal
-  // twice inside the window between the write and the snapshot that clears the votes — the same
-  // once-per-round guard every board already uses to report a result exactly once.
-  const restartedRound = useRef<number | null>(null);
+  // Fire the restart once per agreed handshake, and re-arm when the votes clear. The decision is
+  // `restartGate` rather than a `round` comparison because a round number is the GAME's and repeats
+  // across a referee-dealt match — see the war story on the gate itself.
+  const fired = useRef(false);
   useEffect(() => {
-    if (!isHost || !tally.agreed) return;
-    if (restartedRound.current === round) return;
-    restartedRound.current = round;
-    restart(round + 1);
+    if (!isHost) return;
+    const gate = restartGate(tally.agreed, fired.current);
+    fired.current = gate.fired;
+    if (gate.fire) restart(round + 1);
   }, [isHost, tally.agreed, round, restart]);
 
   // A spectator (no seat) is not asked and gets no button — there is nothing for it to agree to.

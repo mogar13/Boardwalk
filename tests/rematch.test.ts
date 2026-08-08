@@ -10,7 +10,7 @@
  * would make a seatless room restart itself on a loop).
  */
 import { describe, expect, it } from 'vitest';
-import { castVotes, haveVoted, rematchTally } from '@/system/room/rematch';
+import { castVotes, haveVoted, rematchTally, restartGate } from '@/system/room/rematch';
 import type { Seat } from '@/system/room/types';
 
 const human = (uid: string, name = uid): Seat => ({ kind: 'human', name, uid });
@@ -98,5 +98,71 @@ describe('haveVoted', () => {
 
   it('is false with no votes at all', () => {
     expect(haveVoted(undefined, [0])).toBe(false);
+  });
+});
+
+/**
+ * THE HOST'S ONCE-PER-HANDSHAKE GATE.
+ *
+ * This is the half that moves money. There is a window between the host writing the next round and
+ * the snapshot that clears the votes arriving back, and every re-render inside it sees an agreed
+ * tally — so without a gate a betting table deals twice and antes twice.
+ *
+ * The gate used to be a ref keyed on `round`, which quietly assumed a round number never repeats
+ * across restarts. True of every game that restarts by patching its own state; FALSE of a
+ * referee-dealt match, where "again" is a new row whose rulebook starts at `round: 0`. These drive
+ * the gate the way the effect does — carrying `fired` across calls — because any SINGLE call looks
+ * correct under either scheme and only a sequence tells them apart.
+ */
+function driveHost(agreements: readonly boolean[]): number {
+  let fired = false;
+  let restarts = 0;
+  for (const agreed of agreements) {
+    const gate = restartGate(agreed, fired);
+    fired = gate.fired;
+    if (gate.fire) restarts += 1;
+  }
+  return restarts;
+}
+
+describe('restartGate', () => {
+  it('never fires while the table has not agreed', () => {
+    expect(driveHost([false, false, false])).toBe(0);
+  });
+
+  it('fires once on agreement and not again while the votes still stand', () => {
+    // The window: the restart is away, the new state has not arrived, and the effect re-runs.
+    expect(driveHost([true, true, true, true])).toBe(1);
+  });
+
+  it('re-arms when the votes clear, which is the next round arriving', () => {
+    expect(driveHost([true, true, false, false, true, true])).toBe(2);
+  });
+
+  it('deals a SECOND rematch when two matches end on the SAME round number', () => {
+    // Liar's Dice restarts `round` at 0 with every match, so match one and match two can both end
+    // at round 3 — and they will, often, because matches of the same size take a similar number of
+    // rounds. The round-keyed ref read the second agreement as a repeat of the first: every human
+    // presses Ready ✓, the tally agrees, and nothing deals. Nothing throws and nothing logs.
+    //
+    // FALSIFY by restoring the old scheme (`if (ref.current === round) return; ref.current = round`)
+    // with a round that repeats — this case drops to 1 while every other case here stays green,
+    // which is exactly how it shipped.
+    const matchOne = [true, true]; // agreed at round 3, plus a re-render inside the window
+    const dealt = [false, false]; // the referee's fresh projection lands; votes gone
+    const matchTwo = [true, true]; // round 3 again, a genuinely new handshake
+    expect(driveHost([...matchOne, ...dealt, ...matchTwo])).toBe(2);
+  });
+
+  it('re-arms on a lost agreement even if it had already fired', () => {
+    // The flag must not survive the votes it belongs to, or the table restarts exactly once ever.
+    expect(restartGate(false, true)).toEqual({ fire: false, fired: false });
+  });
+
+  it('is total over its four inputs', () => {
+    expect(restartGate(true, false)).toEqual({ fire: true, fired: true });
+    expect(restartGate(true, true)).toEqual({ fire: false, fired: true });
+    expect(restartGate(false, false)).toEqual({ fire: false, fired: false });
+    expect(restartGate(false, true)).toEqual({ fire: false, fired: false });
   });
 });

@@ -81,3 +81,40 @@ export function haveVoted(
 ): boolean {
   return seatIndexes.length > 0 && seatIndexes.every((i) => votes?.[String(i)] === true);
 }
+
+/** The gate's answer: whether to fire now, and the flag to carry into the next call. */
+export interface RestartGate {
+  readonly fire: boolean;
+  readonly fired: boolean;
+}
+
+/**
+ * FIRE THE RESTART ONCE PER AGREED HANDSHAKE — the host's de-duplication, as a value.
+ *
+ * There is a window between the host writing the next round and the snapshot that clears the votes
+ * arriving back, and every re-render inside it sees an agreed tally. Something has to remember that
+ * this agreement has already been acted on, or the table deals twice — which for a betting game is
+ * two antes off every player.
+ *
+ * THIS USED TO KEY ON `round`, AND THAT CARRIED A HIDDEN INVARIANT: that `round` never repeats
+ * across restarts. It holds for every game that restarts by patching its OWN state — Tic-Tac-Toe
+ * and Chess pass `initialState(round + 1)`, UNO deals round n+1 — and it is FALSE for a
+ * referee-dealt match, where "again" means a new row in `liars_dice_matches` whose rulebook starts
+ * it at `round: 0`. So two Liar's Dice matches that happened to end on the same round number would
+ * have made the second rematch a silent no-op: every human presses Ready, the tally agrees, the
+ * effect returns early and nothing deals. Nothing throws, nothing logs, and the button sits there
+ * saying Ready ✓ forever.
+ *
+ * The fix is to stop asking a question whose answer the OS cannot verify. What actually bounds the
+ * firing is the AGREEMENT itself: a handshake that has been acted on stays agreed until the votes
+ * clear, and the votes clear only because a new round arrived — which is precisely the event that
+ * should re-arm. So the gate re-arms on `agreed === false` and needs no notion of a round at all.
+ *
+ * Total, and deliberately not a hook: it is the one decision in this service a test can pin, and
+ * the component that owns the ref is untestable here (there is no DOM in this suite).
+ */
+export function restartGate(agreed: boolean, fired: boolean): RestartGate {
+  if (!agreed) return { fire: false, fired: false };
+  if (fired) return { fire: false, fired: true };
+  return { fire: true, fired: true };
+}

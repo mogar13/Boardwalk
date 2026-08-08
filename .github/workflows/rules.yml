@@ -1,0 +1,126 @@
+# Test and deploy `database.rules.json` — the enforcement boundary.
+#
+# WHY THIS EXISTS. `npm run rules:deploy` was manual, and nothing in CI did it. CLAUDE.md has said
+# so in two places for six phases ("The gap Phase 2 leaves", and the standing ride-along in
+# plans/ROADMAP.md), and the consequence is stated there exactly right: the file in this repo can
+# stop matching production while READING LIKE THE TRUTH, which is worse than having no file. The
+# tests prove the file is right; they cannot prove it is deployed. It has now been shipped by hand
+# at least four times (P2, P3, P5, `chessset`), and one of those went out from the wrong worktree
+# first and printed an identical green `Deploy complete!` while releasing the OLD file.
+#
+# WHAT THIS DOES AND DOES NOT BUY. It removes "somebody forgot" as a failure mode. It does NOT
+# make the exit code evidence — a rules deploy reports success for work it did not do, which is the
+# whole reason `memory/deploy-from-the-tree-that-has-the-change.md` exists. Reading the ruleset back
+# and diffing it is the real proof and is deliberately NOT attempted here: RTDB serves the ruleset
+# with comments stripped, `database.rules.json` is (by its own `.prettierignore` entry) mostly
+# comments attached to security decisions, and a naive strip-and-compare would either false-positive
+# forever or need a JSON-with-comments parser this repo does not have. An untested verifier wired
+# into the one job that touches the security boundary is worse than an honest gap. So: the strongest
+# thing CI can assert is asserted — the file passes its own emulator suite BEFORE it is released —
+# and the read-back stays the manual check the memory note describes.
+#
+# THE ORDER IS LOAD-BEARING. `rules:test` runs before the deploy, always. Releasing a ruleset that
+# fails its own test would be a strictly worse arrangement than the manual one it replaces, because
+# it would happen automatically and nobody would be watching.
+name: Rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'database.rules.json'
+      - 'firebase.json'
+      - '.github/workflows/rules.yml'
+  # PRs get the test and never the deploy. A rules change is the one diff in this repo where
+  # "it passed on main" is too late to be useful.
+  pull_request:
+    paths:
+      - 'database.rules.json'
+      - 'firebase.json'
+      - '.github/workflows/rules.yml'
+  # For re-releasing the current file without touching it — the "did that actually go out?" button.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let two rules releases race. `cancel-in-progress: false`, matching the Pages deploy: a
+# superseded run should finish rather than be killed halfway through talking to Firebase.
+concurrency:
+  group: rules
+  cancel-in-progress: false
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 24, matching deploy.yml and @types/node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # The RTDB emulator is a JVM and `tests/database-rules.test.ts` boots it to run the REAL
+      # file against real clients. Pinned rather than inherited from the image, for the same
+      # reason deploy.yml pins it: an image update would otherwise fail with an error naming Java
+      # instead of the thing that needed it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      # The only guard in this repo that can SEE a security rule. Everything else here is static,
+      # and a rules file is not code that runs on this machine.
+      - name: Test the rules against the emulator
+        run: npm run rules:test
+
+      # ── release ─────────────────────────────────────────────────────────────────────────────
+      #
+      # SKIPS LOUDLY RATHER THAN FAILING when the credentials are absent. Merging this workflow
+      # must not turn `main` red before the secret exists, but a job that quietly does nothing is
+      # this repo's oldest defect (a guard that reports success by doing nothing), so the skip is a
+      # `::warning::` that lands in the run summary and says what is missing.
+      - name: Are the release credentials set?
+        id: creds
+        if: github.event_name != 'pull_request'
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -n "$KEY" ] && [ -n "$PROJECT" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo "::warning title=Rules tested but NOT deployed::Set the FIREBASE_SERVICE_ACCOUNT secret (a service-account JSON key with the Firebase Realtime Database Admin role). Until then production runs whatever was last pushed by hand."
+          fi
+
+      # The project id is REUSED from the frontend's secret rather than given one of its own, and
+      # that is a correctness property rather than thrift: it makes it unspellable for CI to
+      # release rules to a different project than the one the deployed app talks to.
+      - name: Deploy database.rules.json
+        if: steps.creds.outputs.configured == 'true'
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PROJECT: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # Written to a file because the CLI authenticates through GOOGLE_APPLICATION_CREDENTIALS,
+          # which takes a path. The runner is ephemeral; the file is removed anyway.
+          printf '%s' "$KEY" > "$RUNNER_TEMP/firebase-key.json"
+          trap 'rm -f "$RUNNER_TEMP/firebase-key.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-key.json"
+          npx firebase deploy --only database --project "$PROJECT" --non-interactive
+
+      - name: Say what happened
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ '${{ steps.creds.outputs.configured }}' = 'true' ]; then
+            echo "Released database.rules.json. The CLI's exit code is not proof it matches —"
+            echo "read the ruleset back if this one mattered (see the header)."
+          else
+            echo 'database.rules.json passed its tests and was NOT released: no credentials.'
+          fi

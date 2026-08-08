@@ -270,14 +270,33 @@ rather than the fun argument:
 
 Small, and each belongs in the next commit that touches its area rather than a project of its own.
 
-### Deploy `database.rules.json` from CI
+### Deploy `database.rules.json` from CI — **BUILT 2026-08-08, one secret from live**
 
-The standing gap, and the one most likely to bite silently. `npm run rules:deploy` is manual;
-**nothing in CI does it**, so the file in this repo can stop matching production while reading like
-the truth. The tests prove the file is *right*; they cannot prove it is *deployed*.
+> The standing gap, and the one most likely to bite silently. `npm run rules:deploy` was manual and
+> **nothing in CI did it**, so the file in this repo could stop matching production while reading
+> like the truth. The tests prove the file is *right*; they cannot prove it is *deployed*. P5 was
+> the third rules change shipped by hand — the argument being won three times. `chessset` made it
+> four, and one of those releases went out from the WRONG WORKTREE and printed an identical green
+> `Deploy complete!` while publishing the old file.
 
-P5 was the third rules change shipped by hand. That is the argument being won three times. A CI step
-with a service account is the fix.
+`.github/workflows/rules.yml` tests the ruleset against the emulator on every PR and push that
+touches it, then releases it. Guarded by `tests/rules-deploy.test.ts` against the three ways a
+workflow rots silently: a `paths` trigger that stops matching (asserted against the file
+`firebase.json` names, not a second copy of the name), the test and the release inverting, and the
+release losing its credential gate.
+
+**Owed, and it is not code:** set `FIREBASE_SERVICE_ACCOUNT` (a service-account JSON key with the
+Firebase Realtime Database Admin role) in Settings → Secrets and variables → Actions. Until then the
+job tests, emits a `::warning::` saying what is missing, and releases nothing — deliberately, since
+merging it must not turn `main` red, and a job that skips *quietly* is the defect this repo names
+about everything else. The project id is reused from `VITE_FIREBASE_PROJECT_ID` so CI cannot release
+rules to a project the app does not talk to.
+
+**Still true afterwards:** a green run is not proof the live ruleset matches. Automating the
+read-back was considered and dropped — RTDB serves rules with comments stripped, and this file is
+mostly comments attached to security decisions, so a strip-and-compare would either false-positive
+forever or need a JSON-with-comments parser this repo does not have. Reading it back stays the
+manual check for a release that matters.
 
 ### Drive the lazy-chunk recovery path in a browser
 

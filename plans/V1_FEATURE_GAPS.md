@@ -52,7 +52,7 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 | 1 | **AI difficulty tiers** | 22/31 games | **SHIPPED (2026-07-21)** — a `select` on `manifest.options`, the level read by the game's own pure `chooseAiMove`; Tic-Tac-Toe casual/sharp/perfect, UNO casual/sharp; Chess still has no AI at all | Done for the two AI games; a third brings its own vocabulary |
 | 2 | **Declarative game options / variants / house rules** | most games | **SHIPPED** — `manifest.options` + `<GameOptions>` + `useGameOptions()`, `select` only; Solitaire's draw-1/draw-3 is the caller | Done for `select`; widen only with a caller |
 | 3 | **Player-count / fill-with-bots picker** | ~20/31 | **half SHIPPED (2026-07-21)** — the host picks the table size at create (`tableSizeChoices` over `manifest.seats`, defaulting to the SMALLEST table); filling the remaining chairs is still per-seat "Add CPU" | Picker done, and NOT through the options seam — see §3 for why. The one-shot auto-fill is the leftover |
-| 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | **rematch SHIPPED** — `<Rematch>` + a pure tally in `src/system/room/rematch.ts`, three callers on day one; timers/undo/hint/resign still absent | Rematch done; build the next one when a game needs it |
+| 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | **rematch SHIPPED** — `<Rematch>` + a pure tally in `src/system/room/rematch.ts`; three callers on day one and a FOURTH on 2026-08-08 (Liar's Dice, the referee-dealt one this row called a real gap). timers/undo/hint/resign still absent | Rematch done at every multiplayer table; **resign** is the next one with a caller standing |
 | 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **largely shipped (P2 → 2026-08-05)** — **seven** kinds, **50** items, every one with a reader: avatar, cardback, title, felt, frame, dice, chessset. Only chat colours and decks are left | Build alongside their consumer — the rule held every time: `dice` waited four phases for a dice game, `chessset` arrived with the board that draws it |
 | 6 | Level **titles** (rank names) | yes | **CLOSED** — `rankForLevel` over a 7-rung ladder, rendered on the profile card, every leaderboard row and the top bar's tooltip | Done |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
@@ -259,9 +259,28 @@ What shipped, and the three decisions worth keeping if it is ever retuned:
 
 Solo games are deliberately untouched — Blackjack's "Play again" and Solitaire's "New game" have
 nobody to shake hands with, and wrapping a one-player reset in a two-player protocol would be
-ceremony. Liar's Dice has no rematch at all: its match is server-dealt and its money is the
-referee's, so a re-deal is a `ldStart` and not a state patch. That one is a real gap and it is named
-here rather than papered over.
+ceremony.
+
+**Liar's Dice was the one real gap this row named, and it closed 2026-08-08 for the price the rest
+of the service cost: nothing.** The worry was that a server-dealt match is not a state patch — a
+re-deal is an `ldStart` and the money is the referee's — but that turned out to be an argument about
+the RESTART, not about the HANDSHAKE, and the two are already separate (a game passes `restart` and
+the OS owns everything else). The votes ride in room state exactly as they do everywhere else,
+because `patchState` authorises by MEMBERSHIP rather than by who holds the game, and a dealt table's
+state stops being written the moment the match ends — so votes cast after the result stand until the
+next deal replaces the whole projection and clears them. No wire field, no gateway change, no rules
+change, no Pi deploy. The pattern from sequencing steps 2–5 holding a sixth time.
+
+**What it DID cost was a bug in the shared service, found by asking what a dealt game does
+differently.** The host's once-per-handshake gate keyed on `round`, which quietly assumed a round
+number never repeats across restarts — true of every game that restarts by patching its own state,
+and false of a dealt match, where "again" is a new row whose rulebook starts at `round: 0`. Two
+matches ending on the same round number (which same-sized matches do, often) would have made the
+second rematch a silent no-op: everyone presses Ready ✓, the tally agrees, nothing deals, nothing
+logs. It is now `restartGate`, which re-arms on the agreement being lost and has no notion of a
+round — and the tests drive it as a SEQUENCE, because any single call looks correct under either
+scheme. The general lesson is the one #1 already taught in the other direction: **the second caller
+is what tells you which of your invariants were assumptions.**
 
 **Recommendation as it stood:** These are the strongest *consolidation* candidates — the fact that v1 rebuilt
 them 4–11 times each is the argument for an OS home. But build **one at a time, when a game needs it**,
