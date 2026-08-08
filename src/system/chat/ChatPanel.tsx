@@ -15,11 +15,12 @@ import { useTailPin } from '@/system/room/useTailPin';
  * THREE THINGS KEEP IT FROM RUNNING OFF THE PAGE, and they are separate problems that looked like
  * one:
  *
- *   1. IT IS BOUNDED. The list used to have `overflow-y-auto` and nothing to overflow: its height
- *      came from its content through a grid row that sized to whichever column was taller, so the
- *      panel simply grew and took the page with it — the scrollbar it asked for could never appear
- *      because there was no height to exceed. A `max-h` is the actual bound, and it is what makes
- *      the other two behaviours mean anything.
+ *   1. IT IS BOUNDED — BY THE COLUMN, not by itself. The list used to have `overflow-y-auto` and
+ *      nothing to overflow, so the panel grew and took the page with it; a `max-h-[60vh]` of its
+ *      own fixed that and then created the next one, because the move log arrived underneath with
+ *      a bound of its own and 60vh + 28rem is taller than any board. The height now belongs to the
+ *      sidebar (`<Lobby>`) and this panel takes `flex-1 min-h-0` of it — see `<TableAside>` for why
+ *      that is a rule rather than this file's arrangement.
  *   2. IT FOLLOWS THE TAIL — but only while the reader is already at the tail. A log that does not
  *      follow its own tail shows you the first thing anyone said for the rest of the game; one that
  *      follows it unconditionally yanks a reader out of scrollback every time somebody types. Hence
@@ -45,16 +46,16 @@ export function ChatPanel() {
   };
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <Card className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <h3 className="font-display text-bw-muted text-xs font-semibold tracking-[0.2em] uppercase">
         Chat
       </h3>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div
           ref={attach}
           onScroll={onScroll}
-          className="flex max-h-[60vh] min-h-32 flex-col gap-2 overflow-y-auto overscroll-contain"
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain"
           aria-live="polite"
           // "Chat log", not "Chat messages": the composer below is labelled "Chat message", and two
           // controls whose accessible names differ by one letter are one control to anybody

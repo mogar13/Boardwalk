@@ -49,60 +49,53 @@ export function MoveLog({ lines, mySeat }: MoveLogProps) {
   const { attach, onScroll, pinned, missed, pin } = useTailPin<HTMLDivElement>(lines.length);
 
   return (
-    <TableAside title="Move log">
-      <div className="flex flex-col gap-2">
-        <div
-          ref={attach}
-          onScroll={onScroll}
-          // Bounded so it scrolls rather than growing the column past the board, and `min-h` so a
-          // freshly dealt table does not draw a one-line sliver that jumps to full height on the
-          // first move. Tall enough to hold one whole action card's consequences — a draw-four is
-          // four lines, and a log that cannot show one of those in a single view is a log you have
-          // to scroll to read a single move out of.
-          className="flex max-h-[28rem] min-h-40 flex-col gap-1 overflow-y-auto overscroll-contain text-xs leading-relaxed"
-          aria-live="polite"
-          aria-label="Move log"
-        >
-          {lines.length === 0 && (
-            <p className="text-bw-muted">The deal is done. Play a card or draw.</p>
-          )}
-          {lines.map((line) => (
-            <p key={line.key} className={cx(line.system ? 'text-bw-muted' : 'text-base-content')}>
-              <span
-                className={cx(
-                  line.seat === mySeat && !line.system && 'text-secondary font-semibold'
-                )}
-              >
-                {line.text}
-              </span>
-              {line.card !== null && (
-                <>
-                  {' '}
-                  <span className={cx('font-semibold', CARD_TEXT[line.card.color])}>
-                    {cardLabel(line.card)}
-                  </span>
-                </>
-              )}
-            </p>
-          ))}
-        </div>
-
-        {/* THE WAY BACK DOWN, and it is the chat's own control rather than a second design — same
-            component, same weight rule (cyan when something actually arrived while you were reading
-            back, quiet when it is only a way down from a log nobody has added to). Without it,
-            releasing the pin on scroll strands a reader at the top of a log that is still moving,
-            with no sign that it is. */}
-        {!pinned && (
+    <TableAside
+      title="Move log"
+      scroll={{ attach, onScroll }}
+      footer={
+        /* THE WAY BACK DOWN, and it is the chat's own control rather than a second design — same
+           component, same weight rule (cyan when something actually arrived while you were reading
+           back, quiet when it is only a way down from a log nobody has added to). Without it,
+           releasing the pin on scroll strands a reader at the top of a log that is still moving,
+           with no sign that it is. */
+        !pinned && (
           <Button
             variant={missed > 0 ? 'secondary' : 'quiet'}
             size="sm"
             className="w-full"
             onClick={pin}
           >
-            {missed > 0 ? `${String(missed)} new ↓` : 'Latest ↓'}
+            {missed > 0 ? `${String(missed)} new \u2193` : 'Latest \u2193'}
           </Button>
-        )}
-      </div>
+        )
+      }
+    >
+      {lines.length === 0 && (
+        <p className="text-bw-muted text-xs">The deal is done. Play a card or draw.</p>
+      )}
+      {lines.map((line) => (
+        <p
+          key={line.key}
+          className={cx(
+            'text-xs leading-relaxed',
+            line.system ? 'text-bw-muted' : 'text-base-content'
+          )}
+        >
+          <span
+            className={cx(line.seat === mySeat && !line.system && 'text-secondary font-semibold')}
+          >
+            {line.text}
+          </span>
+          {line.card !== null && (
+            <>
+              {' '}
+              <span className={cx('font-semibold', CARD_TEXT[line.card.color])}>
+                {cardLabel(line.card)}
+              </span>
+            </>
+          )}
+        </p>
+      ))}
     </TableAside>
   );
 }

@@ -39,10 +39,8 @@ import {
 import type { Db } from '../db/db';
 import { loadProfile } from '../domain/profile';
 import type { Profile } from '../domain/types';
+import { AI_DELAY_MS } from './aiPace';
 import type { Seat, RoomStatus } from './types';
-
-/** How long a bot "thinks" before betting or playing. Matches UNO's, so the rhythm is the house's. */
-const AI_DELAY_MS = 900;
 
 /** The slice of the room store the dealer needs. Injected so this file never imports the store. */
 export interface BlackjackDealerHost {

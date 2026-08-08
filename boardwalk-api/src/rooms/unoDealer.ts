@@ -44,11 +44,9 @@ import {
 import type { Db } from '../db/db';
 import { loadProfile } from '../domain/profile';
 import type { Profile } from '../domain/types';
+import { AI_DELAY_MS } from './aiPace';
 import type { Seat, RoomStatus, TableRules } from './types';
 import { roundOver, type Move, type UnoLevel } from '@boardwalk/game-logic/games/uno';
-
-/** How long a bot "thinks". Matches what the client dealer used, so the table's rhythm is unchanged. */
-const AI_DELAY_MS = 900;
 
 /** The slice of the room store the dealer needs. Injected so this file never imports the store. */
 export interface UnoDealerHost {

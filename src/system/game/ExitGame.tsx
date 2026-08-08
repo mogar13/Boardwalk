@@ -24,12 +24,15 @@ import { Button } from '@/ui';
  * this one screen". Same argument `<Avatar>` and `<GameResult>` already won: collapse the copies in
  * the commit that first needs them to agree. `tests/game-exit.test.ts` is the teeth.
  *
- * WHY `ghost` AND NOT `quiet`. `quiet` is "the thing next to the real action" — no border, no
- * glow, muted until touched — and it is genuinely hard to see on a felt: the exit was reported
- * missed on a board it was sitting at the top of. `ghost` is the kit's unlit tube: a bordered
- * control that is unmistakably a control, that strikes cyan on hover, and that still does not
- * compete with the one lit `primary` on the page (Start, Deal again). It is not an action you want
- * to make loud — just one you must be able to find without hunting.
+ * WHY IT IS COLOURED. It shipped `quiet` — no border, no glow, muted until touched — and was
+ * reported as missed on a board it was sitting at the TOP of, which is the tell that "put it above
+ * the fold" was only half the problem. `ghost` (the kit's unlit tube) fixed the finding and left it
+ * looking like every other neutral control, so it is `exit`: the same unlit tube in error's colour.
+ * That is a variant rather than a `className`, because colour comes from `variant` in this kit and
+ * the escape hatch is layout only — and it is a THIRD variant rather than `danger`, because leaving
+ * is not destruction. Nothing is lost; you simply land somewhere else, and clicking again does not
+ * bring you back. It still does not glow, so it cannot compete with the one lit `primary` on the
+ * page (Start, Deal again).
  */
 export interface ExitGameProps {
   /** The one prop a game receives, passed straight through. It navigates to the hub. */
@@ -38,7 +41,7 @@ export interface ExitGameProps {
 
 export function ExitGame({ onExit }: ExitGameProps) {
   return (
-    <Button variant="ghost" size="sm" onClick={onExit}>
+    <Button variant="exit" size="sm" onClick={onExit}>
       {/* Not a decoration: the arrow is what says this leaves rather than does something here. */}
       <span aria-hidden>←</span> Leave table
     </Button>

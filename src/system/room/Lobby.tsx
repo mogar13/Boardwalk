@@ -360,10 +360,41 @@ function LobbyRoom({
               </p>
             )}
           </div>
-          <div className="flex min-h-64 flex-col gap-6">
-            <ChatPanel />
-            {/* `empty:hidden` so a table whose game contributes no panel does not pay a gap for it. */}
-            <div ref={setAsideSlot} className="flex flex-col gap-6 empty:hidden" />
+          {/*
+            THE SIDEBAR TAKES ITS HEIGHT FROM THE BOARD AND CONTRIBUTES NONE OF ITS OWN.
+
+            Each panel used to bound ITSELF — the chat `max-h-[60vh]`, the move log `max-h-[28rem]`
+            — which reads as careful and bounds nothing together: at 1080p that is 648 + 448 plus
+            two headers, so the column ran ~1200px beside a ~730px board. The COLUMN then set the
+            page height, the page grew a scrollbar the board never asked for, and the move log —
+            being second — was the half that ended up off the bottom of the screen. That is the fold
+            problem `<GameResult>` and `<ExitGame>` each closed once, arriving a third time through
+            a different door, which is why it is a rule now (`tests/table-sidebar.test.ts`).
+
+            THE MECHANISM IS `absolute inset-0` INSIDE A STRETCHED GRID ITEM, and it is the one part
+            of this worth reading twice. A grid item contributes its content to the row's height, so
+            simply giving the column a `max-h` still lets it push the row open — it only stops
+            pushing at the cap. Taking the panels out of flow makes the wrapper's own content box
+            EMPTY, so the row is sized by the board alone and the sidebar is then stretched to
+            whatever that came to. The consequence is the property: the sidebar cannot grow the page
+            at all, at any content length, rather than being capped somewhere.
+
+            And with a DEFINITE height to divide, `flex-1 min-h-0` on each panel is a real 50/50 —
+            which is what was asked for and what a `max-h` cannot give, because a column that is
+            only capped sizes to its content and leaves both panels hugging whatever they hold.
+
+            BELOW `lg` there is one column and no board beside it, so the panels sit in normal flow
+            and take the viewport bound instead. `min-h-0` is load-bearing in both, exactly as it is
+            in `<Modal>`: a flex item's default `min-height: auto` refuses to shrink below its
+            content, so without it both panels ignore their own `overflow-y-auto`.
+          */}
+          <div className="relative min-h-0">
+            <aside className="flex max-h-[calc(100dvh-9rem)] min-h-64 flex-col gap-6 lg:absolute lg:inset-0 lg:max-h-none lg:min-h-0">
+              <ChatPanel />
+              {/* `empty:hidden` so a table whose game contributes no panel does not pay a gap for
+                  it — nor half the column, since a hidden flex item takes no share. */}
+              <div ref={setAsideSlot} className="flex min-h-0 flex-1 flex-col gap-6 empty:hidden" />
+            </aside>
           </div>
         </div>
       </div>

@@ -372,7 +372,7 @@ export function Board() {
           are deliberate rather than one big number: a phone keeps a compact table, and `xl` gets a
           seat-to-seat span of ~41rem, which is open enough to read as a table and short of the
           point where the two flanks stop looking like they are at the same one. */}
-      <div className="flex flex-col items-center gap-6 lg:gap-8">
+      <div className="flex flex-col items-center gap-10 lg:gap-14">
         {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
             three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
             left a band of dead felt above the piles. */}
