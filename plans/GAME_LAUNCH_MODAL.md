@@ -289,14 +289,13 @@ when it lands it is a manifest change that this modal draws for free.
 with its guards, and leaves the app in a shippable state. A session picks up the first unticked
 slice and stops when it lands — do not chain two because the first looked small.
 
-**Slice 0 — the Pi.** ✅ **CODE DONE 2026-08-08; the DEPLOY is still owed.** `create` takes an
-optional `fillAi` and `fillWithAi` seats the house in every empty chair, in the same construction as
-the host — atomic, and the seat array stays the referee's. Guarded in the store, over a real socket,
-and in both places for the absent-field default; falsified four ways. **Nothing sends the field
-yet**, so prod is unaffected either way, but the Pi must carry it before slice 3 merges: a control
-that promises a seated table and delivers six open chairs is a UI that lies. Standard order — the
-frontend deploys on push, the Pi by hand, so the Pi goes first (see the deploy rows in
-[../CLAUDE.md](../CLAUDE.md#enforcement)).
+**Slice 0 — the Pi.** ✅ **DONE and DEPLOYED 2026-08-08**, verified from the artifact — the row in
+[../CLAUDE.md](../CLAUDE.md#enforcement) carries the evidence. `create` takes an optional `fillAi`
+and `fillWithAi` seats the house in every empty chair, in the same construction as the host —
+atomic, and the seat array stays the referee's. Guarded in the store, over a real socket, and in
+both places for the absent-field default; falsified four ways. **Slice 3 is now unblocked**: the
+referee understands the field before any client sends it, which is the ordering rule kept with room
+to spare rather than in the nick of time.
 
 **Slice 1 — the kit.** ✅ **DONE 2026-08-08.** `Modal` gains `size` (`MODAL_WIDTH`, three rungs) and
 a flexed body; the three existing call sites keep today's width by taking the default. It also
