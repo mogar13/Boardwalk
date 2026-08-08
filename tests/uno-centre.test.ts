@@ -104,6 +104,26 @@ describe('the UNO table centre names the colour when the card cannot', () => {
     expect(render(numbered('blue'), 'blue')).toContain('bg-uno-blue/50');
   });
 
+  it('the pill hangs BELOW the piles rather than clipped onto the discard', () => {
+    // WHAT THIS CAN AND CANNOT SEE, said plainly: there is no DOM here, so "the pill does not
+    // overlap a card" is not assertable and pretending otherwise is the vacuous guard this repo
+    // warns about. That property was measured in Chrome instead — 16px below the card bottoms, 8px
+    // clear of the deck-count badge, 7px clear of the bottom arrow's box, centred on the PAIR.
+    //
+    // What IS assertable is the anchor those numbers rest on, and it is `modal.test.ts`'s argument:
+    // a class string typechecks however wrong it is. The pill first sat `-bottom-3.5` inside the
+    // discard's own box, straddling the card's bottom edge and cutting across its corner radius —
+    // the one placement it must not have, and the only element on this table that covered a card.
+    // `top-full` says "below the whole pile row"; `-bottom-*` says "pinned to the card". Re-pinning
+    // it is a one-token edit that renders perfectly and reverts the fix, so the token is pinned.
+    const html = visible(render(wild(), 'blue'));
+    const pill = /<span class="([^"]*bg-uno-blue\/20[^"]*)"/.exec(html)?.[1] ?? '';
+    expect(pill, 'the pill must be found at all').not.toBe('');
+    expect(pill, 'anchored under the pile row').toContain('top-full');
+    expect(pill, 'centred on the PAIR, not on the discard').toContain('left-1/2');
+    expect(pill, 'never re-pinned to the card it used to straddle').not.toMatch(/(^|\s)-?bottom-/);
+  });
+
   it('a screen reader is told the colour on EVERY card, pill or no pill', () => {
     // The floor, and the reason `visible()` exists above. A blur is not text and neither is a
     // coloured pill, so this line is what actually carries the colour to a reader — it must not
