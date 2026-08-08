@@ -16,6 +16,16 @@
  */
 import { formatMoney } from '@boardwalk/game-logic';
 
+/** What a game declares about money. The OS's view of `manifest.betting` — a range and one flag. */
+export interface BettingSpec {
+  readonly min: number;
+  readonly max: number;
+  /** A lone player may bet: the house banks the pot. See `GameManifest.betting`. */
+  readonly house?: boolean;
+  /** Each chair stakes its own, every round — so there is no TABLE ante. See `GameManifest.betting`. */
+  readonly perSeat?: boolean;
+}
+
 /**
  * The rungs, ascending, in integer cents. A casino ladder rather than an arithmetic one: the steps
  * a player recognises without reading them, which is the whole job of a chip denomination.
@@ -44,8 +54,14 @@ export const ANTE_RUNGS_CENTS: readonly number[] = Object.freeze([
  * rendering a broken picker or, worse, offering a fractional stake that `validateBet` would refuse
  * at the moment money moved.
  */
-export function anteChoices(betting?: { readonly min: number; readonly max: number }): number[] {
+export function anteChoices(betting?: BettingSpec): number[] {
   if (betting === undefined) return [0];
+  // A PER-SEAT game has no table stake to offer. Blackjack is the only one: each chair names its
+  // own wager every round, from the board, so an ante picker here would set a number nothing
+  // charges — and the lobby would then print "$25 a seat · winner takes the pot" over a game with
+  // no pot at all. Collapsing to `[0]` draws no control, exactly as a one-size seat range does,
+  // and a control that cannot change the outcome is worse than no control.
+  if (betting.perSeat === true) return [0];
   const { min, max } = betting;
   if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) return [0];
   return [0, ...ANTE_RUNGS_CENTS.filter((v) => v >= min && v <= max)];
@@ -120,14 +136,6 @@ export function parseAnte(text: string, betting?: BettingSpec): AnteParse {
  * control. Opting IN to stakes is a decision; opting out of them must not have to be.
  */
 export const DEFAULT_ANTE_CENTS = 0;
-
-/** What a game declares about money. The OS's view of `manifest.betting` — a range and one flag. */
-export interface BettingSpec {
-  readonly min: number;
-  readonly max: number;
-  /** A lone player may bet: the house banks the pot. See `GameManifest.betting`. */
-  readonly house?: boolean;
-}
 
 /**
  * WHO WOULD FUND THIS TABLE'S POT, as far as the OS can tell — which is only ever enough to decide

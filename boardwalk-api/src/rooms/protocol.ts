@@ -109,7 +109,19 @@ export type RequestMsg =
   // cannot name an outcome, and the worst a hostile value does is make the house play badly against
   // the person who sent it. Neither frame has a field for a card, a hand, a winner or a payout.
   | { t: 'unoStart'; id: number; gameId: string; roomId: string; nonce: string; level: unknown }
-  | { t: 'unoMove'; id: number; gameId: string; roomId: string; nonce: string; move: unknown };
+  | { t: 'unoMove'; id: number; gameId: string; roomId: string; nonce: string; move: unknown }
+  // BLACKJACK AT A TABLE (plans/BLACKJACK_DEPTH.md §5). The same two-frames-in, zero-out shape, and
+  // the emptiest `start` of the three: `bjStart` carries a nonce and nothing else. UNO reads its
+  // stake off the room and Liar's Dice still takes one on the frame; blackjack has NEITHER, because
+  // its stake is per CHAIR and per round rather than the table's — it arrives later, on a `bjAction`
+  // from the player whose chair it is, which is the only frame in this game that names a number.
+  //
+  // That number is a STAKE: how much of your own money to risk, bounded by `checkBet` against the
+  // LEDGER balance before a card is dealt. It is not a claim about a result, and neither frame has a
+  // field for a card, an outcome or a payout — absent, not validated. The most a dishonest client
+  // can do with `bjAction` is play badly with its own chips.
+  | { t: 'bjStart'; id: number; gameId: string; roomId: string; nonce: string }
+  | { t: 'bjAction'; id: number; gameId: string; roomId: string; nonce: string; move: unknown };
 
 /** A subscription/registration: no reply, a stream of push frames instead. */
 export type SubscribeMsg =

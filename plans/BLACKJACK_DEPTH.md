@@ -1,7 +1,7 @@
 # Blackjack's depth — the game that pays, and the three things it will not offer you
 
-**Status: OPEN — slice 1 SHIPPED, slice 2 MEASURED AND DECLINED, slice 3 open.** Written
-2026-08-08.
+**Status: CLOSED — slice 1 SHIPPED, slice 2 MEASURED AND DECLINED, slice 3 SHIPPED.** Written
+2026-08-08, closed 2026-08-08.
 
 **Slice 2's answer was no, and that is the plan working rather than failing.** §4.3 said the tier
 ships only if a harness prices every rung non-negative, and refused to name a payout in advance
@@ -37,10 +37,10 @@ WORTH, which is a different kind of change and the one this document mostly exis
 | 3 | What prices a tier? | **The natural's payout**, computed by the referee from its own table. **Not** the bet range — v1 tied `minBet` to the tier, and a minimum changes the size of a bet, never the return per dollar. §4.2 |
 | 4 | What decides the actual numbers? | **A measurement, not a judgement.** `tests/blackjack-house-odds.test.ts`, on the `tests/uno-house-odds.test.ts` precedent. **This plan deliberately names no payout.** §4.3 |
 | 5 | Insurance | **A fourth `Move`.** Zero new routes, zero new request fields, and the one player decision in the repo whose outcome only the dealer can see. §3 |
-| 6 | Seats | **Last, and separable.** It makes Blackjack the third referee-dealt game and the first dealt one with no pot. §5 |
+| 6 | Seats | **Last, and separable.** ✅ Shipped 2026-08-08 — the FOURTH referee-dealt game (UNO joined the list after this table was written) and the first dealt one with no pot. §5 |
 | 7 | Split / surrender | **Out of scope** — v1 had neither, so neither is a GAP. §9 says what would change that, and §5.4 says why seats makes split cheap. |
 
-**Deploy order: the Pi goes FIRST, on slices 1 and 2 both.** Each changes `packages/game-logic`
+**Deploy order: the Pi goes FIRST, on every slice.** Each changes `packages/game-logic`
 and `boardwalk-api`, the frontend deploys on push and the Pi by hand, and the failure is not benign
 in the usual direction: a new client offering an **Insure** button to a referee that has never heard
 of the move gets a 409 on a control the table is drawing. That is a UI that lies, which is the same
@@ -431,7 +431,7 @@ Every row is a failure that typechecks, lints and renders.
 | `boardwalk-api/tests/blackjack.test.ts` — insurance moves through the LEDGER with its own `wagers` row closed by `hand_id`, an unaffordable one is refused whole leaving the hand playable, replay pays once, and **`recordOutcome` still fires exactly ONCE per hand** | The `recordWin` defect: a side bet that records a win inflates `played`/`won` and the mastery chain that counts them. The refusal case is the `return`-out-of-a-transaction-COMMITS trap the double already pays for |
 | ✅ `tests/blackjack-house-odds.test.ts` — the shipped game never pays a near-optimal player more than they stake, on three seeds; the margin holds on the pooled estimate; the proxy **beats a mimic-the-dealer baseline**; the dealer's stand value is READ OFF the rulebook rather than restated; insurance is measured EV-negative | §4.3/§4.5. A proxy weaker than a real player turns the upper bound into a lower one and inverts the safety argument silently. Falsified with v1's own "Hard" rule and with a 5:2 natural. What it deliberately does not catch — a dealer taught to hit soft 17, which makes the house richer and stays in band — is pinned hand-by-hand in `tests/blackjack.test.ts` instead |
 | `tests/game-options.test.ts` (existing) | Acquires a new subject for free: unique ids, the default is one of the choices, and the URL round trip. Nothing to write — but check it went red when you broke it, because a sweep over the registry is the kind of guard that silently stops covering a game |
-| `boardwalk-api/tests/blackjackGateway.test.ts` (slice 3) — every seat sees every player's cards and **no seat sees the hole card**, a non-seated socket is refused, and a bot seat is driven by the REFEREE | The dealt-game shape, minus the private channel. The hole card is the only hidden thing and it is hidden from everyone, which is easier to get right and just as fatal to get wrong |
+| ✅ `tests/blackjack-table.test.ts` (40), `boardwalk-api/tests/blackjackTable.test.ts` (22), `boardwalk-api/tests/blackjackGateway.test.ts` (9) — every seat sees every player's cards and **no seat sees the hole card or the deck**, a non-seated socket is refused, and a bot seat is driven by the REFEREE **in the betting phase** | The dealt-game shape, minus the private channel. The hole card is the only hidden thing and it is hidden from everyone, which is easier to get right and just as fatal to get wrong. The bot's BETTING turn is the branch that has no counterpart in the other two dealt games, and reading `turn` there stalls the table silently |
 
 Falsify each before trusting it.
 
@@ -457,10 +457,38 @@ shipped instead is `tests/blackjack-house-odds.test.ts`, pointed at the game tha
 is unless slice 3 lands, which is honest: Blackjack has nothing to ask because there is nothing
 safe to ask about.
 
-**Slice 3 — seats.** Blackjack becomes the third dealt game: `modes` gains `'ai'`/`'online'`, the
-lobby, a dealer on the referee, per-seat stakes, turn order, bots. **Optional, and last.** If it is
-never taken, slices 1 and 2 stand on their own and this document still closed the gap the owner
-named.
+**Slice 3 — seats.** ✅ **DONE 2026-08-08.** Blackjack is the FOURTH dealt game (§5.1 said third and
+was written before UNO's pot moved that game to the referee too): `modes` gained `'ai'`/`'online'`,
+`seats` became `{min: 2, max: 4}`, `<Lobby>` mounts, and `blackjackDealer.ts` sits beside
+`unoDealer.ts` and `liarsDiceDealer.ts`.
+
+§5.2's three claims all held and are worth recording as held rather than as predicted: no private
+channel (nothing is written to a seat's node and `useHand` has no caller), no pot (`potSplit`,
+`rankedPayees` and `maxRoundPayout` acquire no case), no house-banking question, no new ceiling.
+What it cost was the half §5.2 named: per-seat betting, turn order across chairs that have stood or
+busted, and bots whose every move the reducer accepts.
+
+**Three things the build found that the design did not.**
+
+1. **A round can be over before anybody acts, and not only through the peek.** Deal two naturals at
+   a two-handed table and every playing chair is finished the moment the cards land — so the deal
+   left the round in `'player'` with `turn: -1`, which no client and no bot can advance. A STALL, in
+   the shape a table that is thinking has, and it was live until the "every chair was dealt a
+   natural" case went red. `openPlay` settles instead.
+2. **`bjStart` carries no stake, and that is a different fact from `unoStart` carrying none.** UNO's
+   omission is about consent — the table's ante is not whoever-presses-Deal's to name. Here there is
+   no table stake to omit: a chair's stake is its own, per round, and it arrives on `bjAction`. Which
+   meant the OS needed to be told, because `anteChoices` would otherwise have drawn a picker whose
+   value nothing charges and the lobby would have printed "winner takes the pot" over a game with no
+   pot. `betting.perSeat` is that, and it is one pure function plus a registry sweep.
+3. **A bot owes an action in three phases, not on a turn.** Every other dealt game schedules when
+   `turn` lands on an AI chair; a blackjack bot may owe a BET before anyone is dealt. A dealer that
+   read `turn` waits forever and the table looks like it is thinking, so `schedule` reads the
+   rulebook's own `pendingSeats` — one function, three readers (the dealer, the board's "waiting
+   for…" line, and the deal firing when it empties).
+
+**The doc edit §5.3 asked for is part of the commit**: the room-less proof moved to Solitaire, which
+was always the better carrier (no seats AND no economy).
 
 ---
 

@@ -8,3 +8,7 @@
  */
 export * from './logic/blackjack';
 export * from './logic/view';
+// The multi-seat container. It adds no rule — every question about a hand is still answered by
+// `logic/blackjack`, which this imports and never re-derives. See its header for why the one-seat
+// reducer above stays: it is the shape a live solo hand is PERSISTED in.
+export * from './logic/table';
