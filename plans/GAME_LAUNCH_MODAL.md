@@ -240,7 +240,7 @@ It has been invisible because the lobby's seat picker is a small unlabelled row 
 twice. The modal puts a "Players: **1** | 2" control at eye level on the entrance screen, so this
 gets fixed in the same slice rather than shipped magnified.
 
-The fix is the manifest, not the function: `seats` is **how many chairs the table has**, and
+**✅ Fixed in slice 2.** The fix is the manifest, not the function: `seats` is **how many chairs the table has**, and
 `modes` already carries "you can play this alone" (`'ai'`). Conflating them is what put a 1 in that
 range. Tic-Tac-Toe becomes `{ min: 2, max: 2 }` — which draws no picker at all, and with AI fill
 comes up as you plus one CPU. The guard is stated as a rule over the whole registry, not a fix to
@@ -303,9 +303,38 @@ picked up §3's other half — `@boardwalk/no-raw-dialog`, so nothing outside `s
 second modal system. **The browser pass was not a formality and is written up in §10**: the first
 version of the flexed body was wrong in a way every unit assertion called green.
 
-**Slice 2 — the entrance.** `MODE_LABEL`, `<TableSetup>` extracted, `<GameLaunchModal>`, the hub
-card intercepting its own click, option values seeded through the URL, and Tic-Tac-Toe's seat range
-corrected. At the end of this slice the flow works end to end with seats still filled by hand.
+**Slice 2 — the entrance.** ✅ **DONE 2026-08-08.** `MODE_LABEL`/`MODE_HINT`, `<TableSetup>`
+extracted, `<GameLaunchModal>` over the hub, the card intercepting its own plain click, option
+values living in the URL, and Tic-Tac-Toe's seat range corrected (§5.5). Slice 3 had already landed
+the seated table, so the flow works end to end: click a card, pick a way in, press Create, and the
+navigation lands in a live table with Start lit.
+
+Four things fell out of doing it that are worth writing down.
+
+**The option values are DERIVED from the URL, not seeded from it.** §4 said "seeds its initial
+values" and "`setOption` write-throughs", which is a seed plus state plus a sync — three things, and
+two sources of truth for one fact. `<GameShell>` now holds no copy at all: `readOptionValues(spec,
+params)` IS the value and `writeOptionValues` is the write, so "a refresh keeps your tier" is true
+by construction rather than by a seed that can drift. This is `<Lobby>`'s own `roomId ?? linkedTable`
+war story, and the fix is the same one.
+
+**The pre-create backing question needed a new predicate.** §4 says `pinnedForMoney` works
+pre-create via `tableBacking(…, 1)`, and 1 is right for an AI table and wrong for an online one: a
+planned online table is the host plus a row of open chairs, and counting only the seated human
+answers "the house banks this" and locks UNO's bots at `sharp` on the strength of a guess that
+nobody else will ever join. `humanCapacity` counts an open chair as a human the table could hold,
+which is exactly the question, and it is `humanCount`'s sibling rather than a special case.
+
+**The dev harness was a crash waiting for its first driver.** `/_dev/lobby` mounts `<Lobby>` with a
+stub manifest and NO `<GameShell>` — and the lobby renders `<GameOptions>`, whose hook throws
+outside one. It has been latent since AI difficulty landed (nobody opened the harness's host-side
+options row) and `<TableSetup>` drawing options in the create panel would have made it certain. The
+harness is wrapped now, which is also what makes it a harness: the play route wraps every real game.
+
+**The kit refused to grow a two-line button, and it was right.** The mode buttons wanted a label and
+a hint, and `<Button>` is a fixed-height sign with `whitespace-nowrap` — putting both inside would
+have meant overriding its height from the call site, which is the per-caller drift the kit exists to
+stop. The hint is a line under the button instead.
 
 **Slice 3 — the seated table.** ✅ **DONE 2026-08-08.** `plannedSeats`, `<SeatPreview>` above the
 Create button, `fillAi` on the client half (a REQUIRED `RoomRepo.create` argument, sent on the WS
@@ -337,15 +366,15 @@ Every row is a failure that typechecks, lints and renders.
 
 | Guard | Why it is not obvious |
 |---|---|
-| `tests/modal.test.ts` — every `size` resolves to a real `max-w-*`; the body carries `min-h-0 flex-1` and no fixed `max-h` | A width that no longer resolves is a modal at its default forever, silently — the `loadout.color` failure with a `className` |
-| `tests/lint-rules.test.ts` — no `<dialog` outside `src/ui` | The uniformity ask, made unspellable. A hand-rolled dialog is how v1 got four modal systems, and it looks fine in the PR that adds the first one |
+| ✅ `tests/modal.test.ts` — every `size` resolves to a real `max-w-*`; the body carries `min-h-0 flex-1` and no fixed `max-h` | A width that no longer resolves is a modal at its default forever, silently — the `loadout.color` failure with a `className` |
+| ✅ `tests/lint-rules.test.ts` — no `<dialog` outside `src/ui` | The uniformity ask, made unspellable. A hand-rolled dialog is how v1 got four modal systems, and it looks fine in the PR that adds the first one |
 | ✅ `tests/room.test.ts` — `plannedSeats` at every declared size × each fill: exactly one host seat, at index 0, every other chair filled per the fill kind, names unique. Plus the COMPOSITION — an unfilled table put through the hot-seat claim loop equals `plannedSeats(fill: 'local')`, uid and label included | A preview that disagrees with what gets created is worse than no preview |
 | ✅ `tests/database-rules.test.ts` — the host may create a table holding an `ai` chair with a NAME | Slice 3's one new write shape, on the fallback path. The seat rule's host clause is FALSE during a create (`root` is the tree before the write), so the whole thing is carried by "the chair being written is not currently a human" — being wrong refuses the create outright, and no static tool here reads that file |
-| `tests/room.test.ts` — **every room game's `seats.min >= 2`**, read off the REAL registry | §5.5. Falsified by putting Tic-Tac-Toe's `1` back: one goes red |
-| `tests/game-options.test.ts` — round-trip: values → query string → `resolveOptionValues` returns them; garbage/unoffered/foreign keys → defaults | The URL is now a value's home across a navigation, and a query string is user-editable text |
-| `tests/launch-modal.test.ts` — the mode step lists exactly `manifest.modes`, labelled, for every registered game; a game with one mode still gets the modal | Decision 3, as an assertion. A `modes` entry with no label renders an empty button |
-| `boardwalk-api/tests/rooms.test.ts` — `fillAi` seats every chair but the host's; **absent reads as no fill** (today's table); a full table is still `listOpen`-excluded correctly | The deploy-order case: a new client always meets an old referee at some point, and an absent field must mean the honest default |
-| `boardwalk-api/tests/gateway.test.ts` — a `create` carrying `fillAi` over a REAL socket comes back seated, and the host is still seat 0 | The store can be right while the frame drops the field |
+| ✅ `tests/room.test.ts` — **every room game's `seats.min >= 2`**, read off the REAL registry | §5.5, plus `humanCapacity` (the pre-deal sibling of `humanCount`, which is what makes the backing question answerable before a table exists). Falsified by putting Tic-Tac-Toe's `1` back: two go red |
+| ✅ `tests/game-options.test.ts` — round-trip: values → query string → `resolveOptionValues` returns them; garbage/unoffered/foreign keys → defaults | The URL is now a value's home across a navigation, and a query string is user-editable text |
+| ✅ `tests/launch-modal.test.ts` — the mode step lists exactly `manifest.modes`, labelled, for every registered game; a game with one mode still gets the modal; and the modal MOUNTS (`renderToStaticMarkup`, so the buttons asserted are the ones a browser is handed) | Decision 3, as an assertion. A `modes` entry with no label renders an empty button — and a crash on mount, which the throwaway `<GameShell>` and `<TableSetup>`'s import graph both make possible, looks exactly like the card doing nothing |
+| ✅ `boardwalk-api/tests/rooms.test.ts` — `fillAi` seats every chair but the host's; **absent reads as no fill** (today's table); a full table is still `listOpen`-excluded correctly | The deploy-order case: a new client always meets an old referee at some point, and an absent field must mean the honest default |
+| ✅ `boardwalk-api/tests/gateway.test.ts` — a `create` carrying `fillAi` over a REAL socket comes back seated, and the host is still seat 0 | The store can be right while the frame drops the field |
 
 Falsify each before trusting it. Two of the rows above (`seats.min >= 2`, the `<dialog>` sweep)
 are the kind that report success by matching nothing.

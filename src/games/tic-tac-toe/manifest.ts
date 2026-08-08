@@ -17,11 +17,21 @@ import type { TicTacToeLevel } from '@boardwalk/game-logic/games/tic-tac-toe';
  *
  * `pier: 'tables'` — skill, no stakes. `betting` is ABSENT, not `false`: the manifest's optional
  * `betting` says money is not on the table at all, which is a different fact from "the minimum bet
- * is zero", and `useBet` throws if a game with no `betting` ever renders a chip rack. `seats`
- * `{ min: 1, max: 2 }`: two chairs, and `min: 1` human because vs-AI seats one person opposite a
- * bot. `modes` offers `ai` and `online`; hot-seat (one screen, two humans) is Chess's assigned
- * coverage, and folding it in here would test the same `sharedScreen` path twice while leaving
- * this game's point — "is the SDK cheap?" — no better answered.
+ * is zero", and `useBet` throws if a game with no `betting` ever renders a chip rack. `modes`
+ * offers `ai` and `online`; hot-seat (one screen, two humans) is Chess's assigned coverage, and
+ * folding it in here would test the same `sharedScreen` path twice while leaving this game's point
+ * — "is the SDK cheap?" — no better answered.
+ *
+ * `seats: { min: 2, max: 2 }` — TWO CHAIRS, and it used to say `min: 1` (plans/GAME_LAUNCH_MODAL.md
+ * §5.5). That read as "one human is enough", which is true of the GAME and false of the TABLE, and
+ * the two are different facts: `modes` already carries "you can play this alone" (`'ai'`), while
+ * `seats` is how many chairs there are. Conflating them shipped a real defect — `tableSizeChoices`
+ * offered `[1, 2]`, the lobby defaults to `seats.min`, so Tic-Tac-Toe's default table was ONE
+ * chair, which `tableIsFull` calls full and `canStart` lights up, on a board whose `seats[1]` is
+ * `undefined`. It stayed invisible because the seat picker was a small unlabelled row in a page
+ * nobody looked at twice; the launch modal puts it at eye level, so it is fixed rather than
+ * magnified. At `{ min: 2, max: 2 }` the picker draws nothing at all (one size is not a choice) and
+ * an AI table comes up as you plus one CPU.
  */
 export const ticTacToeManifest = {
   id: 'tic-tac-toe',
@@ -29,7 +39,7 @@ export const ticTacToeManifest = {
   blurb: 'Three in a row. The oldest table on the boardwalk — play a friend or the house.',
   icon: 'tic-tac-toe.png',
   pier: 'tables',
-  seats: { min: 1, max: 2 },
+  seats: { min: 2, max: 2 },
   modes: ['ai', 'online'],
   /**
    * AI difficulty (V1_FEATURE_GAPS #1) as what it always was: an OPTION, not a second mechanism.

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import type { GameManifest } from '@/games/registry';
+import { GameShell } from '@/system/economy/GameShell';
 import { Lobby } from '@/system/room/Lobby';
 
 /**
@@ -27,11 +28,20 @@ const STUB_MANIFEST: GameManifest = {
 export function LobbyHarness() {
   const navigate = useNavigate();
   return (
-    <Lobby
-      manifest={STUB_MANIFEST}
-      onExit={() => {
-        void navigate('/');
-      }}
-    />
+    /*
+      WRAPPED IN `<GameShell>` LIKE THE PLAY ROUTE, which is what makes this a harness rather than a
+      near-miss: the lobby renders `<GameOptions>` (in the create panel and, host-side, in the
+      room), and that hook THROWS outside the shell. So driving the create flow here would have hit
+      a wiring mistake the real route cannot have — a dev-only crash on a dev-only page, which is
+      the least useful kind of difference between the harness and the thing it stands in for.
+    */
+    <GameShell manifest={STUB_MANIFEST}>
+      <Lobby
+        manifest={STUB_MANIFEST}
+        onExit={() => {
+          void navigate('/');
+        }}
+      />
+    </GameShell>
   );
 }

@@ -11,6 +11,7 @@ import {
   claimSeat,
   emptyTable,
   firstClaimableIndex,
+  humanCapacity,
   humanCount,
   isMyTurn,
   localSeatIds,
@@ -161,6 +162,70 @@ describe('mySeatIndex / tableIsFull / humanCount', () => {
   });
   it('counts only humans', () => {
     expect(humanCount(seats)).toBe(2);
+  });
+  it('counts an OPEN chair as a human this table could hold', () => {
+    // `humanCapacity`'s whole reason to exist, and it only matters BEFORE the deal. A planned
+    // online table is the host plus a row of open chairs, and `tableBacking` asked with
+    // `humanCount` would answer "one human — the house banks this" and lock UNO's bot tier at
+    // `sharp` on the strength of a guess that nobody else will ever join.
+    expect(humanCapacity(seats)).toBe(3);
+    expect(humanCapacity([human(ME), ai(), ai()])).toBe(1); // an AI table: no chair to walk into
+    expect(humanCapacity([])).toBe(0);
+  });
+});
+
+/**
+ * A ROOM GAME HAS AT LEAST TWO CHAIRS (plans/GAME_LAUNCH_MODAL.md §5.5) — stated as a rule over the
+ * whole registry rather than as a fix to the one manifest that broke it, because the next game to
+ * get this wrong will get it wrong the same way.
+ *
+ * Tic-Tac-Toe declared `{ min: 1, max: 2 }`, meaning "one human is enough" — true of the GAME and
+ * false of the TABLE. `modes` already carries "you can play this alone" (`'ai'`), so conflating the
+ * two put a 1 in a seat range, `tableSizeChoices` offered `[1, 2]`, the lobby defaults to
+ * `seats.min`, and the default Tic-Tac-Toe table was ONE chair — which `tableIsFull` calls full and
+ * `canStart` lights up, on a board whose `seats[1]` is `undefined`. It survived because the seat
+ * picker was a small unlabelled row on a page nobody looked at twice.
+ *
+ * A SOLO game is exempt by construction, not by exception: it never mounts a lobby at all.
+ */
+describe('every room game seats at least two', () => {
+  const roomGames = registry.filter((g) => g.manifest.modes.some((m) => m !== 'solo'));
+
+  it('has room games to be true of', () => {
+    expect(roomGames.length).toBeGreaterThan(0);
+  });
+
+  it('never declares a one-chair table', () => {
+    for (const { manifest } of roomGames) {
+      expect(
+        manifest.seats.min,
+        `${manifest.id}: a room with one chair is not a table`
+      ).toBeGreaterThanOrEqual(2);
+      expect(manifest.seats.max, `${manifest.id}: max below min`).toBeGreaterThanOrEqual(
+        manifest.seats.min
+      );
+    }
+  });
+
+  it('so the smallest table the lobby can create is startable', () => {
+    // `seats.min` is the default seat count and `canStart` needs a FULL table with a human in it.
+    // The one-chair table passed that check too — which is exactly why the assertion is about the
+    // SEATS and not about `tableIsFull`: a table of one is full, and it is still not a table.
+    for (const { manifest } of roomGames) {
+      const smallest = plannedSeats({
+        seatCount: manifest.seats.min,
+        host: { uid: ME, name: 'Ada' },
+        fill: 'ai',
+      });
+      expect(smallest.length, `${manifest.id}`).toBe(manifest.seats.min);
+      expect(tableIsFull(smallest), `${manifest.id}: an AI table is not startable`).toBe(true);
+      expect(humanCount(smallest), `${manifest.id}`).toBe(1);
+      // And somebody to play against, which is the fact `min: 1` denied.
+      expect(
+        smallest.length - humanCount(smallest),
+        `${manifest.id}: nobody opposite`
+      ).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 

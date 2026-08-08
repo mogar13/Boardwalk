@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '@/ui';
 import { PIERS, gameIconSrc, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
+import { GameLaunchModal } from '@/shell/GameLaunchModal';
+import { isPlainClick } from '@/shell/launch';
 import {
   nextRankAfterLevel,
   rankForLevel,
@@ -50,14 +53,31 @@ import { RoomBrowser } from '@/system/room/RoomBrowser';
  * does not abolish it, and nothing here should try to.
  */
 
-function GameCard({ game }: { game: RegisteredGame }) {
+function GameCard({ game, onLaunch }: { game: RegisteredGame; onLaunch: () => void }) {
   // A link to `/play/:id`, keyed off `manifest.id` — the same string the route resolves back
   // through `findGame`. The hub never hardcodes a game; it reads the registry, so a new game
   // appears here the moment its manifest lands, with no change to this file.
   const { id, name, blurb, icon } = game.manifest;
   const iconSrc = gameIconSrc(icon);
   return (
-    <Link to={`/play/${id}`} className="block">
+    /*
+      IT STAYS AN ANCHOR (plans/GAME_LAUNCH_MODAL.md §2). The launch modal intercepts the plain
+      click, but the card is still a real link to a real route — so ctrl/cmd-click, middle-click,
+      "open in new tab" and a copied address all keep working, and `/play/uno` typed directly still
+      lands somewhere sensible. A <button> would take every one of those away silently; nobody
+      files a bug about it, they just stop doing it. `isPlainClick` is what decides, and it is a
+      pure function because "which clicks are plain" gets one modifier short and is then
+      unfalsifiable by hand.
+    */
+    <Link
+      to={`/play/${id}`}
+      className="block"
+      onClick={(e) => {
+        if (!isPlainClick(e)) return;
+        e.preventDefault();
+        onLaunch();
+      }}
+    >
       {/* The icon sits BESIDE the text rather than above it, which is most of where a row of
           vertical space went. `h-full` keeps every card in a pier the same height however long
           its blurb runs, so the grid stays a grid. */}
@@ -187,6 +207,10 @@ function EmptyPier() {
 
 export function Hub() {
   const navigate = useNavigate();
+  // WHICH ENTRANCE IS OPEN. One modal for the whole hub rather than one per card: the dialog is a
+  // single element in the top layer, and thirty cards each holding their own would be thirty
+  // mounted dialogs (which is how the Phase-1 `open:grid` bug got expensive in the first place).
+  const [launching, setLaunching] = useState<RegisteredGame | null>(null);
   return (
     // A centred column, narrower than the shell's full bleed and TOP-ALIGNED.
     //
@@ -272,13 +296,28 @@ export function Hub() {
               // board rather than three unrelated rows.
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {games.map((game) => (
-                  <GameCard key={game.manifest.id} game={game} />
+                  <GameCard
+                    key={game.manifest.id}
+                    game={game}
+                    onLaunch={() => {
+                      setLaunching(game);
+                    }}
+                  />
                 ))}
               </div>
             )}
           </section>
         );
       })}
+
+      {/* The entrance. Rendered once, holding whichever card was clicked — see `GameLaunchModal`
+          for why it opens over the hub rather than on the play route. */}
+      <GameLaunchModal
+        game={launching}
+        onClose={() => {
+          setLaunching(null);
+        }}
+      />
     </div>
   );
 }

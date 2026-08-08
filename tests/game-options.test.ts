@@ -21,6 +21,7 @@ import {
   setOptionValue,
   type GameOptionsSpec,
 } from '@/system/options/options';
+import { readOptionValues, writeOptionValues } from '@/system/options/optionParams';
 import { registry } from '@/games/registry';
 import { solitaireDrawCount, solitaireManifest } from '@/games/solitaire/manifest';
 
@@ -198,5 +199,80 @@ describe('the AI difficulty declarations', () => {
       expect(read({}), `${what}: empty values`).toBe(shipped);
       expect(read({ house: 'brutal', bots: 'brutal' }), `${what}: unoffered value`).toBe(shipped);
     }
+  });
+});
+
+/**
+ * AN OPTION VALUE LIVES IN THE URL (plans/GAME_LAUNCH_MODAL.md §4), because a tier is chosen in a
+ * modal on the HUB and read by a game the play route mounts one navigation later. `<GameShell>`
+ * derives from here and writes back here, holding no copy — so what these cases protect is the one
+ * property that makes that safe: the round trip is lossless, and everything else is defaults.
+ *
+ * A query string is USER-EDITABLE TEXT, which is why the read goes through `resolveOptionValues`
+ * rather than being trusted. A value a reducer has no branch for is `solitaireDrawCount` returning
+ * `undefined` and a deal of NaN cards; here it is simply the default.
+ */
+describe('options in the query string', () => {
+  const params = (init: string) => new URLSearchParams(init);
+
+  it('round-trips every value a real game offers', () => {
+    // Swept over the registry rather than SPEC, so this is a fact about the games this app ships:
+    // every choice of every declared option survives being written and read back.
+    for (const { manifest } of registry) {
+      for (const option of manifest.options ?? []) {
+        for (const choice of option.choices) {
+          const written = writeOptionValues(params(''), { [option.id]: choice.value });
+          expect(
+            readOptionValues([option], written)[option.id],
+            `${manifest.id}/${option.id}=${choice.value}`
+          ).toBe(choice.value);
+        }
+      }
+    }
+  });
+
+  it('reads a missing, unoffered, empty or repeated key as the default', () => {
+    expect(readOptionValues(SPEC, params(''))).toEqual({ draw: '1', deal: 'standard' });
+    expect(readOptionValues(SPEC, params('o.draw=9'))).toEqual({ draw: '1', deal: 'standard' });
+    expect(readOptionValues(SPEC, params('o.draw='))).toEqual({ draw: '1', deal: 'standard' });
+    // A repeated key is what a hand-edited URL and a double write both produce. `get` takes the
+    // first, which is a value the option offers — the point is that neither spelling escapes the
+    // resolver, not which one wins.
+    expect(readOptionValues(SPEC, params('o.draw=3&o.draw=9'))).toEqual({
+      draw: '3',
+      deal: 'standard',
+    });
+  });
+
+  it('ignores a key no option owns, and a bare id with no prefix', () => {
+    // `o.` is a namespace so that an option id can never collide with `table` or `mode`. A bare
+    // `draw=3` is therefore NOT an option — reading it as one would let a link set a value the
+    // shell never wrote.
+    expect(readOptionValues(SPEC, params('o.zzz=1&table=ABCD'))).toEqual({
+      draw: '1',
+      deal: 'standard',
+    });
+    expect(readOptionValues(SPEC, params('draw=3'))).toEqual({ draw: '1', deal: 'standard' });
+  });
+
+  it('leaves every other param alone, and clears the options it replaces', () => {
+    // The lobby's `?table=`/`?mode=` are the same query string, and losing either of them is
+    // losing the table. Meanwhile the previous game's option keys must GO: the launch modal moves
+    // from one game to another, and `resolveOptionValues` would ignore a stale `o.bots` while a
+    // shared link kept carrying it forever.
+    const next = writeOptionValues(params('table=ABCD&mode=ai&o.bots=casual'), { draw: '3' });
+    expect(next.get('table')).toBe('ABCD');
+    expect(next.get('mode')).toBe('ai');
+    expect(next.get('o.bots')).toBeNull();
+    expect(next.get('o.draw')).toBe('3');
+  });
+
+  it('does not mutate the params it was handed', () => {
+    // React Router hands out one `URLSearchParams` per location; writing into it would corrupt the
+    // value another render is still reading — `plannedSeats`' rule, one layer up.
+    const before = params('table=ABCD&o.draw=1');
+    const after = writeOptionValues(before, { draw: '3' });
+    expect(before.toString()).toBe('table=ABCD&o.draw=1');
+    expect(after).not.toBe(before);
   });
 });
