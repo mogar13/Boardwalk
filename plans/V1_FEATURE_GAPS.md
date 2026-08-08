@@ -12,6 +12,16 @@ finally needs one.
 > below are corrected inline where they were flatly wrong. Every `src/system/…` path predates Phase
 > D, which moved the economy, profile, progress, store, rewards and the five rulebooks into
 > `packages/game-logic/src/…`.
+>
+> **Corrected again 2026-08-08, and the second kind of drift is worth naming.** Rows 3 and 5 had
+> gone stale the ordinary way — the thing they called missing got built, and nobody came back here.
+> But four of the **test counts** quoted below as evidence had also drifted, by 4 to 10 cases each,
+> and that is not the same mistake: `tests/claude-md-counts.test.ts` pins every `` `path` (N) ``
+> claim in **`CLAUDE.md`** and reads that file alone. A count quoted in `plans/` is therefore prose
+> that looks like evidence, the same way `database.rules.json` is prose that looks like enforcement.
+> Read a number here as a pointer at a file, never as a figure something checks. Widening the guard
+> to this directory is a real option and has a real cost — every new test case would then edit this
+> doc too — so it is a decision, not an oversight.
 
 > **Why these are different from "port the games."** Every item here is an **OS/SDK capability that
 > spans games** (difficulty tiers, a room browser, a cosmetics loadout), not a 32nd game. v1's own
@@ -41,9 +51,9 @@ Evidence below is from a survey of `../Game-Room` (the archived v1 tree). Counts
 |---|---|---|---|---|
 | 1 | **AI difficulty tiers** | 22/31 games | **SHIPPED (2026-07-21)** — a `select` on `manifest.options`, the level read by the game's own pure `chooseAiMove`; Tic-Tac-Toe casual/sharp/perfect, UNO casual/sharp; Chess still has no AI at all | Done for the two AI games; a third brings its own vocabulary |
 | 2 | **Declarative game options / variants / house rules** | most games | **SHIPPED** — `manifest.options` + `<GameOptions>` + `useGameOptions()`, `select` only; Solitaire's draw-1/draw-3 is the caller | Done for `select`; widen only with a caller |
-| 3 | **Player-count / fill-with-bots picker** | ~20/31 | manual per-seat "Add CPU" in lobby | Minor; fold into the options seam (now built) |
+| 3 | **Player-count / fill-with-bots picker** | ~20/31 | **half SHIPPED (2026-07-21)** — the host picks the table size at create (`tableSizeChoices` over `manifest.seats`, defaulting to the SMALLEST table); filling the remaining chairs is still per-seat "Add CPU" | Picker done, and NOT through the options seam — see §3 for why. The one-shot auto-fill is the leftover |
 | 4 | In-game services: timers, rematch, undo, hint, resign, spectator | uneven, per-game | **rematch SHIPPED** — `<Rematch>` + a pure tally in `src/system/room/rematch.ts`, three callers on day one; timers/undo/hint/resign still absent | Rematch done; build the next one when a game needs it |
-| 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **partly shipped (P2)** — `CosmeticKind = 'avatar' \| 'cardback' \| 'title'`, 31 items, each with a reader; chat colours, felts and dice still absent (felts are P5) | Build alongside their consumer — the rule held: card backs shipped *with* `cardBackSrc`, dice still wait for a dice game |
+| 5 | Store cosmetics beyond avatars (chat colors, titles, card backs, dice, decks) | full catalog | **largely shipped (P2 → 2026-08-05)** — **seven** kinds, **50** items, every one with a reader: avatar, cardback, title, felt, frame, dice, chessset. Only chat colours and decks are left | Build alongside their consumer — the rule held every time: `dice` waited four phases for a dice game, `chessset` arrived with the board that draws it |
 | 6 | Level **titles** (rank names) | yes | **CLOSED** — `rankForLevel` over a 7-rung ladder, rendered on the profile card, every leaderboard row and the top bar's tooltip | Done |
 | 7 | Global/hub chat, name colors, dev badge | yes | room chat only | Build if the hub wants social |
 | 8 | Hub discovery: search, favorites, recently-played, categories | yes | piers only | Build when the catalogue outgrows a screen |
@@ -111,7 +121,7 @@ merely asserts every bot move is legal passes happily. Both games now have that 
 one that matters for the table: every move at every tier is asserted to CHANGE the state, because a
 move the reducer refuses is a silent no-op on a turn only the bot can take.
 
-Guards: `tests/ticTacToe.test.ts` (27), `tests/uno.test.ts` (30), `tests/game-options.test.ts` (11
+Guards: `tests/ticTacToe.test.ts` (27), `tests/uno.test.ts` (40), `tests/game-options.test.ts` (12
 — including the bijection: every declared choice must map to a level of its own, falsified by
 adding a fourth `brutal` choice the mapper collapses into `perfect`).
 
@@ -166,13 +176,38 @@ selected values are passed into the pure reducer's initial state. Constraints to
 returning `{type:'human'|'ai'}`); Blackjack picked 1–4 seats at one table. Bot names embedded the
 difficulty (`"AI (hard)"`).
 
-**Boardwalk today:** Seats are the universal primitive (`seats.min/max`) and the lobby lets you add a
-CPU **per seat** (gated on `allowAi`) — so the capability exists but as manual seat-by-seat clicks,
-not a "3 players, fill the rest" one-shot. UNO's 7-seat AI table proves the plumbing works.
+**Boardwalk today: the PICKER shipped (2026-07-21); the auto-fill did not.** `tableSizeChoices({min,
+max})` is a pure function over `manifest.seats` and the lobby draws it as a button row beside
+public/private. Before it, the lobby created **every** table at `seats.max` and `canStart` demands a
+full one — so `seats.min` was decoration, a game declaring 2–7 had exactly one real table size, and
+sitting down to UNO meant filling six CPU chairs whether you wanted them or not. v1 asked
+"PLAYERS: 2 / 3 / 4" before anything else, and it was right.
 
-**Recommendation:** Low priority — fold "table size" into the options seam (#2) as a `select`, and
-have "start" auto-fill remaining seats with AI. It's a UX nicety over existing plumbing, not new
-capability.
+**The recommendation below was to fold this into the options seam (#2), and what shipped
+deliberately did not.** That is the correction most worth keeping, because the reasoning generalises:
+option values live in `<GameShell>`, which is **per-client**, and a seat count is not a per-client
+fact — it is a **create-time room parameter**, because a table cannot grow a chair under someone who
+has already joined by code. So it rides exactly where `anteCents` and the house rules ride
+(`RoomRepo.create` → the WS `create` frame → `RoomMeta`), and #1's difficulty tiers went to the
+options seam precisely because a tier *is* per-client. Two seams that look interchangeable from this
+doc's altitude are not, and the question that separates them is "who has to agree about this value."
+
+Two details paid for by getting them wrong first. A range holding **one** size (Chess) draws no
+control at all — a picker with one button is a control that cannot change the outcome, the same rule
+`anteChoices` follows. And the default is **`seats.min`, the smallest table**: it shipped as
+`seats.max` for one afternoon on #1's "default is whatever already shipped" rule, which was a
+misreading — that rule exists so adding an option does not silently *retune* a game, and a seat count
+is not a tuning knob. Defaulting to the biggest table reproduces the exact friction the control was
+added to remove, for everyone who does not notice the control.
+
+**What is actually left is the one-shot auto-fill** — "3 players, fill the rest" in a single click,
+where today Start lights up only once you have added each CPU by hand. UX over existing plumbing, not
+new capability. Guard: the `tableSizeChoices` block in `tests/room.test.ts`, which reads the **real**
+registry rather than a fixture, so it cannot offer a size `canStart` would refuse.
+
+**Recommendation as it stood:** Low priority — fold "table size" into the options seam (#2) as a
+`select`, and have "start" auto-fill remaining seats with AI. It's a UX nicety over existing plumbing,
+not new capability.
 
 ## 4. In-game shared services (timers, rematch, undo, hint, resign, spectator)
 
@@ -245,18 +280,27 @@ color` slots):
 - **Card backs** — 22 (blue/red/green sets + HD "Jumbo").
 - **Dice skins**, and a functional **Jumbo/HD deck**.
 
-**Boardwalk today (corrected 2026-07-21 — this line was stale by two phases):** the store carries
-**46 cosmetics** across **six** kinds — 12 avatars, 15 card backs, 8 titles, 3 felts, 4 frames, 4
-dice sets — over a rarity ladder, with an `equipped` map on the profile and three packs to pull
-from. Card backs read in Blackjack and Solitaire; titles on the profile card and the leaderboard
-row; felts under all six boards; frames around every avatar; dice in Liar's Dice. **Six of the
-eight titles are earn-only**, one per game's mastery chain, unbuyable at any price. Still missing:
-chat colours (gated on #7) and decks — neither has a reader, which is the whole rule below.
+**Boardwalk today (corrected 2026-07-21, again 2026-08-08 — this line has now been stale twice):**
+the store carries **50 cosmetics** across **seven** kinds — 12 avatars, 15 card backs, 8 titles, 3
+felts, 4 frames, 4 dice sets, 4 chess sets — over a rarity ladder, with an `equipped` map on the
+profile and three packs to pull from. Card backs read in Blackjack and Solitaire; titles on the
+profile card and the leaderboard row; felts under all six boards; frames around every avatar; dice
+in Liar's Dice; chess sets on the chess board. **Six of the eight titles are earn-only**, one per
+game's mastery chain, unbuyable at any price. Still missing: chat colours (gated on #7) and decks —
+neither has a reader, which is the whole rule below.
 
-Two of the three "still missing" kinds this line listed have since arrived, and both arrived the
-way the rule says they must: `felt` in P5 with `useEquippedFelt`, and `dice` in Phase E with a dice
-game to roll them. `dice` is worth remembering as the rule working — it was withheld for four
-phases with abundant art sitting in the trove, and the cost of waiting was zero.
+All three of the "still missing" kinds this line originally listed have since arrived, and each one
+arrived the way the rule says it must: `felt` in P5 with `useEquippedFelt`, `dice` in Phase E with a
+dice game to roll them, and `chessset` on 2026-08-05 with the board that draws it. `dice` is worth
+remembering as the rule working — it was withheld for four phases with abundant art sitting in the
+trove, and the cost of waiting was zero.
+
+**`chessset` is also the worked example of what a new kind actually costs**, which is more than the
+catalogue row it looks like: a `CosmeticKind` member, a catalogue entry, a `database.rules.json`
+`equipped` key (pinned by `$other: false`, so a hand-run rules deploy), an `equipped_chessset`
+SQLite column **with a `COLUMN_MIGRATIONS` entry** — the fresh DDL alone never reaches the Pi's
+existing database — a `PUT /profile` allowlist slot, a store section, a preview, and tests at each
+step. Anyone costing the next kind should read that chain rather than the row.
 
 **Recommendation:** Each cosmetic type should ship **with its consumer**, not as a store dump (the
 same "bring the asset with its reader" rule the audio/card registries hold):
@@ -370,7 +414,7 @@ either widening that read for everyone or a second denormalised public index wit
 during a Pi outage. So it answers an empty list, the browser renders nothing, and join-by-code
 still works.
 
-Guards: `boardwalk-api/tests/rooms.test.ts` (28, the exclusions), `gateway.test.ts` (22, over a
+Guards: `boardwalk-api/tests/rooms.test.ts` (38, the exclusions), `gateway.test.ts` (26, over a
 real socket), `tests/socket.test.ts` (10, one shared subscription + replay on reconnect).
 
 **Recommendation as it stood:** This is the most substantive *missing multiplayer UX*, and a real
