@@ -194,7 +194,7 @@ stays in a game's `logic/` until a second card game repeats it. Blackjack now co
 There is a live routed app, a green pipeline,
 `@boardwalk/theme`, `src/ui` (Button, Card, Input, Modal, `useToast`, `useConfirm`), `src/system` —
 repo interfaces, one Firebase singleton, Auth, profile, `database.rules.json` with a test that boots
-the emulator and proves it — `src/shell` (router, auth gate, top bar with bankroll + XP, the hub and
+the emulator and proves it — `src/shell` (router, auth gate, top bar with the bankroll, the hub and
 its piers), `src/games/registry.ts` (the typed catalogue — Tic-Tac-Toe + Blackjack + Chess + UNO + Solitaire registered, the launch set complete), the **economy**
 (`src/system/economy` — `useBet`, `reportResult`, `GameShell` over pure bet/payout logic —
 `src/system/progress`, `src/system/store`, `src/system/rewards`), and now **multiplayer**:
@@ -860,6 +860,20 @@ lint rule that matches nothing reports success.
   from JSX — Tailwind generates `animate-*` only from an `--animate-*` token, so the alternative is a
   second stylesheet, which is how a look drifts. Same bar as a sound role or a cosmetic kind: **add
   one in the commit that first plays it.** A motion token with no reader is `loadout.color`.
+- **The top bar carries what you SPEND; the hub carries what you have EARNED.** The bar holds the
+  bankroll, your name and the way out; the level, the rank and the XP meter live in the hub's
+  header. This is not tidying — it is the fix for a duplication that had shipped twice over. The
+  hub printed "THE BOARDWALK" under a bar already carrying the wordmark, and the moment that
+  heading was replaced with anything about the PLAYER it would have printed the level under a bar
+  already carrying the level. Picking one of the two copies is not the answer; the two facts are
+  different kinds. A bankroll must be readable AT THE TABLE, because that is where it is spent and
+  a wager you cannot afford is a decision made with the number in view. XP is never spent — it is
+  only reviewed, and the place you review it is the place you choose what to play next. The room
+  is what the move buys: a 64px sliver could only say "you are progressing" (its own comment
+  conceded the rank rode in a `title` tooltip because "Casino Legend" would not fit), where the
+  header says the rank and the next rung, which is what `ranks.ts` argues turns a rank from a
+  sticker into a reason to play another hand. *Convention only — no guard. Nothing static can see
+  one page restating another, which is exactly why it shipped.*
 - **`alert` / `confirm` / `prompt` are `no-restricted-globals`.** ✅ Live, and they now have a
   destination: one `<Modal>` (native `<dialog>`), one `useToast()`, and `useConfirm()` for the
   one-liner. v1 has four ad-hoc modal systems and toasts that lazily self-inject an inline-styled
@@ -999,6 +1013,7 @@ builds the thing it guards.
 | The WS transport survives a reconnect without losing a subscription | `tests/socket.test.ts` (10) — handshake gate, request/reply correlation, immediate-cache replay to a late subscriber, resubscribe-on-reconnect, and the open-table index sharing ONE server subscription across every mounted browser (a late one gets the cached list, `unbrowse` only on the last one out) |
 | The level curve is exact at every boundary | `tests/xp.test.ts` (13) — every threshold and its neighbours, plus a brute-force oracle |
 | A level's RANK NAME cannot drift from the ladder | `tests/ranks.test.ts` (11) — the ladder's own invariants (starts at level 1 so every level has a rank, strictly ascending `minLevel`, unique ids/names — the properties `rankForLevel`'s backwards walk silently depends on), every rung AT its `minLevel` and the level below it at the previous rung, the top rank held forever above the last rung, garbage floored rather than thrown, `nextRankAfterLevel` null at the top and agreeing with `rankForLevel` about every boundary, and the ladder read against the REAL xp curve (a fresh account is a Newcomer; Bronze is 15 wins away; the top rung lines up with the Platinum tiers at level 50). Falsified by re-ordering one rung: a ladder out of order does not throw, it returns the wrong name forever |
+| The hub does not tell a brand-new player "welcome back" | `tests/greeting.test.ts` (4) — the branch a developer cannot reach by clicking. Every account on this machine has played something, so the returning wording renders on every reload and the first-run wording is text only a new player ever sees — the same blindness that left `GET /leaderboard` behind auth for weeks, invisible to anyone holding a session. So `played: 0` is asked for BY NAME. Plus a blank or whitespace name dropping its clause rather than trailing a comma on an empty subject (a profile can land a tick after the session, and the name is user-supplied), and a NaN/negative `played` — reachable, since it is a sum over stats off the wire — landing on the FIRST-RUN side, because a returning player reading one odd sentence is the harmless direction and "welcome back" to someone who has never been here is a claim about a visit that did not happen. Falsified by collapsing the branch to a constant: three go red |
 | The economy is correct — limits, payouts, XP, unlocks | `tests/economy.test.ts` — `validateBet`/`clampBet`, and `applyResult` proving `big_win` fires on *net* not gross and never twice, money floored, input unmutated |
 | Stats count right; achievements fire at the boundary | `tests/progress.test.ts` (10) — `bumpStats` immutability + per-game keys, and `satisfiedAchievements` at the exact threshold for the standalone badges (`first_win`, `big_win`, `high_roller`, `table_regular`) and the level/bankroll chain rungs |
 | Achievements 2.0 — chains, grant, feats, hidden, completion % | `tests/achievements.test.ts` (29) — every chain tier at its boundary and one below (wins 10/50/100/500, bankroll $10k–$1M, level 5/10/25/50, every game's mastery chain 1/10/50/100), the earn-only grant lands in `inventory` on the completing tier only, not early, and exactly once — including for a chain added AFTER P3, driven through `applyResult` rather than the predicate alone; `recordedFeats` filtered to `FEAT_IDS` + de-duped; a game **cannot** forge a chain badge (or its grant) through the feats channel; feats fire once and carry no `test`; `completionPct` derivation; and catalogue integrity (unique ids, four ordered tiers per chain, `feat`⇔no-`test`, every chain carries a distinct non-empty heading). **The row that makes per-game mastery a rule instead of a list**: the mastery chain ids are asserted equal as a SET to the real `registry`'s `manifest.id`s, so a seventh game cannot ship without a chain and a chain cannot outlive its game — falsified by deleting the UNO chain (two go red). Plus: no chain is cross-wired (100 wins of one game earns nothing on another), and every mastery Platinum grants exactly ONE DISTINCT title (two chains granting `ttl_thehouse` typechecks, passes the earn-only check, and makes a title unreachable by its own chain forever — falsified, one goes red) |

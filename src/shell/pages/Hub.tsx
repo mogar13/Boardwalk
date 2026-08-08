@@ -2,6 +2,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '@/ui';
 import { PIERS, gameIconSrc, gamesOnPier } from '@/games/registry';
 import type { RegisteredGame } from '@/games/registry';
+import {
+  nextRankAfterLevel,
+  rankForLevel,
+  totalPlayed,
+  totalWins,
+  xpProgress,
+} from '@boardwalk/game-logic';
+import { hubGreeting } from '@/shell/greeting';
+import { useProfile } from '@/system/profile/useProfile';
 import { DailyRewardCard } from '@/system/rewards/DailyRewardCard';
 import { RefillCard } from '@/system/economy/RefillCard';
 import { RoomBrowser } from '@/system/room/RoomBrowser';
@@ -84,6 +93,90 @@ function GameCard({ game }: { game: RegisteredGame }) {
   );
 }
 
+/**
+ * WHO YOU ARE AND HOW FAR ALONG — and it is what used to be a second "THE BOARDWALK", printed
+ * directly under a top bar already carrying the wordmark.
+ *
+ * The duplication was the visible complaint; the interesting part is that fixing it uncovered the
+ * same fault one column over. The top bar also carried the level and an XP sliver, so any header
+ * here that said anything about the player would have re-run the bug it was replacing. So the
+ * progression moved rather than being copied: `LevelPip` is GONE from `TopBar`, and this is where
+ * it landed. See that file's header for why money and XP are not the same kind of fact and do not
+ * belong in the same place.
+ *
+ * WHAT THE ROOM BOUGHT. A 64px sliver in a crowded bar could only say "you are making progress";
+ * the pip's own comment conceded that the rank rode in a `title` tooltip because "Casino Legend"
+ * would not fit. Here it fits, and so does the next rung — which is what turns a rank from a
+ * sticker into a reason to play another hand (`ranks.ts` says exactly that, and until now only
+ * the profile card had the room to honour it).
+ *
+ * EVERY NUMBER IS DERIVED, none stored: `level` from `xp`, the rank from the level, `wins` from
+ * `stats`. One `xpProgress` call feeds the level, the bar and the XP figures, so the three cannot
+ * disagree — the same discipline the profile card's meter holds to, and the wording is
+ * deliberately identical to that card's ("Level N · Rank", "into / needed XP", "Rank at level N")
+ * so two pages describing one fact do not invent two vocabularies for it.
+ */
+function HubHeader() {
+  const profile = useProfile();
+  // The session restores a tick before the profile on some paths. A header addressed to nobody is
+  // a worse frame than no header, and the page below it is complete either way.
+  if (profile === null) return null;
+
+  const { level, into, needed, pct } = xpProgress(profile.xp);
+  const rank = rankForLevel(level);
+  const nextRank = nextRankAfterLevel(level);
+  const wins = totalWins(profile.stats);
+
+  return (
+    <header className="flex flex-col gap-1.5">
+      {/* `2xl`, where the old wordmark heading was `3xl`. The line is a sentence now rather than
+          two words, and the budget this page runs on has not changed. */}
+      <h1 className="font-display text-base-content text-2xl font-bold tracking-[0.08em] uppercase">
+        {hubGreeting({ name: profile.name, played: totalPlayed(profile.stats) })}
+      </h1>
+      <div className="text-bw-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span>
+          Level {level} · <span className="text-base-content font-semibold">{rank.name}</span>
+        </span>
+        {/* Cyan, and it does not glow. Progress is "here", not money, and a filling bar is
+            furniture — the same call the profile card's meter makes. */}
+        <div
+          className="bg-base-300 border-bw-line inset-shadow-well h-1.5 w-24 overflow-hidden rounded-full border"
+          role="progressbar"
+          aria-valuenow={Math.round(pct * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`Level ${String(level)} progress`}
+        >
+          <div
+            className="bg-secondary h-full rounded-full transition-[width] duration-500 ease-strike"
+            style={{ width: `${String(Math.round(pct * 100))}%` }}
+          />
+        </div>
+        {/* `data-money` is tabular figures, not a claim about currency — an XP count ticks the
+            same way a balance does, and without it the row reflows on every award. */}
+        <span data-money>
+          {into.toLocaleString('en-US')} / {needed.toLocaleString('en-US')} XP
+        </span>
+        {/* Absent at the top of the ladder, because `nextRankAfterLevel` returns null there and
+            inventing a rung above the last one is a promise the ladder does not keep. */}
+        {nextRank !== null && (
+          <>
+            <span aria-hidden>·</span>
+            <span>
+              {nextRank.name} at level {nextRank.minLevel}
+            </span>
+          </>
+        )}
+        <span aria-hidden>·</span>
+        <span>
+          {wins.toLocaleString('en-US')} win{wins === 1 ? '' : 's'}
+        </span>
+      </div>
+    </header>
+  );
+}
+
 function EmptyPier() {
   return (
     <Card className="border-bw-line/60 flex items-center justify-center border-dashed p-5">
@@ -129,15 +222,7 @@ export function Hub() {
     // 800, which is also the only way to catch a media query Tailwind failed to generate: an
     // unmatched variant emits no CSS at all, silently, exactly like an undefined token.
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 [@media(max-height:900px)]:gap-3">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-display text-base-content text-3xl font-bold tracking-[0.08em] uppercase">
-          The Boardwalk
-        </h1>
-        <p className="text-bw-muted max-w-2xl text-sm">
-          Pick a pier. The Casino takes your bankroll; the Tables and the Arcade are just for the
-          game.
-        </p>
-      </header>
+      <HubHeader />
 
       <DailyRewardCard />
 
