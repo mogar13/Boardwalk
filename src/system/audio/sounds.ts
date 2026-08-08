@@ -26,6 +26,31 @@
  * `place`, `chip` and `chips` are pools because they fire in rapid bursts and identical repeats
  * machine-gun. An unlock or a pack reveal is a punctuation mark, so one take is right and a pool
  * would only make the same event sound inconsistent from itself.
+ *
+ * `victory`/`defeat` EARN THEIR SEPARATION FROM `win`/`lose` on the same argument one rung along.
+ * `win` answers "this HAND went your way" — blackjack settles one every few seconds — so it is a
+ * short blip, and it has to be. `victory` answers "the ROUND is over and you took it", which
+ * happens once every few minutes and can afford an actual musical phrase. Playing the hand-settle
+ * blip at the end of a whole game of UNO is the placeholder problem P4's pack reveal already had:
+ * the one moment worth marking sounds like ordinary play.
+ *
+ * WHICH SOUNDS THEY ARE WAS MEASURED, not picked by name, because nothing in a filename says how a
+ * jingle moves. Every candidate in the trove was decoded and its spectral centroid tracked across
+ * thirds: the Sax pack is a SUSTAINED instrument, so that contour is its melody rather than its
+ * decay, and the pair chosen are the clearest riser (1189 → 1436 → 1791 Hz) and a clear faller
+ * (1452 → 868 Hz). The struck packs — Steel, Pizzicato — all measure as falling whatever they
+ * play, because a struck note's tail is its fundamental; that is why they could not be sorted this
+ * way and why `win`/`lose` (both Pizzicato) sound like siblings while these do not.
+ *
+ * THE ONE HONEST LIMITATION: they sit 2–5 dB under `win`/`lose`, because the engine has no
+ * per-role gain and these files are simply quieter. It is the right direction for `defeat` and a
+ * fair trade for `victory`. A gain table is what to add if that ever stops being true — not a
+ * louder file, which would be the same problem with the numbers hidden.
+ *
+ * THE OTHER ROOM GAMES STILL PLAY `win`/`lose` at the end of a match, which is the inconsistency
+ * this split creates and is left deliberately: nobody asked for chess to sound different, and
+ * retuning a game under a player who did not ask is the rule `manifest.options` defaults already
+ * follow. They are the obvious second callers whenever somebody does.
  */
 
 /** A playable role. A game passes one of these to `useAudio().play`; it cannot spell a filename. */
@@ -38,12 +63,14 @@ export type SoundName =
   | 'shuffle' // the deck reshuffled
   | 'win' // this hand won
   | 'jackpot' // a big win — the louder stinger, kept apart from `win` on purpose
+  | 'victory' // the ROUND you sat down to play is over, and you took it
+  | 'defeat' // the same moment, the other way
   | 'unlock' // an achievement fired — the short bright one, plays behind a toast
   | 'fanfare' // a pack revealed — the long one, and the only role that interrupts
   | 'lose' // this hand lost
   | 'push' // a tie — money back, neither stinger
   | 'click' // a UI affordance (also the browser-unlock primer)
-  | 'notify' // something arrived (a chat message, a turn)
+  | 'notify' // something arrived (a chat message, a turn) — soft, low, and short
   | 'error'; // a refused action
 
 /**
@@ -63,12 +90,14 @@ export const SOUNDS: Record<SoundName, readonly string[]> = {
   shuffle: ['shuffle.ogg'],
   win: ['win.ogg'],
   jackpot: ['jackpot.mp3'],
+  victory: ['victory.ogg'],
+  defeat: ['defeat.ogg'],
   unlock: ['unlock.ogg'],
   fanfare: ['fanfare.ogg'],
   lose: ['lose.ogg'],
   push: ['push.ogg'],
   click: ['click.mp3'],
-  notify: ['notify.mp3'],
+  notify: ['notify.ogg'],
   error: ['error.mp3'],
 };
 

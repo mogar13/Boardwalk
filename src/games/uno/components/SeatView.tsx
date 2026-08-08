@@ -11,8 +11,12 @@ import type { UnoSeatSide } from '@/games/uno/seatLayout';
  * SCOREBOARD ROW that happens to contain pictures, which is exactly the shape the board rebuild
  * replaced at the layout level and then reintroduced at the seat level. v1 drew opponents' cards at
  * the same size as your own with no container at all, and that is why its table looked like a table.
- * So: no box, cards at 4.5rem (~64% of your own hand — far enough away to read as across the felt,
- * near enough to count at a glance), and the name doing the work the border used to.
+ * So: no box, cards at 5.75rem (~72% of your own hand — far enough away to read as across the felt,
+ * near enough to count at a glance), and the name doing the work the border used to. It shipped at
+ * 4.5rem, which was legible and read as SMALL: an opponent's hand is the second most important
+ * thing on this board after your own, and at 64% it looked like a legend rather than a hand. The
+ * ratio is the only thing worth stating — the fan's whole geometry below derives from this number,
+ * so the step, the box and the badge follow it without a second edit.
  *
  * WHICH MEANS THE ACTIVE CUE MOVED, and that is a gain rather than a compromise. It used to be a
  * cyan glow on the PANEL; with no panel it is the name — cyan, neon, with a star — which is v1's own
@@ -68,7 +72,7 @@ const MAX_FANNED = 8;
  * original, it is the correction. These are v1's ratios, restated as fractions of the short axis so
  * changing the card size keeps them.
  */
-const CARD_H_REM = 4.5;
+const CARD_H_REM = 5.75;
 /** 164 × 255 — the real dimensions of every file in `public/cards/uno/`. */
 const ART_RATIO = 0.643;
 const CARD_W_REM = CARD_H_REM * ART_RATIO;

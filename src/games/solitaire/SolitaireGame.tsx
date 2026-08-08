@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react';
 import { Button, Card, useToast } from '@/ui';
+import { ExitGame } from '@/system/game/ExitGame';
 import { useAudio } from '@/system/audio/useAudio';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGame } from '@/system/economy/useGame';
@@ -93,9 +94,7 @@ export default function SolitaireGame({ onExit }: GameProps) {
           <Button variant="ghost" size="sm" onClick={newGame}>
             New game
           </Button>
-          <Button variant="quiet" size="sm" onClick={onExit}>
-            Leave
-          </Button>
+          <ExitGame onExit={onExit} />
         </div>
       </div>
 
