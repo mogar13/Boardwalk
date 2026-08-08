@@ -39,6 +39,11 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
         visibility: init.visibility,
         anteCents: init.anteCents,
         houseRules: init.houseRules,
+        // The referee seats the house itself, in the same construction as the host — see
+        // `store.create`. Sent unconditionally rather than only when true: an old referee ignores
+        // an unknown field, and a `false` that is present is one fewer thing to reason about than a
+        // field that is sometimes absent.
+        fillAi: init.fillAi,
       });
       return asResult<string>(reply);
     },

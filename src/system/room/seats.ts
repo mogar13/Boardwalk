@@ -41,6 +41,27 @@ function isClaimable(seat: Seat): boolean {
 }
 
 /**
+ * WHAT A CHAIR IS CALLED — one-based, because a seat index is a developer's number and "CPU 4" is
+ * a player's. Two one-liners rather than four string literals scattered across the app, and that
+ * is the whole point: a bot chair is named by `plannedSeats` (the preview, before the table
+ * exists), by `SeatList`'s "Add CPU" and its "Fill with CPUs" (after it does), and a local human
+ * chair by `plannedSeats` and by the hot-seat claim loop. Four writers of one name is four chances
+ * for the preview to promise "CPU 2" and the table to seat "AI 2".
+ *
+ * The referee's own `fillWithAi` (`boardwalk-api/src/rooms/seats.ts`) writes the SAME label from
+ * its own copy — that file's docblock names the duplication and why it stands. Nothing static spans
+ * the two packages, so both sides pin the literal in their own suite and this comment is the join.
+ */
+export function aiSeatName(index: number): string {
+  return `CPU ${String(index + 1)}`;
+}
+
+/** The label an extra LOCAL human takes on a shared screen — v1's "Player 2". */
+export function localSeatName(index: number): string {
+  return `Player ${String(index + 1)}`;
+}
+
+/**
  * The result of a claim attempt. `ok: false` is not an error — it is "someone got there
  * first", the ordinary outcome of two clients racing for the last seat, which the caller
  * renders as "SEAT TAKEN" rather than throwing. This mirrors `RepoResult`'s split: expected
@@ -195,4 +216,56 @@ export function tableSizeChoices(range: { readonly min: number; readonly max: nu
   const out: number[] = [];
   for (let n = min; n <= max; n += 1) out.push(n);
   return out;
+}
+
+/**
+ * WHAT THE EMPTY CHAIRS COME UP HOLDING. Deliberately NOT a mode — this file's header says
+ * "below this line there is no mode, only seats", and that stands: the caller (the lobby, which
+ * already owns the mode buttons and the URL) maps its mode to a fill, and everything below reads
+ * a fill. Three values because there are three answers, not because there are three modes.
+ */
+export type SeatFill = 'ai' | 'local' | 'none';
+
+/**
+ * THE TABLE A CREATE IS ABOUT TO MAKE — v1's `buildSeats(count)` with the fill folded in
+ * (plans/GAME_LAUNCH_MODAL.md §5.1).
+ *
+ * THE PLAN **IS** THE PREVIEW. The lobby draws this array before the table exists and the create
+ * path produces this array, which is the one property worth having here: a preview that disagrees
+ * with what gets created is worse than no preview, because it is a promise. v1 got it for free by
+ * calling one function from both places; here the two EXECUTIONS genuinely differ — an AI fill is
+ * a server field applied inside `store.create`, a local fill is a loop of `claim` calls from the
+ * host's own client, and an open table is neither — so the agreement is asserted instead
+ * (`tests/room.test.ts`).
+ *
+ * - `'ai'`    — seat 0 the host, every other chair the house. What "Solo / AI" means: a table you
+ *               can press Start on, rather than one that asks for six clicks first.
+ * - `'local'` — seat 0 the host, every other chair ANOTHER LOCAL HUMAN on the same screen, under
+ *               the host's own uid. Hot-seat: the rules pin the uid to the writer, so a shared
+ *               screen is several seats one account holds, and only the display label varies.
+ * - `'none'`  — seat 0 the host and the rest open. Today's table, and what an ONLINE table stays
+ *               (§5.3): a public table that comes up full starts before anyone can walk up to it.
+ *
+ * Total, like every function in this file. A non-positive, fractional or NaN `seatCount` cannot
+ * seat a host, and the honest answer is NO TABLE (`[]`) rather than a thrown error or a phantom
+ * chair — this is fed by a manifest range and a picker, so it is only wrong when something else
+ * already went wrong, and a lobby that renders an empty preview beats one that crashes.
+ */
+export function plannedSeats(args: {
+  readonly seatCount: number;
+  readonly host: SeatOccupant;
+  readonly fill: SeatFill;
+}): Seat[] {
+  const { seatCount, host, fill } = args;
+  // Built through the same `emptyTable` + pure `claimSeat` the create paths use, rather than
+  // hand-rolling `{ kind: 'human' }` here — one fewer place that knows what a seated host looks
+  // like, and `claimSeat`'s out-of-range answer is what makes the zero-chair case honest.
+  const claimed = claimSeat(emptyTable(seatCount), 0, host);
+  if (!claimed.ok) return [];
+  return claimed.seats.map((seat, i) => {
+    if (i === 0 || seat.kind !== 'open') return seat;
+    if (fill === 'ai') return { kind: 'ai', name: aiSeatName(i), uid: null };
+    if (fill === 'local') return { kind: 'human', name: localSeatName(i), uid: host.uid };
+    return seat;
+  });
 }

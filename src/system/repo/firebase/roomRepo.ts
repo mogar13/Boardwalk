@@ -11,7 +11,7 @@ import {
 import { firebaseDb } from '@/system/repo/firebase/app';
 import {
   claimSeat as claimSeatPure,
-  emptyTable,
+  plannedSeats,
   releaseSeat as releaseSeatPure,
 } from '@/system/room/seats';
 import { nextSeq } from '@/system/room/ordering';
@@ -225,10 +225,18 @@ function makeCode(): string {
 export const firebaseRoomRepo: RoomRepo = {
   async create(gameId, init): Promise<RepoResult<string>> {
     const db = firebaseDb();
-    // Seat the host at index 0, the rest open. `emptyTable` then a pure claim keeps this using the
-    // same seat logic every other path does, rather than hand-building the array here.
-    const claimed = claimSeatPure(emptyTable(init.seatCount), 0, init.host);
-    if (!claimed.ok) return { ok: false, error: 'Could not seat the host.' };
+    // THE TABLE THE LOBBY PREVIEWED, built by the function that previewed it — the host at index 0
+    // and, when the create asked for it, the house in every other chair. On the WS path `fillAi` is
+    // a field the referee applies inside its own construction; here there is no referee, so the
+    // client builds the array and the multi-path update below writes it in ONE atomic write, which
+    // is the same property by a different mechanism. The rules permit it: a seat's `.write` allows
+    // the host to write any chair, and an `ai` seat carries no uid for the uid validator to refuse.
+    const seats = plannedSeats({
+      seatCount: init.seatCount,
+      host: init.host,
+      fill: init.fillAi ? 'ai' : 'none',
+    });
+    if (seats.length === 0) return { ok: false, error: 'Could not seat the host.' };
 
     // Try a few codes; a collision is contention, not an error, until we run out of tries.
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -243,10 +251,16 @@ export const firebaseRoomRepo: RoomRepo = {
         [`${ROOM(gameId, roomId)}/meta/status`]: 'waiting',
         [`${ROOM(gameId, roomId)}/meta/createdAt`]: Date.now(),
       };
-      claimed.seats.forEach((s, i) => {
-        // Strip the fields RTDB would strip anyway (uid null, name '') so the wire is clean.
-        updates[`${ROOM(gameId, roomId)}/seats/${String(i)}`] =
-          s.uid !== null ? { kind: s.kind, name: s.name, uid: s.uid } : { kind: s.kind };
+      seats.forEach((s, i) => {
+        // Write the fields that carry something and omit the rest, so an open chair is `{ kind }`
+        // exactly as `readSeats` expects. Keyed on the FIELDS and not on `uid !== null`, which is
+        // what it used to be: a bot chair has no uid, so that test dropped its NAME too, and a
+        // table the preview promised as "CPU 2" came back reading "…". The uid rule is unchanged —
+        // an open or ai seat writes none, which is what keeps the validator quiet for them.
+        const wire: Record<string, unknown> = { kind: s.kind };
+        if (s.name !== '') wire.name = s.name;
+        if (s.uid !== null) wire.uid = s.uid;
+        updates[`${ROOM(gameId, roomId)}/seats/${String(i)}`] = wire;
       });
       // `init.visibility` is deliberately DROPPED, not stored. Nothing on this path reads it —
       // `subscribeOpenTables` below is an empty list by construction — and `meta` carries
