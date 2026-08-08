@@ -20,7 +20,15 @@ import {
   tableRulesFor,
   type TableRules,
 } from '@/system/room/houseRules';
-import { humanCount, tableIsFull, tableSizeChoices } from '@/system/room/seats';
+import { SeatPreview } from '@/system/room/SeatPreview';
+import {
+  humanCount,
+  localSeatName,
+  plannedSeats,
+  tableIsFull,
+  tableSizeChoices,
+  type SeatFill,
+} from '@/system/room/seats';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
 import type { RoomVisibility } from '@/system/room/types';
@@ -129,6 +137,23 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
   const activeRoomId = linkedTable === null || linkedTable === '' ? null : linkedTable;
 
   /**
+   * WHAT THE EMPTY CHAIRS COME UP HOLDING (plans/GAME_LAUNCH_MODAL.md §5.2). The one place in the
+   * app that turns a mode into a fill — `seats.ts` deliberately refuses to, because "below this
+   * line there is no mode, only seats", and the lobby is the component that already owns the mode
+   * buttons and writes the mode to the URL.
+   *
+   * ONLINE STAYS OPEN, and that is a decision rather than an omission (§5.3): a public table that
+   * comes up full starts before anyone can walk up to it, which is the wrong default for the one
+   * mode whose entire point is other people. The host fills it from the room instead — that is
+   * what "Fill with CPUs" in `SeatList` is for.
+   */
+  const fill: SeatFill = mode === 'ai' ? 'ai' : mode === 'hotseat' ? 'local' : 'none';
+  const host = { uid: myUid, name: session.username || 'Player' };
+  // The array the preview draws AND the array the create is about to produce — one call, so the
+  // preview cannot promise a table create does not deliver. See `plannedSeats`.
+  const planned = plannedSeats({ seatCount, host, fill });
+
+  /**
    * Enter a table — the one way in, whether it came from Create, a typed code, or the browser's
    * Join. It PUSHES, so the browser's Back button leaves the table like any other navigation.
    */
@@ -170,7 +195,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
     void (async () => {
       const result = await repos.room.create(manifest.id, {
         seatCount,
-        host: { uid: myUid, name: session.username || 'Player' },
+        host,
         // AN 'AI' TABLE IS NEVER LISTED, whatever the toggle last said. The mode is otherwise a
         // client-side matter (it decides which seats are LOCAL, nothing about the room), but a
         // player who picked "vs the house" is not asking for company, and a stranger arriving in
@@ -191,10 +216,39 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
         // house rule is about the GAME, and a table of bots plays the same game a table of humans
         // does. `tableRulesFor` sends only what is on and only what this game declares.
         houseRules: tableRulesFor(houseRules, ruleSpecs),
+        // THE HOUSE SITS DOWN WITH YOU, inside the create itself. Not a loop of `setAi` calls
+        // afterwards: the referee seats them in the same construction as the host, so the table is
+        // never observably half-filled and a stranger cannot walk into a chair the host is about to
+        // fill. See `store.create`.
+        fillAi: fill === 'ai',
       });
+      if (!result.ok) {
+        setBusy(false);
+        toast.error(result.error);
+        return;
+      }
+      /**
+       * A HOT-SEAT TABLE IS FILLED BY THE CLIENT, and the asymmetry with `fillAi` above is the
+       * design rather than an inconsistency (§5.2). A seat carrying a uid must be written by the
+       * account that owns it — the one seat rule the server cannot keep on somebody's behalf — so
+       * the extra local players are ordinary claims from the host's own socket. Chess is the only
+       * hot-seat game and its table is two chairs, so this is ONE call, on a private table nobody
+       * can race; a `fillLocal` wire field would be more surface than the case deserves.
+       *
+       * Sequential and awaited before entering, so the table the room mounts is the table the
+       * preview drew — arriving to a half-seated board and watching chairs fill in is the same
+       * "wait, is this working?" the six clicks were.
+       */
+      if (fill === 'local') {
+        for (let i = 1; i < planned.length; i += 1) {
+          await repos.room.claimSeat(manifest.id, result.value, i, {
+            uid: myUid,
+            name: localSeatName(i),
+          });
+        }
+      }
       setBusy(false);
-      if (result.ok) enterTable(result.value);
-      else toast.error(result.error);
+      enterTable(result.value);
     })();
   };
 
@@ -380,6 +434,16 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
             ))}
           </div>
         )}
+        {/*
+          THE TABLE YOU ARE ABOUT TO CREATE (§5.1) — v1's lobby preview, and the half of that
+          screen worth keeping. It sits directly above Create because that is the question it
+          answers: this is what pressing the button produces, seat for seat, before it produces it.
+
+          It is the same `plannedSeats` array the create path uses, not a drawing of one. That is
+          why a mode change redraws it (an AI table shows CPUs, an online one shows open chairs a
+          stranger can take) with nothing in this component knowing what a mode is.
+        */}
+        <SeatPreview seats={planned} />
         <Button variant="primary" disabled={busy} onClick={createTable}>
           Create table
         </Button>

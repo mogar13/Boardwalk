@@ -307,8 +307,22 @@ version of the flexed body was wrong in a way every unit assertion called green.
 card intercepting its own click, option values seeded through the URL, and Tic-Tac-Toe's seat range
 corrected. At the end of this slice the flow works end to end with seats still filled by hand.
 
-**Slice 3 — the seated table.** `plannedSeats`, the preview, `fillAi` on the client half, the
-hot-seat claim loop, and "Fill with CPUs" in the lobby.
+**Slice 3 — the seated table.** ✅ **DONE 2026-08-08.** `plannedSeats`, `<SeatPreview>` above the
+Create button, `fillAi` on the client half (a REQUIRED `RoomRepo.create` argument, sent on the WS
+path and applied locally by the RTDB one), the hot-seat claim loop, and "Fill with CPUs" in
+`SeatList`. Guarded in `tests/room.test.ts` (the composition, read off the real registry) and
+falsified four ways.
+
+**Taken out of order, and it cost nothing.** Slice 2 had not landed, so the preview went into the
+lobby's own create panel rather than the modal's setup step — which is where slice 2 extracts
+`<TableSetup>` from, so it rides along as an import move. Two things fell out of doing it this way
+that are worth writing down. `<SeatPreview>` is presentational with no hooks precisely so it draws
+the same in a page and in a modal without learning which it is in. And the RTDB fallback's create
+turned out to DROP a seat's name whenever it had no uid — a bot chair has none, so a table the
+preview promised as "CPU 2" came back reading "…", which is the preview lying by one field. The
+wire is keyed on the fields that carry something now, and the rules case below is the other half of
+that path. **Slice 2's Tic-Tac-Toe seat-range fix (§5.5) is deliberately still slice 2's**: a
+1-chair AI table fills nothing and behaves exactly as it does today, so nothing here made it worse.
 
 **Slice 4 — the browser pass, then the docs.** Drive all six games against the emulator on the WS
 path (the recipe in [../CLAUDE.md](../CLAUDE.md#develop) — emulator + API + Vite; the emulator-only
@@ -325,7 +339,8 @@ Every row is a failure that typechecks, lints and renders.
 |---|---|
 | `tests/modal.test.ts` — every `size` resolves to a real `max-w-*`; the body carries `min-h-0 flex-1` and no fixed `max-h` | A width that no longer resolves is a modal at its default forever, silently — the `loadout.color` failure with a `className` |
 | `tests/lint-rules.test.ts` — no `<dialog` outside `src/ui` | The uniformity ask, made unspellable. A hand-rolled dialog is how v1 got four modal systems, and it looks fine in the PR that adds the first one |
-| `tests/room.test.ts` — `plannedSeats` at every declared size × each fill: exactly one host seat, at index 0, every other chair filled per the fill kind, names unique | A preview that disagrees with what gets created is worse than no preview |
+| ✅ `tests/room.test.ts` — `plannedSeats` at every declared size × each fill: exactly one host seat, at index 0, every other chair filled per the fill kind, names unique. Plus the COMPOSITION — an unfilled table put through the hot-seat claim loop equals `plannedSeats(fill: 'local')`, uid and label included | A preview that disagrees with what gets created is worse than no preview |
+| ✅ `tests/database-rules.test.ts` — the host may create a table holding an `ai` chair with a NAME | Slice 3's one new write shape, on the fallback path. The seat rule's host clause is FALSE during a create (`root` is the tree before the write), so the whole thing is carried by "the chair being written is not currently a human" — being wrong refuses the create outright, and no static tool here reads that file |
 | `tests/room.test.ts` — **every room game's `seats.min >= 2`**, read off the REAL registry | §5.5. Falsified by putting Tic-Tac-Toe's `1` back: one goes red |
 | `tests/game-options.test.ts` — round-trip: values → query string → `resolveOptionValues` returns them; garbage/unoffered/foreign keys → defaults | The URL is now a value's home across a navigation, and a query string is user-editable text |
 | `tests/launch-modal.test.ts` — the mode step lists exactly `manifest.modes`, labelled, for every registered game; a game with one mode still gets the modal | Decision 3, as an assertion. A `modes` entry with no label renders an empty button |

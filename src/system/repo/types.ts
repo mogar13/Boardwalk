@@ -580,6 +580,12 @@ export interface RoomRepo {
        * chair — and so nobody can change the game under a player who already sat down.
        */
       houseRules: TableRules;
+      /**
+       * WHETHER THE TABLE COMES UP SEATED — the house in every chair but the host's, applied inside
+       * CREATE so the seating is ATOMIC (see `plannedSeats`). REQUIRED for its neighbours' reason:
+       * a default is how a caller decides without noticing. Hot-seat fills by claims instead.
+       */
+      fillAi: boolean;
     }
   ): Promise<RepoResult<string>>;
 

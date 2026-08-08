@@ -705,6 +705,37 @@ describe('rooms/<gameId>/<roomId> — Phase 5, and strictly more closed than v1'
     );
   });
 
+  /**
+   * A TABLE THAT COMES UP SEATED, on the fallback path (plans/GAME_LAUNCH_MODAL.md §5.2). On the WS
+   * path `fillAi` is a field the referee applies inside its own construction; there is no referee
+   * here, so the CLIENT builds the array and this one multi-path update writes it — which means the
+   * rules have to permit a shape they were never asked for before: an `ai` chair, carrying a NAME,
+   * written at CREATE time.
+   *
+   * The reasoning it rests on is exactly the kind that is easy to get wrong in a file no compiler
+   * reads. The seat `.write` has a host clause, and that clause is FALSE during a create: it reads
+   * `root.child(...).meta.host`, and `root` is the tree BEFORE the write, so the host this same
+   * update is writing does not exist yet. What authorises this is the OTHER clause — the seat being
+   * written is not currently a human, and a chair that does not exist is not a human. Being wrong
+   * about that refuses the whole create, on the one path that exists to be flipped on during a Pi
+   * outage, and nothing static in this repo could tell you.
+   */
+  it('lets the host create a table that comes up seated — an ai chair, named, at create', async () => {
+    await assertSucceeds(
+      update(ref(asUser(ME)), {
+        [`${ROOM_PATH}/meta/host`]: ME,
+        [`${ROOM_PATH}/meta/status`]: 'waiting',
+        [`${ROOM_PATH}/meta/createdAt`]: 1,
+        [`${ROOM_PATH}/seats/0`]: { kind: 'human', name: 'Me', uid: ME },
+        // Exactly what `plannedSeats(fill: 'ai')` produces and `firebaseRoomRepo.create` writes:
+        // kind and name, and no uid at all — a bot chair carrying one would be refused by the uid
+        // validator ("a uid you write must be your own"), which is why the seat wire drops it.
+        [`${ROOM_PATH}/seats/1`]: { kind: 'ai', name: 'CPU 2' },
+        [`${ROOM_PATH}/seats/2`]: { kind: 'ai', name: 'CPU 3' },
+      })
+    );
+  });
+
   it('refuses creating a room that names someone else host', async () => {
     // The meta create branch requires newData.host === auth.uid, so you cannot mint a room owned
     // by another account.
