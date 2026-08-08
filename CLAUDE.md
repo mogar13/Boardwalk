@@ -26,8 +26,10 @@ UNO's rather than thicker. Design and evidence: [plans/done/LIARS_DICE.md](plans
 
 The registry carries six real games and a `React.lazy` component loader (`RegisteredGame` =
 `{ manifest, Component }`), the play route mounts a game inside `<GameShell>` + `<Suspense>`, the
-`<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe, Chess, UNO), or a solo
-game renders its board straight into the shell with no room at all (Blackjack, Solitaire). Every
+`<Lobby>` renders a game's board as `children` once play starts (Tic-Tac-Toe, Chess, UNO, Liar's
+Dice, and now a Blackjack TABLE), or a solo game renders its board straight into the shell with no
+room at all (Solitaire, and Blackjack's own room-less half — the one game that does both, deciding
+which from the URL). Every
 game's rules are pure unit-tested `logic/` — and since Phase D that `logic/` lives in
 **`packages/game-logic`**, a real npm workspace package, not under `src/games/`. A game's folder is
 now glue and pixels; its rulebook is `@boardwalk/game-logic/games/<game>`, imported by the browser
@@ -172,9 +174,14 @@ turn never comes and stalls the table. Both modes were driven end-to-end in a re
 the emulator (hot-seat played fool's mate from one screen; two accounts played one side each with
 the guest's board flipped), the manual pass the memory recipe calls for at every game.
 
-**Blackjack is the economy proof, a room-LESS game, and since Phase D the one game the client does
-not deal.** It opts out of multiplayer (its coverage is betting/payouts, not seats — those are UNO's
-and Solitaire's): `modes: ['solo']`, no lobby, no subscription. The rulebook —
+**Blackjack is the economy proof, and since Phase D the one game the client does not deal.** It was
+also the room-LESS proof until slice 3 of [plans/BLACKJACK_DEPTH.md](plans/BLACKJACK_DEPTH.md) gave
+it seats, and **that half of the claim moved to Solitaire**, which was always the better carrier:
+`modes: ['solo']`, no seats AND no bankroll, where Blackjack only ever proved the first. What
+Blackjack keeps is the half that was only ever its own — betting, the payouts, the server-dealt
+hand. It now declares `modes: ['solo', 'ai', 'online']` and `seats: { min: 2, max: 4 }` (v1's range
+was 1–4; the 1 is not a table, and `modes` already carries "you can play this alone"), so it is the
+one game with TWO containers for one rulebook: a room-less hand, and a room. The rulebook —
 deck, ace-soft `handValue`, the settle matrix, and the **integer-safe 3:2 payout** (`floor(wager*3/2)`,
 the exact chip v1 dropped through `parseInt`) — is the shared
 `@boardwalk/game-logic/games/blackjack`, in `tests/blackjack.test.ts` (38), and BOTH sides import it.
@@ -224,8 +231,8 @@ hand channel's two game-facing hooks — `useRoom().writeHand(index, data)` (hos
 `useHand<T>(index)` (owner subscribes to its own seat only) — the first callers of the `RoomRepo`
 `writePrivate`/`subscribePrivate` methods Phase 5 shipped unused. There are now **five games** —
 Tic-Tac-Toe (how the SDK first got exercised end-to-end, and where RTDB's drop-null-children bug was
-found — the `-1` sentinel), Blackjack (the economy proof: betting, the 3:2 natural, `reportResult`
-payouts, a room-less solo game), Chess (the hot-seat proof: a full wire-safe rulebook, two humans on
+found — the `-1` sentinel), Blackjack (the economy proof: betting, the 3:2 natural, the
+server-dealt hand — room-less alone until seats gave it a lobby too), Chess (the hot-seat proof: a full wire-safe rulebook, two humans on
 one screen, a 2-seat online table, zero betting), UNO (the hidden-hands proof: refereed-dealer,
 private per-seat hands, AI-as-occupant, a 7-seat table, zero betting), and Solitaire (the room-less
 proof: a full Klondike engine, no seats, no bankroll, `reportResult({ outcome: 'win' })` only) —
@@ -408,6 +415,41 @@ lint rule that matches nothing reports success.
   different numbers and `recordOutcome` takes them separately (`sideNetCents`) — folding a side bet
   into `lastWagerCents` fires `high_roller` on a $400 hand, and leaving it out of `lastNetCents`
   credits a 2:1 win with no cost against it.
+- **THE FOURTH DEALT GAME IS THE ONE THAT WAS ALREADY DEALT, AND ITS STAKE IS THE CHAIR'S RATHER
+  THAN THE TABLE'S.** ✅ Live (slice 3 of [plans/BLACKJACK_DEPTH.md](plans/BLACKJACK_DEPTH.md)).
+  Blackjack gained `'ai'`/`'online'`, a lobby and a referee-side dealer beside `unoDealer.ts` — and
+  it cost far less than UNO's pot did, because §5.2's three claims all held. **No private channel**:
+  every player's cards are face up, so nothing is written to a seat's private node, `useHand` has no
+  caller, and the only hidden things — the deck and `dealer[1]` — are hidden from EVERY socket
+  equally, the host's included. **No pot**: each chair settles against the HOUSE on its own cards,
+  so `potSplit`, `rankedPayees` and `maxRoundPayout` acquire no case and there is no
+  house-banking question to answer (the house has banked this game since it existed, at odds
+  `tests/blackjack-house-odds.test.ts` measured). **No new ceiling**: one chair wins at most 2.5× its
+  own stake, inside `DEFAULT_PAYOUT_MULTIPLE`'s 3×. What it DID cost is per-seat betting, which is
+  v1's own bug (`bj_app.js:162` pushed the whole game state on every bet, so two players betting at
+  once clobbered each other's stakes) made unspellable rather than fixed: two bets are two SQLite
+  transactions against one row, so there is no shared object to race over. **`bjStart` carries a
+  nonce and NOTHING else** — not even the stake `ldStart` still carries and `unoStart` deliberately
+  dropped, because there is no table stake at all: a chair names its own on `bjAction`, every round,
+  bounded by `checkBet` against the LEDGER before a card is dealt. That is a decision about your own
+  money, not a claim about a result, and neither frame has a field for a card, an outcome or a
+  payout. **A bot chair stakes nothing and wins nothing**, having no account — so unlike UNO there
+  is no faucet question and a lone human at a blackjack table is the ordinary case. **A round is a
+  row** (`blackjack_rounds`/`blackjack_players`, authority by MEMBERSHIP), and `blackjack_hands` is
+  untouched: the room-less game's record holds live stakes on the Pi and does not move. The one
+  column that is neither game's twin is `staked_cents`, a RUNNING TOTAL — a chair can bet, double
+  AND insure in one round, so a void refunds the sum rather than an ante. **The cost, named: a
+  blackjack TABLE does not work on the RTDB fallback**, exactly as UNO and Liar's Dice never did;
+  the solo hand still deals there, through its own offline twin.
+- **A GAME WHOSE STAKE IS PER CHAIR MUST NOT BE OFFERED A TABLE ANTE.** ✅ Live —
+  `betting.perSeat` on the manifest, read by `anteChoices`, which collapses to `[0]` so the lobby
+  draws no picker at all (the `tableSizeChoices` rule: a control that cannot change the outcome is
+  worse than none). Without it the host would set a number nothing charges and the room would then
+  print "$25 a seat · winner takes the pot" over a game that has no pot — which is not a payout bug
+  and would never surface as one. It is a sentence that is wrong forever and looks completely fine,
+  which is the exact failure `tableBacking` already exists to have caught once, one field earlier.
+  Guarded over the REAL registry in both directions, so a per-seat game offers only "nothing" and
+  every other betting game keeps every rung it had.
 - **A badge is computed by the referee, never reported.** ✅ Live (Phase D, deployed 2026-07-18). `/settle` has no `unlockedAchievementIds` and no `grantedItemIds` — the fields
   are *gone*, not validated. `boardwalk-api/src/domain/achievements.ts` recomputes with the SAME
   shared `satisfiedAchievements` the client uses, over an `AchievementView` whose every number is
@@ -1150,6 +1192,9 @@ builds the thing it guards.
 | No game imports a sibling game's folder | `@boardwalk/no-cross-game-imports` — same two-tree `GAMES_DIRS`; resolves specifiers (a single-`../` escape fires); the registry is exempt |
 | Tic-Tac-Toe's rules are correct | `tests/ticTacToe.test.ts` (27) — every win line, draw-vs-win, `play` immutability + illegal-move no-op, the house (takes a win, blocks a loss, opens centre, perfect-vs-perfect draws), and the DIFFICULTY TIERS: `perfect` still exactly `bestMove` (the default, so the shipped house must not have moved), `sharp` preferring a win to a block and losing to a fork (a middle tier, not a second `perfect`), `casual` reaching every legal cell and no other, a broken rng (NaN/1/-1) clamped rather than indexing off the board, `perfect` never losing to `casual`, and — the one that matters most — every level × every level played to the end with each move asserted `canPlay` and each `play` asserted to CHANGE the state, because a bot move the reducer refuses is a no-op on a bot's turn and stalls the table forever |
 | Blackjack's rules + casino payout are correct | `tests/blackjack.test.ts` (38) — ace-soft `handValue`, natural-vs-3-card-21, dealer stands-on-all-17s at the boundary, the full settle matrix, the **integer-safe 3:2 payout on an odd wager** (the v1 `parseInt` chip), and the pure reducer (deal/hit-bust/stand/double/no-op). Plus THE PEEK and INSURANCE, which are one rule: a dealt DEALER natural settles at the deal with `canDouble` false and the double a no-op (before this the hand played on and a second stake could go down on a hand already lost — `settle` was asserted correct in isolation and nothing asked it at deal time, so every case here passed while the house took a stake it was not owed), an ACE UP suspending that peek because peeking would make insurance unreachable, an ordinary hand untouched (additivity), and a player natural still settling rather than stranding in the offer. Then the side bet: `floor(wager/2)` on an ODD stake (v1's `/ 2` half-chip, the `parseInt` bug with the sign flipped), 2:1 PLUS the stake back, the HAND still lost when it pays (`settle` is never told about it), declining staking nothing and peeking anyway, insured and uninsured hands settling identically, both no-op directions (insure outside the phase, hit/stand/double inside it, insure twice), and immutability. **The one that is the security property**: `canInsure` is asserted IDENTICAL across two states differing only in `dealer[1]` — it is sent to a client while that card is withheld, so an offer that consulted the dealer's TOTAL would hand over the bit the player is paying for and nothing on screen would look wrong. Falsified three ways — the peek removed from `deal`, `canInsure` consulting the hole card, and `insuranceStake` un-floored — each landing on its own case |
+| Blackjack at a TABLE — the multi-seat container, which adds no rule and can still break three | `tests/blackjack-table.test.ts` (40) — the RULES are not re-tested here (`payoutCents` asserted against itself is a test that a thing equals itself); what is asserted is what only several chairs at one table can get wrong. THE ORDER: a chair that stood, busted or was dealt a natural is a hole in the turn order, and a turn landing in one is a table waiting on a player with nothing to do — including the case that was a live STALL until it went red, where every playing chair is dealt a natural and the deal left the round in `'player'` with `turn: -1`, which no client and no bot can advance and which looks exactly like a table that is thinking. THE PEEK, at a table: a dealer natural settles EVERY chair before anyone acts, with the double refused per chair (slice 1's war story, once per seat), and an ordinary round untouched (additivity). INSURANCE: every playing chair offered and nobody else, **the dealer NOT peeking until the last chair answers** (a table that peeked on the first answer would reveal the hole card under a chair still deciding — the bit the others are paying for), 2:1 plus the stake with the HAND still lost, and `canInsureAt` asserted IDENTICAL across two tables differing only in the hole card, with the whole PROJECTION asserted identical alongside it. Plus the deck that cannot run out (fuzzed at four chairs rather than trusting the pips argument in the header), whole rounds played to a settle with every bot move asserted to CHANGE the table, and no `"deck"` in any serialised projection at any phase. Falsified four ways — the peek dropped from the deal, `canInsureAt` consulting the hole card, the turn no longer skipping finished chairs, and the settle-when-nobody-is-left branch removed — each landing on its own cases |
+| The referee deals a blackjack TABLE, and each chair's money is its own | `boardwalk-api/tests/blackjackTable.test.ts` (22) — opening a round takes NO money (the difference from every other dealt game, asserted on `bet` ROWS rather than an empty ledger, since seeding a profile writes its signup grant); each chair's stake taken through the LEDGER at its OWN number with its own wager row (v1's clobbering bug as a thing that cannot happen); an unaffordable stake refused with nothing written and the nonce given back; the deal firing only on the LAST chair's bet with a bot charged nothing; a double taken as a SECOND stake with `staked_cents` accumulating; a replay re-serving the persisted round against a DRIFTING rng, because a bet consumes the shuffle and a re-run would deal different cards. **The settle is asserted on a round whose two chairs DISAGREE**, off a searched seed — the first draft let the deal decide, both chairs happened to lose, and paying every chair `spots[0]`'s hand passed it green, which is the leaderboard fixture's lesson in another table. Plus `recordOutcome` once per player, nothing recorded at all for a chair that never bet, `checkSettle` still refusing `blackjack`, and the boot sweep refunding a chair's RUNNING TOTAL rather than an ante. Falsified five ways — the affordability check removed, every chair paid the first chair's hand, `staked_cents` overwritten instead of accumulated, the projection replaced by the raw table, and bots scheduled off the turn |
+| A blackjack table sends the deck and the hole card to NOBODY — including the host | `boardwalk-api/tests/blackjackGateway.test.ts` (9, over a REAL socket) — the assertion is not comparative here, which is what makes it different from UNO's and Liar's Dice's: there are no per-seat secrets to leak between chairs, so what is asked is that `"deck"` appears nowhere in ANY byte either socket received, that a live round carries ONE dealer card, and that **no `private` frame is sent at all** (this game has no private channel, and one appearing would mean somebody had invented one). Plus the host-only open; the stake reaching the other player's own subscription (a stake nobody else can see is a table where you cannot tell who is in the hand); a non-seated socket and an off-turn move refused; **a BOT driven by the referee in the BETTING phase**, which is the branch no other dealt game has — UNO and Liar's Dice only ever schedule a TURN, so a dealer that read `turn` here would wait forever and the table would look like it was thinking (falsified exactly that way); and the hostile frame, both halves: a fabricated stake on `bjStart` (which has no field for one) charges nothing, and a `bjAction` carrying `payoutCents`/`outcome`/`result` reaches the reducer as a plain move. `parseTableMove` refuses rather than coerces — a non-integer or negative stake is `null`, not a 0 that reads as a click that did nothing |
 | Chess's rules are correct | `tests/chess.test.ts` (40) — FEN round-trip, 20 opening moves, piece movement + blocking, check/pin/out-of-check, castling (both sides, out-of/through-check, blocked, rights bookkeeping incl. captured-rook), en passant (set/capture/expiry), promotion (four pieces, chosen + default), fool's/scholar's mate + winner seat, stalemate-not-mate, insufficient-material + fifty-move draws, and `playMove` totality (illegal/finished → unchanged) + input immutability |
 | UNO's rules + wire projection are correct | `tests/uno.test.ts` (40) — 108-card deck composition, deterministic shuffle, colour/value/action-of-any-colour matching, `deal` (7 each, opens on a number), the action cards (skip→+2 seats, reverse flips/heads-up-skips, draw2/wild4 deal+skip the victim), a wild refused without a chosen colour, the UNO-call +2 penalty vs declared, the win (turn stops), reshuffle-on-empty, `chooseAiMove` (legal play / draw-when-stuck / most-held wild colour / declares UNO) and its TIERS (`sharp` the default so the shipped bots are unchanged, `casual` reaching every playable card and no unplayable one, `casual` always naming a colour for a wild — a wild without one is refused — and **`casual` still calling UNO, because a bot that does not can never win**: a hand reaches zero only through one, and going to one undeclared is what the +2 punishes, so an undeclaring bot bounces off one card back to three and a four-casual table ran 3,000 turns with no winner; whole dealt games are played to a WINNER at both levels with every move asserted to change the state), `applyMove` totality (off-turn / no-such-card / unplayable / finished → unchanged) + input immutability + structural sharing of untouched hands, `toPublic` hiding every card behind sentinels, `mustDraw` — the auto-draw position — read against the ACTIVE colour rather than the top card, **false for an empty hand** (a won hand and a hand whose private node has not arrived look identical, and only one of them may be drawn for — falsified by dropping the length guard), and agreeing with the REDUCER in both directions (from a stuck hand every play is refused and only `draw` changes the state; from a playable one it is false and the play lands), because asserting a predicate against a second copy of the matching rule proves only that one hand can subtract, and WHO OPENS A ROUND — `deal` taking the leader as an argument, an out-of-range/fractional/NaN one floored to seat 0 rather than thrown (it is fed by a live `winner`, so it is only wrong when something already went wrong, and a deal that throws takes the table down while a deal on the wrong seat merely opens on the wrong seat), the shuffle unchanged by who leads, and `dealEvent` carrying `leads` only from the second round on |
 | UNO's table seats everyone, once, in turn order | `tests/uno-layout.test.ts` (11) — over every table size 2–7 and every seat at it: each opponent placed exactly ONCE, never yourself, always in range (a seat rendered twice, or nowhere, still LOOKS like a table — only counting them catches it); v1's three fixed arrangements reproduced exactly (heads-up opposite, three-handed flanking, four-handed left/top/right); the order running bottom → left → top → right so reading clockwise is reading turn order, including the part that is easy to get backwards — a two-deep column fans BOTTOM-first, because the next player up sits nearest you and a flex column renders top-down (falsified by dropping the `.reverse()`); the arrangement being relative to MY seat rather than absolute; both flanks always equal depth (the lopsided five-seat table that killed the "even distribution" formula and is why this is a lookup); a spectator and an off-the-end seat degrading instead of throwing; and the hand fan's overlap staying inside its bounds at EVERY hand size, however silly, since a hand can be drawn up past twenty and a fan that keeps tightening becomes a row of stripes |
@@ -1306,7 +1351,7 @@ gated by `.github/workflows/api.yml` (push + PR, `paths`-filtered):
 cd boardwalk-api && npm ci
 npm run lint        # eslint . — src, tests AND scripts/*.mjs. Type-aware over tsconfig.test.json
 npm run typecheck   # tsc -p tsconfig.test.json — the only thing that typechecks the tests
-npm test            # vitest — 398
+npm test            # vitest — 429
 npm run build       # tsc -p tsconfig.json → dist/server.js
 ```
 
@@ -1362,14 +1407,12 @@ shipped. The launch set of five is done — the next game is built only because 
 to reach a number (see Scope discipline).**
 
 **Every plan that was started before 2026-08-08 is closed** — Phases 0–6, backend Phases A–D, the
-Progression Overhaul P1–P5, and the launch modal, all four slices. **One plan is OPEN**:
-[plans/BLACKJACK_DEPTH.md](plans/BLACKJACK_DEPTH.md), the seats / dealer-stand tier / insurance gap
-the launch modal's Decision 3 carried a rider about and its §6 table still shows as *nothing yet*.
-Three slices, none of them started, and its middle one is the reason it needed a design at all:
-**a dealer-stand tier is the first client-named value in this repo that changes what a hand PAYS**,
-which UNO answered by PINNING the tier (unavailable here — every Blackjack hand has a stake, so a
-pinned tier is a control that never appears) and which this must answer by pricing every tier off a
-measured house edge. The other file beside the ROADMAP is
+Progression Overhaul P1–P5, and the launch modal, all four slices. **[plans/BLACKJACK_DEPTH.md](plans/BLACKJACK_DEPTH.md) is
+now CLOSED too** — all three of its slices are decided: insurance and the peek shipped, the
+dealer-stand tier was MEASURED AND DECLINED (17 is the dealer's optimal stand value, so every
+alternative favours the player and the payout lever cannot price it — its plumbing was reverted
+rather than left standing, and `tests/blackjack-house-odds.test.ts` is what remains), and seats
+shipped, which makes Blackjack the fourth referee-dealt game. The other file beside the ROADMAP is
 [plans/DOMINOES_BRIEF.md](plans/DOMINOES_BRIEF.md), which is a brief for a
 session that has not happened rather than work in flight — and it is a game, so it is optional
 forever by the same rule as any other. What outlived the phases is in [plans/ROADMAP.md](plans/ROADMAP.md), ordered by what goes

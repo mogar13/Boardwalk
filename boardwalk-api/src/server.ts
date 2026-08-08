@@ -5,6 +5,7 @@ import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import { RoomGateway } from './rooms/gateway';
 import { sweepAbandonedMatches } from './domain/liarsDice';
 import { sweepAbandonedMatches as sweepAbandonedUnoRounds } from './domain/uno';
+import { sweepAbandonedRounds as sweepAbandonedBlackjackRounds } from './domain/blackjackTable';
 
 /**
  * The process entrypoint. Reads config, refuses to boot on a dangerous one (see
@@ -59,6 +60,17 @@ function main(): void {
   if (sweptUno.matches > 0) {
     console.log(
       `[uno] voided ${String(sweptUno.matches)} abandoned round(s), refunded ${String(sweptUno.refundedCents)} cents`
+    );
+  }
+
+  // And the same again for a blackjack TABLE, whose stakes are stranded harder than either: a chair
+  // may have bet, doubled AND insured before the process died, so the refund is that chair's running
+  // total rather than one ante. (The room-LESS blackjack hand needs no sweep — it has no room to be
+  // stranded from, and its stake stays open against a hand the player can still finish.)
+  const sweptBj = sweepAbandonedBlackjackRounds(db, Date.now());
+  if (sweptBj.rounds > 0) {
+    console.log(
+      `[blackjack] voided ${String(sweptBj.rounds)} abandoned round(s), refunded ${String(sweptBj.refundedCents)} cents`
     );
   }
 

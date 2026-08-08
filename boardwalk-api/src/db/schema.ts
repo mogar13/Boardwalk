@@ -309,6 +309,54 @@ CREATE TABLE IF NOT EXISTS uno_players (
   PRIMARY KEY (match_id, uid)
 );
 
+-- BLACKJACK AT A TABLE (plans/BLACKJACK_DEPTH.md §5) — the fourth server-dealt game, and the first
+-- whose SOLO half already had a table of its own. \`blackjack_hands\` is one player's hand and stays
+-- exactly as it is: it holds live rows on the Pi carrying open stakes, so the room-less game's
+-- record does not move. These two are the multi-seat container beside it, structurally the
+-- \`uno_*\` pair.
+--
+-- ONE ROW PER ROUND, not per table, for \`uno_matches\`' reason: a table plays many rounds and each
+-- has its own stakes, its own deal and its own settlement.
+--
+-- \`state_json\` is the whole \`BlackjackTable\` — every chair's cards, the dealer's BOTH cards and the
+-- rest of the deck. The hole card lives here and nowhere else: unlike UNO, there is no private node
+-- to write, because a blackjack player's cards are face up and the only hidden things are hidden
+-- from every seat equally, the host's included.
+--
+-- THERE IS NO \`pot_cents\`, and the absence is the design. UNO and Liar's Dice pool every ante into
+-- one number the winner takes; a blackjack chair settles against the HOUSE on its own cards, so
+-- there is nothing to pool and nothing to divide. What has to be remembered instead is what each
+-- chair put in, which is the column below.
+CREATE TABLE IF NOT EXISTS blackjack_rounds (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id    TEXT NOT NULL,
+  room_id    TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  -- Which round of this table's evening. Stored rather than counted, for \`uno_matches.round\`'s
+  -- reason: a COUNT answers differently the day a row is deleted, and the client keys on it.
+  round      INTEGER NOT NULL DEFAULT 0,
+  -- 1 once every chair has been paid and the wagers closed, OR once the round was voided and
+  -- refunded. Terminal either way: the flag is what stops a second settle and a second refund.
+  settled    INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Who is in a round, and what it has cost them so far. Carries the authority for every read of the
+-- row above: a round has many participants and no owner, so a load is scoped by MEMBERSHIP.
+--
+-- \`staked_cents\` is a RUNNING TOTAL and not one wager, which is where this differs from its two
+-- siblings. An ante is paid once; a blackjack chair can put a stake down, double it and then insure,
+-- so three ledger rows belong to one chair in one round and a refund has to hand back the sum of
+-- them. It is written by the same transaction that writes each ledger row.
+CREATE TABLE IF NOT EXISTS blackjack_players (
+  round_id     INTEGER NOT NULL REFERENCES blackjack_rounds(id) ON DELETE CASCADE,
+  uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  seat         INTEGER NOT NULL,
+  staked_cents INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (round_id, uid)
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON ledger(uid);
 CREATE INDEX IF NOT EXISTS idx_stats_uid ON stats(uid);
 CREATE INDEX IF NOT EXISTS idx_wagers_open ON wagers(uid, game_id) WHERE settled_at IS NULL;
@@ -317,6 +365,8 @@ CREATE INDEX IF NOT EXISTS idx_ld_matches_room ON liars_dice_matches(game_id, ro
 CREATE INDEX IF NOT EXISTS idx_ld_players_uid ON liars_dice_players(uid);
 CREATE INDEX IF NOT EXISTS idx_uno_matches_room ON uno_matches(game_id, room_id, settled);
 CREATE INDEX IF NOT EXISTS idx_uno_players_uid ON uno_players(uid);
+CREATE INDEX IF NOT EXISTS idx_bjt_rounds_room ON blackjack_rounds(game_id, room_id, settled);
+CREATE INDEX IF NOT EXISTS idx_bjt_players_uid ON blackjack_players(uid);
 -- Every hand lookup is "this player's, live or not" — a hand id alone is never enough, because a
 -- hand id from another account must be a REFUSAL and not a read.
 CREATE INDEX IF NOT EXISTS idx_blackjack_hands_uid ON blackjack_hands(uid, settled);

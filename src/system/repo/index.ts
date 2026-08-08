@@ -177,6 +177,10 @@ export const repos: Repos = {
   // available for UNO is one player's browser holding everybody's hand, which is what the referee
   // replaced. The board renders "needs the game server" rather than degrading into that.
   uno: wsRooms ? wsRooms.uno : null,
+  // The blackjack TABLE, same rule as UNO's and for the same reason. The room-LESS hand above is
+  // unaffected and still has its offline twin: `blackjack` and `blackjackTable` are two containers
+  // for one rulebook, and only the multi-seat one needs a referee to exist at all.
+  blackjackTable: wsRooms ? wsRooms.blackjackTable : null,
 };
 
 /**
@@ -208,9 +212,10 @@ export interface RepoWiring {
   readonly blackjack: 'server-dealt' | 'local';
   /** Are offline results banked against server-signed tickets? */
   readonly tickets: 'server-signed' | 'client-minted';
-  /** The two server-dealt room games are null without the gateway, by design. */
+  /** The three server-dealt room games are null without the gateway, by design. */
   readonly liarsDice: boolean;
   readonly uno: boolean;
+  readonly blackjackTable: boolean;
 }
 
 export const repoWiring: RepoWiring = Object.freeze({
@@ -222,6 +227,7 @@ export const repoWiring: RepoWiring = Object.freeze({
   tickets: apiEconomyOn ? 'server-signed' : 'client-minted',
   liarsDice: wsRooms !== null,
   uno: wsRooms !== null,
+  blackjackTable: wsRooms !== null,
 });
 
 /**

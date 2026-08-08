@@ -178,7 +178,24 @@ export interface GameManifest {
    * the behaviour by default. What the ODDS are stays inside the game; the OS learns only that a
    * one-human table is worth charging, which is all it needs to draw the picker and the copy.
    */
-  readonly betting?: { readonly min: number; readonly max: number; readonly house?: boolean };
+  /**
+   * `perSeat` declares that a chair's stake is its OWN, named every round from the board, and that
+   * there is therefore NO table ante. Blackjack is the only game like this and every other betting
+   * game is the opposite: one figure stamped on the room at create, agreed to by everyone who then
+   * sat down (`RoomMeta.anteCents`).
+   *
+   * It is a manifest fact rather than something the lobby infers, because the lobby is where it
+   * matters and what it prevents is a lie: `anteChoices` collapses to nothing for a `perSeat` game,
+   * so no ante picker is drawn, so no stake is stamped, so the room never prints "$25 a seat ·
+   * winner takes the pot" over a game that has no pot and charges nobody. That sentence is the
+   * exact failure `tableBacking` was written for, and this is the same fix a field earlier.
+   */
+  readonly betting?: {
+    readonly min: number;
+    readonly max: number;
+    readonly house?: boolean;
+    readonly perSeat?: boolean;
+  };
 
   /**
    * How this game can be played DIFFERENTLY — draw-1 vs draw-3, a house rule, later an AI tier.

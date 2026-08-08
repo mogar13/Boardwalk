@@ -556,7 +556,12 @@ describe('the routes', () => {
       .send({ nonce: 'n1', wagerCents: 1_000 })
       .expect(200);
 
-    if (turnOf(dealt).hand.phase === 'settled') return; // a natural; nothing left to move on
+    // NOT `=== 'settled'`. A `stand` is legal only in `'player'`, and slice 1 added a second phase
+    // the deal can land in: an ACE UP opens the insurance offer instead, where hit/stand/double are
+    // all refused. This route deals from `Math.random`, so an ace showed up about one run in
+    // thirteen and the case 409'd — a flake that says nothing about the hostile body it exists to
+    // test. Asking for the phase this case NEEDS covers both exits and cannot miss a third.
+    if (turnOf(dealt).hand.phase !== 'player') return;
 
     const res = await request(app)
       .post('/blackjack/move')

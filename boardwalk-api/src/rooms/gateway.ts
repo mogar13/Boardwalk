@@ -38,6 +38,7 @@ import type { RoomListing, RoomStatus, RoomVisibility, SeatOccupant } from './ty
 import type { Db } from '../db/db';
 import { LiarsDiceDealer } from './liarsDiceDealer';
 import { UnoDealer } from './unoDealer';
+import { BlackjackTableDealer } from './blackjackDealer';
 
 /** Per-connection state — its identity and everything it is currently subscribed to. */
 interface Conn {
@@ -115,14 +116,18 @@ export class RoomGateway {
    * a perfectly coherent thing to be. The dealt frames simply refuse when they are absent, rather
    * than the constructor demanding a database that most callers have no use for.
    *
-   * TWO FIELDS AND NOT A REGISTRY. There are two dealt room games now, which is the moment
-   * `types.ts` said to LOOK at whether a generic seam exists — not the moment to invent one. They
-   * are close but not the same shape (UNO reads its stake off the room and has no reveal phase;
-   * Liar's Dice takes a stake off the wire and steps a reveal on a timer), and abstracting over two
-   * things before the differences have stopped moving is the mistake that note warns about.
+   * THREE FIELDS AND NOT A REGISTRY. There are three dealt room games now, which was already the
+   * moment `types.ts` said to LOOK at whether a generic seam exists — not the moment to invent one,
+   * and the third arrival is the argument rather than against it. They are close and still not the
+   * same shape: UNO reads its stake off the room and deals a private hand per seat; Liar's Dice
+   * takes a stake off the wire and steps a reveal on a timer; blackjack takes NO stake at start,
+   * writes no private node at all, and schedules its bots off three phases rather than a turn.
+   * Abstracting over three things whose differences are still moving is the mistake that note warns
+   * about, and the differences are what each of these files is mostly made of.
    */
   private readonly dealer: LiarsDiceDealer | null;
   private readonly unoDealer: UnoDealer | null;
+  private readonly bjDealer: BlackjackTableDealer | null;
 
   constructor(
     private readonly verifier: TokenVerifier,
@@ -157,6 +162,10 @@ export class RoomGateway {
     };
     this.dealer = db === null ? null : new LiarsDiceDealer(db, host);
     this.unoDealer = db === null ? null : new UnoDealer(db, host);
+    // The blackjack dealer takes a NARROWER host: no `deal`, because every hand at a blackjack table
+    // is face up and nothing is ever written to a seat's private node. `BlackjackDealerHost` names
+    // only what it uses, so the absence is in the type rather than in a comment.
+    this.bjDealer = db === null ? null : new BlackjackTableDealer(db, host);
   }
 
   /** Wire this gateway to an existing HTTP server (shares the Express port and the tunnel). */
@@ -303,6 +312,10 @@ export class RoomGateway {
         return this.onUnoStart(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.level);
       case 'unoMove':
         return this.onUnoMove(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.move);
+      case 'bjStart':
+        return this.onBjStart(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce));
+      case 'bjAction':
+        return this.onBjAction(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStr(msg.nonce), msg.move);
       default:
         return;
     }
@@ -495,6 +508,28 @@ export class RoomGateway {
     this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
   }
 
+  /**
+   * Open a blackjack round. Host-only here AND in the dealer, for `onLdStart`'s reason — this
+   * refusal is the specific one, the dealer's is the load-bearing one.
+   *
+   * Note what is NOT read off `msg`: any number at all. `bjStart` carries a nonce and nothing else,
+   * because a blackjack stake is per CHAIR and arrives later on `bjAction` from the player whose
+   * chair it is — so there is nothing to sanitise and nothing a hostile host could inflate on
+   * anybody else's behalf.
+   */
+  private onBjStart(conn: Conn, id: number, gameId: string, roomId: string, nonce: string): void {
+    if (this.bjDealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Host only.' });
+    const res = this.bjDealer.start(conn.uid, gameId, roomId, nonce);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
+  }
+
+  private onBjAction(conn: Conn, id: number, gameId: string, roomId: string, nonce: string, move: unknown): void {
+    if (this.bjDealer === null || conn.uid === null) return this.reply(conn, id, { ok: false, error: 'Not available.' });
+    const res = this.bjDealer.act(conn.uid, gameId, roomId, nonce, move);
+    this.reply(conn, id, res.ok ? { ok: true, value: res.profile } : { ok: false, error: res.error });
+  }
+
   private onChatSend(conn: Conn, id: number, gameId: string, roomId: string, message: unknown): void {
     if (!isRecord(message)) return this.reply(conn, id, { ok: false, error: 'Message not sent.' });
     const uid = asStr(message.uid);
@@ -567,6 +602,7 @@ export class RoomGateway {
   private notifyDealerOfSeats(gameId: string, roomId: string): void {
     this.dealer?.onSeatsChanged(gameId, roomId);
     this.unoDealer?.onSeatsChanged(gameId, roomId);
+    this.bjDealer?.onSeatsChanged(gameId, roomId);
   }
 
   private broadcastRoomPrivates(gameId: string, roomId: string): void {
@@ -616,6 +652,7 @@ export class RoomGateway {
     // A dead room must not leave a timer that would publish into it.
     this.dealer?.cancel(gameId, roomId);
     this.unoDealer?.cancel(gameId, roomId);
+    this.bjDealer?.cancel(gameId, roomId);
     this.cancelRoomReleases(roomKey(gameId, roomId));
     this.store.remove(gameId, roomId);
     this.broadcastRoom(gameId, roomId);

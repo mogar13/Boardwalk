@@ -528,4 +528,40 @@ describe('anteChoices — what a chair may cost', () => {
       }
     }
   });
+
+  it('offers NO table stake for a per-seat game, and the whole ladder for every other one', () => {
+    // BLACKJACK IS THE ONE GAME WITH NO TABLE ANTE — a chair names its own stake, every round, from
+    // the board. Nothing charges a room ante there, so drawing the picker would set a number that
+    // moves no money and then make the lobby print "$25 a seat · winner takes the pot" over a game
+    // that has no pot at all.
+    //
+    // Which is not a payout bug and would never surface as one. It is a sentence that is simply
+    // wrong forever and looks completely fine — the failure `tableBacking` already exists to have
+    // caught once, one field earlier. `[0]` is what "draw nothing" is spelled as (the lobby gates
+    // on `length > 1`), so a control that cannot change the outcome is never rendered.
+    expect(anteChoices({ min: 500, max: 50_000, perSeat: true })).toEqual([0]);
+    // ADDITIVITY: a game that does NOT declare it keeps every rung it had, so adding the flag
+    // retuned nobody's picker — UNO's ladder in particular must not have moved.
+    expect(anteChoices({ min: 500, max: 50_000 })).toEqual([0, 500, 2_500, 10_000, 50_000]);
+
+    // And over the REAL registry, in both directions, because the property is about the games this
+    // app ships rather than about a fixture: a per-seat game offers only "nothing", and every other
+    // betting game still offers at least one real stake.
+    let sawPerSeat = false;
+    let sawTableAnte = false;
+    for (const { manifest } of Object.values(registry)) {
+      if (manifest.betting === undefined) continue;
+      if (manifest.betting.perSeat === true) {
+        sawPerSeat = true;
+        expect(anteChoices(manifest.betting)).toEqual([0]);
+      } else {
+        sawTableAnte = true;
+        expect(anteChoices(manifest.betting).length).toBeGreaterThan(1);
+      }
+    }
+    // Both halves must have been reached, or a sweep that silently matched nothing reports success
+    // forever — the trap `tests/doc-links.test.ts` pins about its own walkers.
+    expect(sawPerSeat).toBe(true);
+    expect(sawTableAnte).toBe(true);
+  });
 });
