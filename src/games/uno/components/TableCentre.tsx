@@ -54,17 +54,52 @@ import type { Card, UnoColor } from '@boardwalk/game-logic/games/uno';
  *    whichever edge happened to be convenient — so all four sit exactly on one circle instead of
  *    approximately on one.
  *
- * THE ACTIVE COLOUR IS THE LIGHT COMING OFF THE DISCARD, and the pill it replaced is gone. The pill
- * said "RED" under a red card next to a red-tinted border: three statements of one fact, stacked, in
- * the middle of the table. What the pill was genuinely load-bearing for is the ONE case where the
- * top card cannot say it — a wild, which is black and whose chosen colour lives nowhere else — so
- * the halo is painted from `color` rather than from the card, and a wild sits in the light of
- * whatever was called. Redundant when the card is coloured (harmlessly: it reads as the felt lit by
- * the card), and the whole answer when it is not. The screen-reader line stays, because a blur is
- * not text.
+ * THE ACTIVE COLOUR IS SAID EXACTLY WHERE THE CARD CANNOT SAY IT ITSELF, which is the whole rule
+ * and it took two passes to land on.
+ *
+ * The pill used to be unconditional: it said "RED" under a red card beside a red-tinted border,
+ * three statements of one fact stacked in the middle of the table, so it went. The halo replaced
+ * it — the discard lit from `color` rather than from the card — and that is right for a coloured
+ * top card and NOT ENOUGH for the one case the pill was actually earning its place in: a wild or a
+ * +4, which is black, whose face carries no colour at all, and which is precisely the moment the
+ * colour CHANGED. A soft glow is a fine reminder of something you already know and a poor
+ * announcement of something that just happened; the report was exactly that.
+ *
+ * So the pill is back, and its condition is a property of the CARD rather than a timer: it is drawn
+ * when `top` is colourless, and only then. That is the two complaints reconciled rather than
+ * traded off — no redundancy over a red 8, a named colour over a wild — and it is derived, so it
+ * cannot drift out of step with what the discard is showing. A timer ("show it for 3s after a
+ * change") would put the answer on screen only for whoever was looking, and the player who glances
+ * up late is the one who needs it.
+ *
+ * The halo stays under both. On a wild it is now the pill's echo rather than the only signal, and
+ * on a coloured card it is the felt lit by the card, which is what a table looks like. The
+ * screen-reader line stays too, because a blur is not text and neither is a coloured pill.
  */
 
 /** The colour the felt is lit in — the active colour, which is NOT always the top card's. */
+/**
+ * The pill's surface, TINTED rather than solid. Solid was the obvious port from v1 and fails on
+ * contrast: `--color-uno-yellow` is a light token and `--color-uno-red` a mid one, so one label
+ * would need dark text and the other light, and a per-colour text rule is two more tokens for a
+ * thing that is already unambiguous. Tint the surface, keep the border and the dot at full
+ * strength, and the text stays `base-content` against a background the theme has already checked.
+ */
+const TINT: Record<UnoColor, string> = {
+  red: 'bg-uno-red/20 border-uno-red text-base-content',
+  blue: 'bg-uno-blue/20 border-uno-blue text-base-content',
+  green: 'bg-uno-green/20 border-uno-green text-base-content',
+  yellow: 'bg-uno-yellow/20 border-uno-yellow text-base-content',
+};
+
+/** The dot inside the pill, at full strength — the one place the raw colour is stated. */
+const SWATCH: Record<UnoColor, string> = {
+  red: 'bg-uno-red',
+  blue: 'bg-uno-blue',
+  green: 'bg-uno-green',
+  yellow: 'bg-uno-yellow',
+};
+
 const HALO: Record<UnoColor, string> = {
   red: 'bg-uno-red/50',
   blue: 'bg-uno-blue/50',
@@ -111,6 +146,11 @@ export function TableCentre({
   canDraw,
   onDraw,
 }: TableCentreProps) {
+  // A CARD THAT CANNOT SAY ITS OWN COLOUR. Asked of the KIND rather than of `card.color === 'wild'`
+  // so it stays true if the deck ever gains another colourless card, and asked of the card rather
+  // than of a "did the colour just change" flag, which would be a second source of truth for
+  // something the discard already knows.
+  const colourless = top.kind === 'wild' || top.kind === 'wild4';
   return (
     // THE COLUMN RESERVES THE RING'S OWN OVERHANG (`px-10 py-18` ≈ the 2.25rem / 4rem the 15rem
     // ring reaches past a 10.5 × 7rem pile box, plus a little for the glyphs' ink). That is what
@@ -225,6 +265,25 @@ export function TableCentre({
             alt="Top of the pile"
             className="animate-pitch relative h-28 w-auto rounded-md"
           />
+          {/* WHAT COLOUR A WILD WAS CALLED AS. Pinned to the card rather than placed under the
+              column, so it reads as a label ON the discard — which is the thing it is describing —
+              and so it cannot drift away from it when the table's spacing changes. See the header
+              for why it is drawn here and nowhere else. */}
+          {colourless && (
+            <span
+              className={cx(
+                'font-display absolute -bottom-3.5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap',
+                'rounded-full border px-3 py-1 text-xs font-semibold tracking-[0.14em] uppercase',
+                TINT[color]
+              )}
+            >
+              <span
+                aria-hidden
+                className={cx('mr-1.5 inline-block size-2 rounded-full', SWATCH[color])}
+              />
+              {color}
+            </span>
+          )}
         </div>
       </div>
 
