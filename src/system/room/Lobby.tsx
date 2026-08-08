@@ -14,7 +14,8 @@ import { tableBacking } from '@/system/room/ante';
 import { houseRuleChoices, isRuleOn } from '@/system/room/houseRules';
 import { MODE_LABEL, roomModesOf } from '@/system/room/modes';
 import { TableSetup } from '@/system/room/TableSetup';
-import { humanCount, tableIsFull } from '@/system/room/seats';
+import { humanCount, seatsAreReady } from '@/system/room/seats';
+import { useAutoSeat } from '@/system/room/useAutoSeat';
 import { useRoom } from '@/system/room/useRoom';
 import { useRoomContext, type RoomIdentity } from '@/system/room/roomContext';
 
@@ -194,6 +195,13 @@ function LobbyRoom({
   const { seats, status, meta, isHost, setStatus } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
   /**
+   * ARRIVING AT A TABLE SITS YOU DOWN AT IT. Called here rather than at each entrance because there
+   * are four of them — create, join-by-code, the room browser, a shared link — and they already
+   * funnel through one `enterTable`; this is that convergence one level further in. See
+   * `useAutoSeat` for the race, and `autoSeatIndex` for the three cases it refuses.
+   */
+  useAutoSeat();
+  /**
    * THE SIDEBAR'S SPARE SLOT — see `<TableAside>`. A game's own running panel (UNO's move log, and
    * whatever the seventh game brings) portals in UNDER the chat, because the alternative is what
    * UNO did for six phases: draw it at the bottom of the board, below the player's own hand, where
@@ -220,15 +228,18 @@ function LobbyRoom({
     );
   }
 
-  // Startable once the table is full and at least one human is present to host/deal. NOT
-  // `humanCount >= seats.min`: that conflated "min PLAYERS" with "min HUMANS", and AI-as-occupant
-  // makes them differ. `SeatList` only offers "Add CPU" when the manifest declares an `ai` mode, so
-  // a game with no bots (Chess) fills its table with humans only — `tableIsFull` there already means
-  // `max` humans ≥ `min`, making the old clause redundant. For a game WITH bots (UNO), a full table
-  // may be one human plus six CPUs, which is a legitimate game the old gate wrongly refused. So the
-  // real requirement is a full table (players = `max` ≥ `min`) with a human driver in it — UNO is
-  // the design input that surfaced this, the AI-as-occupant sibling of Chess's `allowAi`.
-  const canStart = isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= 1;
+  /**
+   * Startable once the seats are a game and it is mine to start. The seat half is `seatsAreReady`,
+   * and it is a shared function rather than an expression BECAUSE THE ENTRANCE ASKS IT TOO: a table
+   * whose plan was already ready never reaches this button at all — `TableSetup` starts it, and it
+   * decides that with this same predicate, so the preview, the create and the button cannot come to
+   * three different conclusions about whether a table is waiting for anything.
+   *
+   * What is left here is the ONLINE case, which is the one that genuinely waits: its chairs are
+   * open on purpose, and the moment they fill is a moment somebody arrived rather than a moment the
+   * host chose. That beat is what the button is for.
+   */
+  const canStart = isHost && status === 'waiting' && seatsAreReady(seats);
 
   return (
     <TableAsideProvider slot={asideSlot}>
