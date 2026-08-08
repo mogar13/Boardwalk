@@ -5,6 +5,7 @@ import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { CHESS_GLYPH, chessPieceSrc, type ChessSet } from '@/system/chess/chessSets';
 import { useEquippedChessSet } from '@/system/chess/useEquippedChessSet';
 import { useAudio } from '@/system/audio/useAudio';
+import { GameResult } from '@/system/game/GameResult';
 import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
@@ -245,13 +246,26 @@ export function Board() {
         </div>
       )}
 
-      {!playing && (
+      {/* The result and the play-again handshake go through the OS's surface, over the page rather
+          than under the board — and dismissing it is how you get the final position back, which is
+          a thing chess players actually want and a panel below the board never offered. */}
+      <GameResult
+        over={!playing}
+        tone={
+          state.outcome.kind === 'checkmate'
+            ? state.outcome.winner === mySeatIndex
+              ? 'win'
+              : 'loss'
+            : 'draw'
+        }
+        title={statusLine(state, turn, myMove, mySeatIndex, seats, checkedKing !== -1)}
+      >
         <Rematch
           restart={(round) => {
             void patch(() => initialChessState(round));
           }}
         />
-      )}
+      </GameResult>
     </Card>
   );
 }

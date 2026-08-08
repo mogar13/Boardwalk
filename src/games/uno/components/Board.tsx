@@ -28,7 +28,8 @@ import { HandView } from '@/games/uno/components/HandView';
 import { MoveLog } from '@/games/uno/components/MoveLog';
 import { SeatView } from '@/games/uno/components/SeatView';
 import { TableCentre } from '@/games/uno/components/TableCentre';
-import { PenaltyFlash, RoundResult, TurnCue, UnoShout } from '@/games/uno/components/UnoOverlays';
+import { PenaltyFlash, Podium, TurnCue, UnoShout } from '@/games/uno/components/UnoOverlays';
+import { GameResult } from '@/system/game/GameResult';
 import { opponentSlots, slotsOn, type UnoSeatSide } from '@/games/uno/seatLayout';
 import { ordinal } from '@/games/uno/log';
 import { pinnedOptionValues } from '@/system/options/options';
@@ -306,6 +307,9 @@ export function Board() {
   };
 
   const slots = opponentSlots(mySeatIndex, seats.length);
+  const topSeats = slotsOn(slots, 'top');
+  const leftSeats = slotsOn(slots, 'left');
+  const rightSeats = slotsOn(slots, 'right');
   const seatView = (seat: number, side: UnoSeatSide) => (
     <SeatView
       key={seat}
@@ -336,36 +340,59 @@ export function Board() {
           Pot {formatMoney(state.potCents)}
         </p>
       )}
-      {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
-          three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
-          left a band of dead felt above the piles. */}
-      {slotsOn(slots, 'top').length > 0 && (
-        <div className="flex flex-wrap items-start justify-center gap-3">
-          {slotsOn(slots, 'top').map((s) => seatView(s.seat, 'top'))}
-        </div>
-      )}
+      {/* THE TABLE — the seats RING THE PILES at a distance the table chooses, rather than at the
+          width of whatever screen it is drawn on.
 
-      {/* THE FELT — side seats flanking the piles. `items-center` so a one-seat column sits level
-          with the discard rather than floating at the top of a tall row. */}
-      <div className="flex w-full items-center justify-between gap-2">
-        <div className="flex min-w-16 flex-col items-center gap-3">
-          {slotsOn(slots, 'left').map((s) => seatView(s.seat, 'left'))}
-        </div>
+          The flanks used to be `w-full justify-between`, which is not a distance at all: on a
+          desktop it threw the side players ~600px out to the edges of the card while the far seat
+          sat a dozen pixels off the deck, so the same table read as three unrelated groups instead
+          of one felt. A table's shape is information in UNO (see the layout note below), and a
+          shape that changes with the viewport carries none. So the row is content-width and
+          CENTRED, with a deliberate gap either side — the seats land ~12–13rem out, just clear of
+          the direction ring, and the gap tightens on a phone rather than the layout changing.
 
-        <TableCentre
-          top={state.top}
-          color={state.color}
-          direction={state.direction}
-          deckCount={state.deckCount}
-          pending={owed}
-          canDraw={myTurn && pendingWild === null}
-          onDraw={() => {
-            submit({ type: 'draw' });
-          }}
-        />
+          The vertical gap is the same measurement taken the other way: the far seats sit clear of
+          the ring's top arrow (~3.25rem above the pile box) instead of on top of it. A big table
+          rings wider than a small one for free, because two stacked flank seats make the middle
+          row taller and `items-center` pushes the far side out with it. */}
+      <div className="flex flex-col items-center gap-14">
+        {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
+            three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
+            left a band of dead felt above the piles. */}
+        {topSeats.length > 0 && (
+          <div className="flex flex-wrap items-start justify-center gap-8 sm:gap-14">
+            {topSeats.map((s) => seatView(s.seat, 'top'))}
+          </div>
+        )}
 
-        <div className="flex min-w-16 flex-col items-center gap-3">
-          {slotsOn(slots, 'right').map((s) => seatView(s.seat, 'right'))}
+        {/* THE FELT — side seats flanking the piles. `items-center` so a one-seat column sits level
+            with the discard rather than floating at the top of a tall row. An empty flank is not
+            rendered at all: a heads-up table has nobody on either side, and two reserved columns
+            plus their gaps is the same dead felt the top row avoids, turned on its side. */}
+        <div className="flex items-center justify-center gap-2 sm:gap-10 lg:gap-16">
+          {leftSeats.length > 0 && (
+            <div className="flex flex-col items-center gap-4">
+              {leftSeats.map((s) => seatView(s.seat, 'left'))}
+            </div>
+          )}
+
+          <TableCentre
+            top={state.top}
+            color={state.color}
+            direction={state.direction}
+            deckCount={state.deckCount}
+            pending={owed}
+            canDraw={myTurn && pendingWild === null}
+            onDraw={() => {
+              submit({ type: 'draw' });
+            }}
+          />
+
+          {rightSeats.length > 0 && (
+            <div className="flex flex-col items-center gap-4">
+              {rightSeats.map((s) => seatView(s.seat, 'right'))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -476,36 +503,43 @@ export function Board() {
 
       <MoveLog lines={lines} mySeat={mySeatIndex} />
 
-      {finished && (
-        <div className="flex flex-col items-center gap-3">
-          <RoundResult
-            won={state.winner === mySeatIndex}
-            text={
-              state.winner === mySeatIndex
-                ? // A ranked pot is SHARED, so the winner's line cannot quote the whole of it. What
-                  // it can say without guessing is that the pot went their way; the top bar carries
-                  // the authoritative figure, which is the referee's and not this board's.
-                  state.potCents > 0
-                  ? places.length > 1
-                    ? 'You went out first — you take the pot!'
-                    : `You went out — you win ${formatMoney(state.potCents)}!`
-                  : 'You went out — you win!'
-                : myPlace > 0
-                  ? `You finished ${ordinal(myPlace)}`
-                  : `${names[state.winner] ?? 'A player'} wins`
-            }
+      {/* THE RESULT IS THE OS'S SURFACE, not a panel at the bottom of this card. It used to be
+          exactly that — under the move log, under the hand, under the felt — so the answer to "did
+          I win, and are we going again" was a scroll on any table taller than the viewport. The
+          verdict, the podium and the deal-again handshake all ride in `<GameResult>` now; what
+          stayed here is the one thing only this board knows, which is what the words should say. */}
+      <GameResult
+        over={finished}
+        tone={state.winner === mySeatIndex ? 'win' : 'loss'}
+        title={
+          state.winner === mySeatIndex
+            ? // A ranked pot is SHARED, so the winner's line cannot quote the whole of it. What
+              // it can say without guessing is that the pot went their way; the top bar carries
+              // the authoritative figure, which is the referee's and not this board's.
+              state.potCents > 0
+              ? places.length > 1
+                ? 'You went out first — you take the pot!'
+                : `You went out — you win ${formatMoney(state.potCents)}!`
+              : 'You went out — you win!'
+            : myPlace > 0
+              ? `You finished ${ordinal(myPlace)}`
+              : `${names[state.winner] ?? 'A player'} wins`
+        }
+        detail={
+          <Podium
             places={places.map((seat) => ({
               seat,
               name: names[seat] ?? `Player ${String(seat + 1)}`,
               you: seat === mySeatIndex,
             }))}
           />
-          {/* Every human at the table has to ask for the next deal — the guests used to have no say
-              at all here, only the host's button and a line telling them to wait for it. The dealer
-              is still the host (`dealAgain` no-ops for anyone else); what changed is who gets asked. */}
-          <Rematch restart={dealAgain} label="Deal again" />
-        </div>
-      )}
+        }
+      >
+        {/* Every human at the table has to ask for the next deal — the guests used to have no say
+            at all here, only the host's button and a line telling them to wait for it. The dealer
+            is still the host (`dealAgain` no-ops for anyone else); what changed is who gets asked. */}
+        <Rematch restart={dealAgain} label="Deal again" />
+      </GameResult>
     </Card>
   );
 }

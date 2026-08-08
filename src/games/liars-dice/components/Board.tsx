@@ -8,6 +8,7 @@ import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
 import { useHand } from '@/system/room/useHand';
 import { Rematch } from '@/system/room/Rematch';
+import { GameResult } from '@/system/game/GameResult';
 import { mintNonce, useAuthStore } from '@/system/auth/authStore';
 import { repos } from '@/system/repo';
 import { formatMoney } from '@boardwalk/game-logic';
@@ -255,23 +256,28 @@ export function Board() {
             {state.resolution.callerWon ? 'The call was good.' : 'The call was wrong.'}
           </p>
         )}
-
-        {state.winner >= 0 && (
-          <>
-            <p className="text-primary font-display text-xl">
-              {state.winner === mySeatIndex
-                ? betting
-                  ? `You win ${formatMoney(ante * humans)}`
-                  : 'You win'
-                : `${seats[state.winner]?.name ?? 'Seat'} wins`}
-            </p>
-            {/* The OS owns the handshake; this game passes one thing — how to deal the next match.
-                It says "New match" rather than UNO's "Deal again" because it IS one: a fresh row,
-                a fresh set of cups, and — at a betting table — a fresh ante from everybody. */}
-            <Rematch restart={dealAgain} label="New match" />
-          </>
-        )}
       </div>
+
+      {/* THE RESULT IS THE OS'S SURFACE. It used to be one more line inside the bid box at the
+          bottom of this card, with the rematch button under it — which on a six-cup table is below
+          the fold, so the match you had just won ended with a scroll. The game still owns the
+          words; where they appear is not its business. */}
+      <GameResult
+        over={state.winner >= 0}
+        tone={state.winner === mySeatIndex ? 'win' : 'loss'}
+        title={
+          state.winner === mySeatIndex
+            ? betting
+              ? `You win ${formatMoney(ante * humans)}`
+              : 'You win'
+            : `${seats[state.winner]?.name ?? 'Seat'} wins`
+        }
+      >
+        {/* The OS owns the handshake; this game passes one thing — how to deal the next match.
+            It says "New match" rather than UNO's "Deal again" because it IS one: a fresh row,
+            a fresh set of cups, and — at a betting table — a fresh ante from everybody. */}
+        <Rematch restart={dealAgain} label="New match" />
+      </GameResult>
 
       {/* ── the controls ──────────────────────────────────────────────────────────────────── */}
       {myTurn ? (

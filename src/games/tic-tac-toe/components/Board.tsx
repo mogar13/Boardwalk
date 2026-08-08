@@ -3,6 +3,7 @@ import { Card, cx } from '@/ui';
 import { useGame } from '@/system/economy/useGame';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { useGameOptions } from '@/system/options/useGameOptions';
+import { GameResult } from '@/system/game/GameResult';
 import { Rematch } from '@/system/room/Rematch';
 import { useRoom } from '@/system/room/useRoom';
 import { useSeats } from '@/system/room/useSeats';
@@ -150,13 +151,20 @@ export function Board() {
         })}
       </div>
 
-      {outcome.kind !== 'playing' && (
+      {/* The result and the play-again handshake are the OS's surface, over the page rather than
+          under the board — a game does not draw its own end-of-round panel (see `GameResult`). The
+          line above the grid still says the same thing for anyone who dismisses it. */}
+      <GameResult
+        over={outcome.kind !== 'playing'}
+        tone={outcome.kind === 'win' ? (outcome.player === mySeatIndex ? 'win' : 'loss') : 'draw'}
+        title={status_}
+      >
         <Rematch
           restart={(round) => {
             void patch(() => initialState(round));
           }}
         />
-      )}
+      </GameResult>
     </Card>
   );
 }
