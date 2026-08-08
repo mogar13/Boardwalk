@@ -77,10 +77,12 @@ function classesOf(html: string, tag: string): string[] {
 }
 
 describe('Modal — the three widths', () => {
-  it('offers exactly sm/md/lg, so a size is a rung and not a free width', () => {
-    // A fourth rung is a decision, not an accident: the kit exists because a per-caller width is
-    // how five modals end up five sizes.
-    expect(Object.keys(MODAL_WIDTH)).toEqual(['sm', 'md', 'lg']);
+  it('offers exactly sm/md/lg/xl, so a size is a rung and not a free width', () => {
+    // A fifth rung is a decision, not an accident: the kit exists because a per-caller width is
+    // how five modals end up five sizes. `xl` was the fourth, taken deliberately — the launch
+    // modal's table setup does not fit two columns and a side column inside `lg`'s 48rem, and the
+    // symptom was the one that rung was added to cure: a form you scroll.
+    expect(Object.keys(MODAL_WIDTH)).toEqual(['sm', 'md', 'lg', 'xl']);
   });
 
   it('every width resolves to a --container-* the theme actually declares', () => {

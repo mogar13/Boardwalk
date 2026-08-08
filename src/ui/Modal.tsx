@@ -24,12 +24,12 @@ import { cx } from '@/ui/cx';
  * usual approach needs — which silently breaks the first time anyone adds padding
  * or a transform. ::backdrop still paints behind it, so the dim and blur are free.
  *
- * THREE WIDTHS, NOT A `className` WIDTH. Every dialog in the app used to be pinned
+ * FOUR WIDTHS, NOT A `className` WIDTH. Every dialog in the app used to be pinned
  * to one width, which is fine for a confirm and wrong for a panel — the launch
  * modal's setup step (plans/done/GAME_LAUNCH_MODAL.md §3) holds a seat picker, a stake
  * row, house-rule toggles and a seat preview, and at `max-w-lg` that is a form you
- * scroll. The fix is three rungs and not a free width, for the reason the kit
- * exists at all: a per-caller width is how five modals end up five sizes.
+ * scroll. The fix is a fixed set of rungs and not a free width, for the reason the
+ * kit exists at all: a per-caller width is how five modals end up five sizes.
  */
 export interface ModalProps {
   open: boolean;
@@ -52,17 +52,25 @@ export interface ModalProps {
 }
 
 /**
- * The three rungs, and the ONLY place a modal's width is named.
+ * The rungs, and the ONLY place a modal's width is named.
  *
  * Each value must be a `max-w-*` Tailwind really generates — it builds them from its
  * `--container-*` theme namespace, and an unmatched one emits nothing at all, silently, leaving
  * the box at whatever width it already had. That is the `loadout.color` failure wearing a
- * `className`, so `tests/modal.test.ts` resolves all three against the theme.
+ * `className`, so `tests/modal.test.ts` resolves every one of them against the theme.
+ *
+ * `xl` IS A PANEL, NOT A DIALOG, and it was added because `lg` could not carry one. The launch
+ * modal's table setup is eight controls, a seat preview and two ways into somebody else's table;
+ * at 48rem that is three of them stacked in a very long column, so the answer to "I want to play
+ * UNO" was a form you scroll past the fold — the exact complaint `lg` was added to fix, one step
+ * further along. A fourth rung is a decision rather than a drift: it is the width at which a
+ * two-column create panel and a side column both fit, and nothing else in the app asks for it.
  */
 export const MODAL_WIDTH = {
   sm: 'max-w-md',
   md: 'max-w-lg',
   lg: 'max-w-3xl',
+  xl: 'max-w-7xl',
 } as const;
 
 export type ModalSize = keyof typeof MODAL_WIDTH;

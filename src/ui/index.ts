@@ -26,7 +26,7 @@ export { Input } from '@/ui/Input';
 export type { InputProps } from '@/ui/Input';
 
 export { Modal } from '@/ui/Modal';
-export type { ModalProps } from '@/ui/Modal';
+export type { ModalProps, ModalSize } from '@/ui/Modal';
 
 /** Mount once at the app root. Toasts and confirm() do not work without it. */
 export { UiRoot } from '@/ui/UiRoot';
