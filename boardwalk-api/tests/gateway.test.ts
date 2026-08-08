@@ -294,6 +294,58 @@ describe('RoomGateway — over a real socket', () => {
     expect(frame.t === 'room' && frame.snapshot?.meta.houseRules).toEqual({});
   });
 
+  /**
+   * A TABLE ASKED FOR SEATED COMES BACK SEATED (plans/GAME_LAUNCH_MODAL.md §5.2).
+   *
+   * The store test proves the seats are filled; this proves the field SURVIVES THE FRAME. That is a
+   * separate failure and a quiet one: the store can be entirely right while `onCreate` drops
+   * `fillAi` on the floor, and the symptom is a launch modal that promised a table of bots and
+   * delivered six empty chairs — no error anywhere, just a Start button that will not light.
+   *
+   * Read off the SUBSCRIPTION rather than the create reply, which carries only a room code.
+   */
+  it('a create asking to fill the chairs comes back seated, with the host still at 0', async () => {
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'uno',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 4,
+      fillAi: true,
+    });
+    const roomId = okValue(created) as string;
+    ada.fire({ t: 'subscribe', gameId: 'uno', roomId });
+    const frame = await ada.waitFor((m) => m.t === 'room');
+    ada.close();
+    expect(frame.t === 'room' && frame.snapshot?.seats).toEqual([
+      { kind: 'human', name: 'Ada', uid: 'ada' },
+      { kind: 'ai', name: 'CPU 2', uid: null },
+      { kind: 'ai', name: 'CPU 3', uid: null },
+      { kind: 'ai', name: 'CPU 4', uid: null },
+    ]);
+  });
+
+  it('a create that says nothing about filling leaves every other chair open', async () => {
+    // The deploy-order default, over the wire: every client that predates the field sends no
+    // `fillAi`, and it must read as the table this gateway has always made — not as a full house.
+    const ada = await Client.open(url, 'ada');
+    const created = await ada.request({
+      t: 'create',
+      gameId: 'chess',
+      host: { uid: 'ada', name: 'Ada' },
+      seatCount: 2,
+    });
+    const roomId = okValue(created) as string;
+    ada.fire({ t: 'subscribe', gameId: 'chess', roomId });
+    const frame = await ada.waitFor((m) => m.t === 'room');
+    ada.close();
+    expect(frame.t === 'room' && frame.snapshot?.seats[1]).toEqual({
+      kind: 'open',
+      name: '',
+      uid: null,
+    });
+  });
+
   it('refuses a forged author on create, claim, and chat', async () => {
     const ada = await Client.open(url, 'ada');
     // create with a host uid ≠ the socket's identity

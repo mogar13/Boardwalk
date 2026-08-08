@@ -136,6 +136,12 @@ export default tseslint.config(
       '@boardwalk/no-raw-palette': 'error',
       '@boardwalk/no-daisyui-classes': 'error',
 
+      // The launch modal. `<Modal>` is the only dialog, and this is what keeps that true —
+      // v1's four modal systems each looked like a reasonable twenty lines in the change that
+      // added them. Like the two rules above it carries its own `src/ui` exemption rather than
+      // taking a `files:` override below, so the boundary is in the rule and not in this config.
+      '@boardwalk/no-raw-dialog': 'error',
+
       // Phase 2. Firebase is reachable from src/system/repo/firebase and nowhere
       // else — and the concrete repos only from the composition root above them.
       // Note there is NO `files:` override for this anywhere below: the rule carries

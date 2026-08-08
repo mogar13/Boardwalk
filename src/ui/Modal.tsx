@@ -23,6 +23,13 @@ import { cx } from '@/ui/cx';
  * (`e.target === dialog`) instead of the getBoundingClientRect() arithmetic the
  * usual approach needs — which silently breaks the first time anyone adds padding
  * or a transform. ::backdrop still paints behind it, so the dim and blur are free.
+ *
+ * THREE WIDTHS, NOT A `className` WIDTH. Every dialog in the app used to be pinned
+ * to one width, which is fine for a confirm and wrong for a panel — the launch
+ * modal's setup step (plans/GAME_LAUNCH_MODAL.md §3) holds a seat picker, a stake
+ * row, house-rule toggles and a seat preview, and at `max-w-lg` that is a form you
+ * scroll. The fix is three rungs and not a free width, for the reason the kit
+ * exists at all: a per-caller width is how five modals end up five sizes.
  */
 export interface ModalProps {
   open: boolean;
@@ -39,13 +46,38 @@ export interface ModalProps {
   children?: ReactNode;
   /** Buttons. Put the primary action last — it sits nearest the thumb. */
   footer?: ReactNode;
+  /** How wide the box may grow. Defaults to `'md'`, which is the width every dialog had. */
+  size?: ModalSize;
   className?: string;
 }
 
+/**
+ * The three rungs, and the ONLY place a modal's width is named.
+ *
+ * Each value must be a `max-w-*` Tailwind really generates — it builds them from its
+ * `--container-*` theme namespace, and an unmatched one emits nothing at all, silently, leaving
+ * the box at whatever width it already had. That is the `loadout.color` failure wearing a
+ * `className`, so `tests/modal.test.ts` resolves all three against the theme.
+ */
+export const MODAL_WIDTH = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-3xl',
+} as const;
+
+export type ModalSize = keyof typeof MODAL_WIDTH;
+
 const BOX = cx(
-  'rounded-box border-bw-line bg-base-200 w-full max-w-lg border',
+  // NO WIDTH HERE. The width comes from MODAL_WIDTH at the call site, and if a `max-w-*` were
+  // left in this list too, both would land on the element and CSS source order — not the prop —
+  // would decide which one won. A `size` that silently does nothing is the whole bug.
+  'rounded-box border-bw-line bg-base-200 w-full border',
   'inset-shadow-rim shadow-lift',
-  'flex flex-col',
+  // `max-h-full` is the viewport minus the dialog's own padding — but ONLY because the dialog
+  // pins its single row to `minmax(0,1fr)`; see DIALOG, where the reason is a measurement rather
+  // than an argument. The BOX is what the viewport bounds — see BODY for why that is not the same
+  // as clamping the body.
+  'flex max-h-full flex-col',
   // The box scales in with the dialog. `group-open:` rather than its own state, so
   // there is exactly one thing (the [open] attribute) driving the animation.
   'scale-95 opacity-0 transition-[opacity,transform] duration-200 ease-strike',
@@ -67,6 +99,16 @@ const DIALOG = cx(
   // Gating display on [open] hands it back to the platform, which was right.
   'group open:grid',
   'm-auto h-full max-h-none w-full max-w-none place-items-center bg-transparent p-4',
+  // ONE DEFINITE ROW, and `minmax(0,1fr)` rather than `1fr`. This is what makes the box's
+  // `max-h-full` mean anything at all, and without it the whole flexed-body design silently does
+  // nothing: a grid row is auto-sized by default, so `max-height: 100%` on the item resolves
+  // against a height the ITEM produced — 100% of itself, which clamps nothing. Measured in a real
+  // browser at 1280×800: a tall body gave a 1463px row, a 1463px box hanging 679px off the bottom
+  // of the screen, and a body that never scrolled. With the row pinned it is 768px (the viewport
+  // less this element's own p-4) and the body scrolls, which is the entire point of the change.
+  // `1fr` alone is not enough — a fr track keeps an automatic min-content minimum, the same trap
+  // `min-h-0` exists for one layout system across.
+  'grid-rows-[minmax(0,1fr)]',
   // display/overlay + allow-discrete is what makes an exit animation possible at
   // all: both properties are discrete, so without this the dialog vanishes on frame
   // one and the transition plays to an empty box nobody sees.
@@ -79,6 +121,22 @@ const DIALOG = cx(
   'backdrop:transition-opacity backdrop:duration-200'
 );
 
+/**
+ * THE BODY FLEXES; IT DOES NOT CLAMP.
+ *
+ * It used to be `max-h-[60vh]`, which is wrong in both directions at once. On a desktop with room
+ * to spare a panel scrolled at 60% of the viewport while the page behind it had none — the
+ * complaint that prompted this — and on a short viewport the box could still overflow, because
+ * header + 60vh + footer is more than 100vh. Bounding the BOX instead (`max-h-full`) and letting
+ * the body take what is left means content scrolls only when the viewport genuinely cannot hold
+ * it, and the header and footer stay put either way.
+ *
+ * `min-h-0` is the load-bearing half of `flex-1`: a flex item's default `min-height: auto` refuses
+ * to shrink below its content, so without it the body ignores its own `overflow-y-auto` and pushes
+ * the footer off the bottom of the box.
+ */
+const BODY = 'text-base-content/90 min-h-0 flex-1 overflow-y-auto px-6 pb-5 text-sm';
+
 export function Modal({
   open,
   onClose,
@@ -86,6 +144,7 @@ export function Modal({
   description,
   children,
   footer,
+  size = 'md',
   className,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -136,8 +195,10 @@ export function Modal({
         if (e.target === ref.current) onClose();
       }}
     >
-      <div className={cx(BOX, className)}>
-        <header className="flex items-start gap-4 px-6 pt-5 pb-4">
+      <div className={cx(BOX, MODAL_WIDTH[size], className)}>
+        {/* `shrink-0` on both: with the body at `flex-1` they are the only two items that must
+            keep their natural height, and a flex item shrinks by default. */}
+        <header className="flex shrink-0 items-start gap-4 px-6 pt-5 pb-4">
           <div className="min-w-0 flex-1">
             <h2
               id={titleId}
@@ -166,14 +227,10 @@ export function Modal({
           </button>
         </header>
 
-        {children !== undefined && (
-          <div className="text-base-content/90 max-h-[60vh] overflow-y-auto px-6 pb-5 text-sm">
-            {children}
-          </div>
-        )}
+        {children !== undefined && <div className={BODY}>{children}</div>}
 
         {footer !== undefined && (
-          <footer className="border-bw-line flex justify-end gap-2 border-t px-6 py-4">
+          <footer className="border-bw-line flex shrink-0 justify-end gap-2 border-t px-6 py-4">
             {footer}
           </footer>
         )}

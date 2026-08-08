@@ -289,14 +289,20 @@ when it lands it is a manifest change that this modal draws for free.
 with its guards, and leaves the app in a shippable state. A session picks up the first unticked
 slice and stops when it lands — do not chain two because the first looked small.
 
-**Slice 0 — the Pi.** Ship `fillAi` to the referee and verify it from the artifact before the
-frontend merges. It is additive and inert until a client sends it. (Standard order: the frontend
-deploys on push, the Pi by hand, so the Pi goes first — see the deploy rows in
-[../CLAUDE.md](../CLAUDE.md#enforcement).)
+**Slice 0 — the Pi.** ✅ **CODE DONE 2026-08-08; the DEPLOY is still owed.** `create` takes an
+optional `fillAi` and `fillWithAi` seats the house in every empty chair, in the same construction as
+the host — atomic, and the seat array stays the referee's. Guarded in the store, over a real socket,
+and in both places for the absent-field default; falsified four ways. **Nothing sends the field
+yet**, so prod is unaffected either way, but the Pi must carry it before slice 3 merges: a control
+that promises a seated table and delivers six open chairs is a UI that lies. Standard order — the
+frontend deploys on push, the Pi by hand, so the Pi goes first (see the deploy rows in
+[../CLAUDE.md](../CLAUDE.md#enforcement)).
 
-**Slice 1 — the kit.** `Modal` gains `size` and a flexed body. Nothing else changes; the three
-existing call sites keep today's width by taking the default. Falsify by shrinking the viewport and
-confirming the body — and only the body — scrolls.
+**Slice 1 — the kit.** ✅ **DONE 2026-08-08.** `Modal` gains `size` (`MODAL_WIDTH`, three rungs) and
+a flexed body; the three existing call sites keep today's width by taking the default. It also
+picked up §3's other half — `@boardwalk/no-raw-dialog`, so nothing outside `src/ui` can hand-roll a
+second modal system. **The browser pass was not a formality and is written up in §10**: the first
+version of the flexed body was wrong in a way every unit assertion called green.
 
 **Slice 2 — the entrance.** `MODE_LABEL`, `<TableSetup>` extracted, `<GameLaunchModal>`, the hub
 card intercepting its own click, option values seeded through the URL, and Tic-Tac-Toe's seat range
@@ -334,7 +340,43 @@ are the kind that report success by matching nothing.
 
 ## 10. What was verified, and how
 
-*(Filled in by slice 4. Nothing here yet — an empty section is the honest state.)*
+### Slice 1, the kit (2026-08-08) — and the bug that only the browser could see
+
+Driven against the emulator at `localhost:5177` with the cached headless Chromium, on the real
+`<Modal>` (the profile card's rename dialog), measuring the live boxes rather than the source.
+
+**The first version of the flexed body was wrong, and every unit assertion said it was right.** The
+box carried `max-h-full` and the dialog `h-full p-4`, which reads as "the box is at most the
+viewport less its padding" and is not: `<dialog>` is `open:grid` with ONE auto row, an auto row is
+sized by its item, and `max-height: 100%` on that item therefore resolves against a height the item
+itself produced. At 1280×800 with a tall body the measured row was **1463px**, the box **1463px**
+tall hanging **679px off the bottom of the screen**, and `body.scrollHeight === body.clientHeight` —
+the body never scrolled at all, which is the entire feature. Nothing static could see it: the class
+names were all correct, `tsc` sees strings, and the utilities all resolve.
+
+The fix is one class on the dialog — `grid-rows-[minmax(0,1fr)]`, which makes the row definite so
+the percentage has something real to resolve against. `minmax(0,1fr)` and not `1fr`, because a fr
+track keeps an automatic min-content minimum: the same trap `min-h-0` exists for, one layout system
+across. `max-height: calc(100dvh - 2rem)` on the box measured identically and was declined — it
+duplicates the dialog's own padding as a constant, so changing `p-4` would silently break it.
+
+Measured after the fix, all with **zero console errors and zero 4xx responses**:
+
+| Case | Box | Header / footer | Body |
+|---|---|---|---|
+| Short body, 1280×800 | 263px, centred, unchanged from before the change | both visible | does not scroll |
+| Tall body, `md`, 1280×800 | 768px = viewport − the dialog's `p-4`, inside the screen | both fully visible | scrolls |
+| Tall body, `lg`, 1280×800 | 768px wide (`max-w-3xl`), 768px tall | both fully visible | scrolls |
+| Tall body, **900×420** | 388px = viewport − padding | **both fully visible** | scrolls |
+
+That last row is the case the old `max-h-[60vh]` could not do: header + 60vh + footer is more than
+the screen, so a short viewport pushed the footer off it. All three rungs emit real CSS
+(`max-w-md` → 448px, `max-w-lg` → 512px, `max-w-3xl` → 768px), which is the check the unit test
+cannot make — Tailwind generates a utility only from a name it scanned. And the modal adds **no
+dead scroll**: the profile page's own `scrollHeight - clientHeight` was 1637 with the dialog closed
+and 1637 with it open, which is the Phase-1 `open:grid` signature staying clean.
+
+*(Slices 2–4 fill in the rest.)*
 
 ---
 

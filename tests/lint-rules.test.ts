@@ -159,6 +159,27 @@ export function go(): void {
   return null;
 }`,
 
+  // ── The launch modal: one dialog, and it is the kit's ──────────────────────
+  // BAN — a second modal system, at the moment it is still one reasonable-looking
+  // element. This is how v1 got four of them.
+  'dialog-raw.tsx': `export function Rolled(): null {
+  void (<dialog open>Are you sure?</dialog>);
+  return null;
+}`,
+  // The exemption, byte-for-byte the same element in the one directory allowed to
+  // spell it. If this and the fixture above do not disagree, the rule is not
+  // path-scoped at all and one of the two tests is a lie.
+  'ui/__lint_fixtures__/dialog-kit-ok.tsx': `export function Kit(): null {
+  void (<dialog open>Are you sure?</dialog>);
+  return null;
+}`,
+  // The false-positive proof. A ref type and the WORD are both ordinary; neither is
+  // a second modal system, and a rule that fires on them is a grep — which is a rule
+  // somebody disables, and then it guards nothing.
+  'dialog-words.ts': `export const kind = 'dialog';
+export const ref: HTMLDialogElement | null = null;
+export function open(): string { return 'dialog'; }`,
+
   // THE FALSE-POSITIVE PROOF, and the whole reason the rule is scoped the way it
   // is. This is an arcade: 'card' is a DaisyUI component AND a thing a card game
   // says in every other line. A rule that fires here is a rule that gets disabled
@@ -470,6 +491,25 @@ describe('DaisyUI classes are unspellable outside src/ui', () => {
 
   it('does NOT fire on semantic utilities', async () => {
     expect(await rulesFiredOn('daisy-semantic-ok.tsx')).not.toContain(RULE);
+  });
+});
+
+describe('one modal, and it is the kit’s', () => {
+  const RULE = '@boardwalk/no-raw-dialog';
+
+  it('fires on a hand-rolled <dialog> outside src/ui', async () => {
+    expect(await rulesFiredOn('dialog-raw.tsx')).toContain(RULE);
+  });
+
+  it('does NOT fire inside src/ui — the kit is the one place allowed', async () => {
+    // Byte-for-byte the same element as dialog-raw.tsx, one directory across.
+    expect(await rulesFiredOn('ui/__lint_fixtures__/dialog-kit-ok.tsx')).not.toContain(RULE);
+  });
+
+  it('does NOT fire on the WORD, or on HTMLDialogElement', async () => {
+    // The element name only. `<Modal>` itself holds a `useRef<HTMLDialogElement>`, and a game may
+    // perfectly well have a string 'dialog' in it — neither is a second modal system.
+    expect(await rulesFiredOn('dialog-words.ts')).not.toContain(RULE);
   });
 });
 

@@ -66,6 +66,21 @@ export type RequestMsg =
        * where it is made safe — one boundary, not two that can disagree.
        */
       houseRules?: unknown;
+      /**
+       * SEAT THE HOUSE IN EVERY REMAINING CHAIR (plans/GAME_LAUNCH_MODAL.md §5.2). An AI table
+       * asked for from the launch modal comes up playable rather than asking the host to press
+       * "Add CPU" once per chair — six clicks on a 7-seat UNO table, to play alone.
+       *
+       * Absent reads as `false`, a table of open chairs, which is exactly what this server did
+       * before the field existed. That is the deploy-order property this repo holds every new wire
+       * field to: an OLD referee ignores it and produces today's table (benign), and an old client
+       * never sends it (inert). The Pi still goes first, because a control that promises a seated
+       * table and delivers six empty chairs is a UI that lies.
+       *
+       * It is a request to FILL, never a seat array: a client cannot name who sits where, any more
+       * than it can name its own stake. The store seats them, atomically, at create.
+       */
+      fillAi?: boolean;
     }
   | { t: 'claimSeat'; id: number; gameId: string; roomId: string; index: number; who: SeatOccupant }
   | { t: 'releaseSeat'; id: number; gameId: string; roomId: string; index: number; fallback: 'ai' | 'open' }

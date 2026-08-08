@@ -245,7 +245,11 @@ export class RoomGateway {
           msg.anteCents,
           // Raw for the same reason. The store bounds the SHAPE; the game's own resolver decides
           // what any of it means, at the deal. The gateway understands neither and must not guess.
-          msg.houseRules
+          msg.houseRules,
+          // Strictly `=== true`, not truthy. Everything else on this wire that means "on" is read
+          // the same way (`sanitizeRules`, `fallback === 'ai'`): a request to seat six bots should
+          // take one spelling, so a client sending `"false"` seats nobody rather than a full table.
+          msg.fillAi === true
         );
       case 'subscribe':
         return this.onSubscribe(conn, asStr(msg.gameId), asStr(msg.roomId));
@@ -314,13 +318,14 @@ export class RoomGateway {
     seatCount: unknown,
     visibility: RoomVisibility,
     anteCents: unknown,
-    houseRules: unknown
+    houseRules: unknown,
+    fillAi: boolean
   ): void {
     if (host === null) return this.reply(conn, id, { ok: false, error: 'Bad host.' });
     if (host.uid !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Forbidden.' });
     const count = typeof seatCount === 'number' && Number.isInteger(seatCount) ? seatCount : 0;
     const ante = typeof anteCents === 'number' ? anteCents : 0;
-    const res = this.store.create(gameId, host, count, visibility, ante, houseRules);
+    const res = this.store.create(gameId, host, count, visibility, ante, houseRules, fillAi);
     this.reply(conn, id, res.ok ? { ok: true, value: res.roomId } : { ok: false, error: res.error });
     // A fresh table is not listed until somebody is AT it (`listOpen` requires presence), so this
     // publishes nothing today — the host's `presence` frame, a beat later, is what puts it on the
