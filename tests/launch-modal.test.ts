@@ -19,9 +19,17 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { GameLaunchModal } from '@/shell/GameLaunchModal';
-import { registry, type RegisteredGame } from '@/games/registry';
+import { registry, type GameManifest, type RegisteredGame } from '@/games/registry';
 import { MODE_HINT, MODE_LABEL, roomModesOf, type GameMode } from '@/system/room/modes';
-import { isPlainClick, isRoomMode, launchModes, launchStepFor, playPath } from '@/shell/launch';
+import {
+  isPlainClick,
+  isRoomMode,
+  launchModes,
+  launchStepFor,
+  launchWidthFor,
+  playPath,
+} from '@/shell/launch';
+import { MODAL_WIDTH } from '@/ui/Modal';
 import { readOptionValues } from '@/system/options/optionParams';
 import { defaultOptionValues, NO_OPTIONS } from '@/system/options/options';
 
@@ -113,6 +121,49 @@ describe('launchStepFor — what a mode has to ask before the game starts', () =
     const solo = registry.filter((g) => g.manifest.modes.includes('solo'));
     const steps = new Set(solo.map((g) => launchStepFor(g.manifest, 'solo')));
     expect(steps).toEqual(new Set(['options', 'none']));
+  });
+});
+
+describe('launchWidthFor — how wide the entrance opens', () => {
+  it('answers with a rung the kit actually has', () => {
+    // A width that is not a `MODAL_WIDTH` key is a `size` prop that indexes to `undefined`, which
+    // Tailwind answers by generating nothing: the box silently keeps the width it already had.
+    // Typed today, asserted anyway, because the rungs are a plain object and the failure is silent.
+    const rungs = new Set(Object.keys(MODAL_WIDTH));
+    expect(launchWidthFor(registry[0]?.manifest as GameManifest, null)).toBe('sm');
+    for (const { manifest } of registry)
+      for (const mode of manifest.modes)
+        expect(rungs.has(launchWidthFor(manifest, mode)), `${manifest.id}/${mode}`).toBe(true);
+  });
+
+  it('never opens a TABLE narrower than the width every setup step already had', () => {
+    // The regression that would be invisible: a table step at `sm`/`md` puts eight controls in a
+    // 32rem box, which is the "form you scroll" this whole seam exists to have fixed. A room mode
+    // may only go WIDER than the `lg` it shipped at, never narrower.
+    for (const { manifest } of registry)
+      for (const mode of roomModesOf(manifest.modes))
+        expect([`lg`, `xl`], `${manifest.id}/${mode}`).toContain(launchWidthFor(manifest, mode));
+  });
+
+  it('reaches BOTH table widths on the registry as it stands', () => {
+    // `launchStepFor`'s rule one door along, and for the same reason: a branch no registered game
+    // takes is a branch nobody has looked at. `xl` is the two-column panel (UNO's stake and house
+    // rules), `lg` the one-column one (Chess hot-seat is a heading and a Create button — at `xl`
+    // that is a 1280px box holding one button, which reads as a panel that failed to load).
+    const widths = new Set(
+      registry.flatMap(({ manifest }) =>
+        roomModesOf(manifest.modes).map((mode) => launchWidthFor(manifest, mode))
+      )
+    );
+    expect(widths).toEqual(new Set(['lg', 'xl']));
+  });
+
+  it('gives a SOLO step a dialog, never a panel', () => {
+    // Solitaire's step is two segmented rows and Deal me in. It rode at the table's width for one
+    // afternoon, and 48rem of empty box around three buttons is the same failure as a table that
+    // is too narrow, pointing the other way.
+    for (const { manifest } of registry)
+      if (manifest.modes.includes('solo')) expect(launchWidthFor(manifest, 'solo')).toBe('md');
   });
 });
 

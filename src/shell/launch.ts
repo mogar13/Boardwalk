@@ -1,7 +1,9 @@
 import type { GameManifest } from '@/games/registry';
 import { MODE_LABEL, type GameMode, type RoomMode } from '@/system/room/modes';
+import { setupHasTwoColumns } from '@/system/room/TableSetup';
 import { writeOptionValues } from '@/system/options/optionParams';
 import type { OptionValues } from '@/system/options/options';
+import type { ModalSize } from '@/ui';
 
 /**
  * THE LAUNCH MODAL, as pure functions — everything the entrance decides, decided where a test can
@@ -52,6 +54,32 @@ export function launchStepFor(manifest: GameManifest, mode: GameMode): LaunchSte
  */
 export function isRoomMode(mode: GameMode): mode is RoomMode {
   return mode !== 'solo';
+}
+
+/**
+ * HOW WIDE THE MODAL OPENS, which is a property of the STEP rather than of the modal (§3) — and,
+ * for a table, of how much that particular game's panel holds.
+ *
+ * A width is not a nicety here, in either direction. Too narrow and the create panel is eight
+ * controls stacked in one column that runs past the fold, which is a form you scroll — the
+ * complaint every rung above `md` has been added to answer. Too wide and the box is mostly empty:
+ * Chess hot-seat's table setup is a heading and a Create button, and at UNO's width that reads as
+ * a panel that failed to load the rest of itself. Both failures look like the app being broken.
+ *
+ *   • no mode yet — two or three buttons. `sm`.
+ *   • a solo game's options — a couple of segmented rows and Deal me in. A dialog: `md`.
+ *   • a table whose game declares a stake or a house rule — two columns of controls beside the
+ *     seat preview and the ways into somebody else's table. `xl`.
+ *   • any other table — seats, who may join, maybe a bot tier. `lg`, which is what every setup
+ *     step was before this.
+ *
+ * The `xl` case asks `setupHasTwoColumns`, the same function the panel splits on, so the box and
+ * its contents cannot come to different conclusions about how much there is to draw.
+ */
+export function launchWidthFor(manifest: GameManifest, mode: GameMode | null): ModalSize {
+  if (mode === null) return 'sm';
+  if (!isRoomMode(mode)) return 'md';
+  return setupHasTwoColumns(manifest, mode) ? 'xl' : 'lg';
 }
 
 /**

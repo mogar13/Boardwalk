@@ -7,7 +7,7 @@ import { GameOptions } from '@/system/options/GameOptions';
 import { useGameOptions } from '@/system/options/useGameOptions';
 import { MODE_HINT, type GameMode, type RoomMode } from '@/system/room/modes';
 import { TableSetup } from '@/system/room/TableSetup';
-import { isRoomMode, launchModes, launchStepFor, playPath } from '@/shell/launch';
+import { isRoomMode, launchModes, launchStepFor, launchWidthFor, playPath } from '@/shell/launch';
 
 /**
  * THE ENTRANCE — one modal, every game (plans/done/GAME_LAUNCH_MODAL.md).
@@ -77,14 +77,10 @@ export function GameLaunchModal({ game, onClose }: GameLaunchModalProps) {
       onClose={onClose}
       title={shown?.manifest.name ?? 'Play'}
       description={shown?.manifest.blurb}
-      /*
-        THE WIDTH IS THE STEP'S, which is what `size` was added for (§3). The ways in are two or
-        three buttons — at `lg` they are a 768px box holding a column of nothing, which reads as a
-        panel that failed to load the rest of itself. The setup step is a seat picker, a stake row,
-        house-rule toggles, a seat preview and the two ways to join somebody else's table, in two
-        columns, and at the old fixed `max-w-lg` that was a form you scroll.
-      */
-      size={mode === null ? 'sm' : 'lg'}
+      // THE WIDTH IS THE STEP'S, and for a table it is that game's panel's — see `launchWidthFor`,
+      // where the four rungs and the reason for each are written down, and where a test can reach
+      // them. Nothing about a width is decided in this file.
+      size={shown === null ? 'sm' : launchWidthFor(shown.manifest, mode)}
     >
       {shown !== null && (
         // KEYED BY GAME, so the panel's own state (seat count, stake, rules) belongs to one game
