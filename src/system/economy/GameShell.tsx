@@ -1,12 +1,9 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { GameManifest } from '@/games/registry';
 import { GameContextProvider } from '@/system/economy/gameContext';
-import {
-  defaultOptionValues,
-  NO_OPTIONS,
-  setOptionValue,
-  type OptionValues,
-} from '@/system/options/options';
+import { NO_OPTIONS, setOptionValue } from '@/system/options/options';
+import { readOptionValues, writeOptionValues } from '@/system/options/optionParams';
 
 /**
  * `<GameShell>` — the boundary the play route wraps a game in, so `useGame`/`useBet` have a
@@ -31,17 +28,37 @@ export interface GameShellProps {
 }
 
 export function GameShell({ manifest, children }: GameShellProps) {
-  // PRE-GAME OPTIONS live here because this is the boundary that already exists — one provider per
-  // game, mounted by the play route, torn down on exit. The state is the shell's rather than the
-  // game's for the same reason the manifest is: a game that owned it would draw its own control
-  // (Solitaire did, and that is the hand-rolled shape this seam replaces).
+  /**
+   * PRE-GAME OPTIONS live here because this is the boundary that already exists — one provider per
+   * game, mounted by the play route, torn down on exit. The values are the shell's rather than the
+   * game's for the same reason the manifest is: a game that owned them would draw its own control
+   * (Solitaire did, and that is the hand-rolled shape this seam replaces).
+   *
+   * THEY ARE DERIVED FROM THE URL AND HELD NOWHERE (plans/GAME_LAUNCH_MODAL.md §4). This used to be
+   * a `useState` seeded from the defaults, which had two consequences worth naming: a tier chosen
+   * in the launch modal — drawn on the HUB, one navigation before this component exists — had
+   * nowhere to live across that navigation, and a mid-lobby refresh silently reset the AI tier to
+   * its default while the host believed they had picked one.
+   *
+   * Seeding the state from the URL would fix both and leave the fact in two places, which is
+   * exactly what `<Lobby>`'s `roomId ?? linkedTable` did before the derivation rule caught it. So
+   * there is no state: `readOptionValues` is total (a hand-edited query string cannot produce a
+   * value a reducer has no branch for), and the write goes back to the URL.
+   */
   const spec = manifest.options ?? NO_OPTIONS;
-  const [optionValues, setOptionValues] = useState<OptionValues>(() => defaultOptionValues(spec));
+  const [params, setParams] = useSearchParams();
+  const optionValues = useMemo(() => readOptionValues(spec, params), [spec, params]);
   const setOption = useCallback(
     (id: string, value: string) => {
-      setOptionValues((current) => setOptionValue(spec, current, id, value));
+      const next = setOptionValue(spec, optionValues, id, value);
+      // A refused write (unknown id, unoffered value) returns the same object by identity, and a
+      // no-op must stay one: writing it back would push a history entry for a click that changed
+      // nothing. `replace` for the same reason `chooseMode` uses it — picking a tier is not a
+      // navigation, and the Back button belongs to the pages you visited.
+      if (next === optionValues) return;
+      setParams(writeOptionValues(params, next), { replace: true });
     },
-    [spec]
+    [spec, optionValues, params, setParams]
   );
 
   const value = useMemo(

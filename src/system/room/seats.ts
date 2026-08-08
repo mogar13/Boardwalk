@@ -194,6 +194,21 @@ export function humanCount(seats: readonly Seat[]): number {
 }
 
 /**
+ * HOW MANY HUMANS THIS TABLE COULD HOLD — the seated ones plus every chair still open, because an
+ * open chair is a chair a person takes.
+ *
+ * `humanCount`'s sibling, and the distinction only matters BEFORE the deal. `tableBacking` asks how
+ * many humans are anteing, which at a live table is `humanCount` and at a table that does not exist
+ * yet is this: a planned AI table is one human and no open chairs (the house banks it), a planned
+ * ONLINE table is one human and six chairs somebody can walk into (it is not a house table, whoever
+ * has arrived so far). Asking `humanCount` of a planned online table answers "one", which would
+ * lock UNO's bot tier at `sharp` on the strength of a guess that nobody else will ever join.
+ */
+export function humanCapacity(seats: readonly Seat[]): number {
+  return seats.filter((s) => s.kind === 'human' || s.kind === 'open').length;
+}
+
+/**
  * HOW BIG A TABLE THE HOST MAY BUILD — every size the manifest's `seats` range allows.
  *
  * `manifest.seats.min` was very nearly dead data before this: the lobby created every table at
