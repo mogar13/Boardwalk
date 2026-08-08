@@ -3,17 +3,32 @@ import { Button, cx } from '@/ui';
 import { useAuth } from '@/system/auth/useAuth';
 import { useAudio } from '@/system/audio/useAudio';
 import { formatMoney, useProfile } from '@/system/profile/useProfile';
-import { rankForLevel, xpProgress } from '@boardwalk/game-logic';
 import { Wordmark } from '@/shell/Wordmark';
 import { Avatar } from '@/system/profile/Avatar';
 import { useEquippedFrame } from '@/system/frame/useEquippedFrame';
 
 /**
  * The pier's top bar. v1's HUD, but injected ONCE by the shell instead of by each of 31
- * games calling `SystemUI.init()` — and it is where level/XP finally show, which v1 could
- * not: v1 defined `#xp-bar-fill` in `system_ui.css`, a stylesheet the hub did not link, so
- * XP was invisible in-game and re-declared in `hub-style.css`. Here there is one bar, in
- * one place, reading one store.
+ * games calling `SystemUI.init()`.
+ *
+ * WHAT IT CARRIES, AND WHAT IT DELIBERATELY STOPPED CARRYING. The bar holds what you SPEND — the
+ * bankroll — plus who you are and how to leave. It used to hold a level badge and an XP sliver as
+ * well (`LevelPip`, deleted), and that was the wrong home for a reason only visible once the hub
+ * grew a header of its own: the hub was printing "THE BOARDWALK" under a bar already carrying the
+ * wordmark, and anything it said about the player would have printed the level under a bar already
+ * carrying the level. The same duplication twice.
+ *
+ * The fix is not to pick one of the two. Money and XP are different kinds of fact. A bankroll has
+ * to be readable AT THE TABLE, because that is where it is being spent and a wager you cannot
+ * afford is a decision made with that number in view. XP is never spent — it is only ever
+ * reviewed, and the place you review it is the place you decide what to play next. So progression
+ * moved to `Hub.tsx`'s header, where it has room for the rank name and the next rung (the pip's
+ * own comment conceded it had room for neither), and the bar got its horizontal budget back.
+ *
+ * v1 could not have made that choice, because it could not reliably draw the bar at all: it
+ * defined `#xp-bar-fill` in `system_ui.css`, a stylesheet the hub did not link, so XP was
+ * invisible in-game and re-declared in `hub-style.css`. Two bars, two stylesheets, one number.
+ * There is still exactly one here, reading one store; what changed is which page it is on.
  *
  * DOG FOOD, like every file outside `src/ui`: both Phase 1 lint rules apply in full. No raw
  * DaisyUI class, no colour — the kit and semantic tokens only. `data-money` (from the
@@ -56,41 +71,6 @@ function MuteToggle() {
   );
 }
 
-/**
- * The compact level badge + XP sliver. The profile page draws the full meter; this is the glance.
- *
- * The RANK rides in the tooltip rather than the bar, and that is a space decision, not a shrug:
- * "Casino Legend" is 13 characters next to a bankroll, a name and four nav links, and the bar's
- * job here is to say "you are making progress" in one glance. The profile card is where the rank
- * is spelled out — it has the room, and it is where somebody goes to look at themselves.
- */
-function LevelPip({ xp }: { xp: number }) {
-  const { level, pct } = xpProgress(xp);
-  return (
-    <div
-      className="flex items-center gap-2"
-      title={`${rankForLevel(level).name} — level ${String(level)}`}
-    >
-      <span className="font-display text-bw-muted text-xs font-semibold tracking-[0.14em] uppercase">
-        Lv {level}
-      </span>
-      <div
-        className="bg-base-300 border-bw-line inset-shadow-well h-1.5 w-16 overflow-hidden rounded-full border"
-        role="progressbar"
-        aria-valuenow={Math.round(pct * 100)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Level ${String(level)} progress`}
-      >
-        <div
-          className="bg-secondary h-full rounded-full transition-[width] duration-500 ease-strike"
-          style={{ width: `${String(Math.round(pct * 100))}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 export function TopBar() {
   const { signOut } = useAuth();
   const profile = useProfile();
@@ -123,8 +103,6 @@ export function TopBar() {
 
           {profile !== null && (
             <>
-              <LevelPip xp={profile.xp} />
-
               {/* Gold, once. It is money — the whole rule. */}
               <span
                 data-money
