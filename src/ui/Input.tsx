@@ -95,6 +95,23 @@ export function Input({ label, hint, error, className, type, ...rest }: InputPro
         <input
           id={id}
           type={effectiveType}
+          // NO BROWSER AUTOFILL, unless the caller asks for it BY NAME. Every field in this app is
+          // a field in an application — a chat message, a table code, a stake, a display name — and
+          // the browser answers all of them with a dropdown of things you typed into some other
+          // field once, over the top of the thing you are typing into. It is worst exactly where it
+          // was reported: chat, where the suggestion list covers the conversation.
+          //
+          // Declared BEFORE `{...rest}` on purpose, which is the whole design. This is a default,
+          // not a policy — `AuthPanel` passes `username`/`email`/`current-password`, and those must
+          // win, because a password manager filling a sign-in form is the one place the feature is
+          // the point. The spread order is what makes "off by default, opt in deliberately" a
+          // property of the kit rather than a note in a review.
+          //
+          // ONLY `autoComplete`, and the restraint is deliberate. `autoCorrect`/`autoCapitalize`/
+          // `spellCheck` are a different nuisance with a different answer per field — chat IS prose
+          // and wants its capital and its squiggle, a table code is not — so turning them off here
+          // would fix nothing that was reported and quietly make the one prose field worse.
+          autoComplete="off"
           aria-invalid={error ? true : undefined}
           aria-describedby={message !== undefined ? messageId : undefined}
           // Ternary, not `error && FIELD_ERROR`: `error` is a ReactNode, and

@@ -203,7 +203,9 @@ export function Board() {
   const lines = useMoveLog(state?.lastEvent ?? DEAL_EVENT, names, state?.round ?? -1);
 
   // Audio, from the OS roles (never a filename): a slide when anyone draws, a place on any played
-  // card, a chime when the turn becomes mine, and win/lose at the end.
+  // card, a low blip when the turn becomes mine, and — at the end of the ROUND — `victory`/`defeat`
+  // rather than `win`/`lose`. Those two are blackjack's hand-settle blips, which fire every few
+  // seconds there; a whole game of UNO ending deserves the phrase, not the blip. See `sounds.ts`.
   const topKey = useRef<string | null>(null);
   const drawKey = useRef(0);
   const prevTurnMine = useRef(false);
@@ -224,7 +226,7 @@ export function Board() {
 
     if (state.winner >= 0 && wonKey.current !== state.round) {
       wonKey.current = state.round;
-      audio.play(state.winner === mySeatIndex ? 'win' : 'lose');
+      audio.play(state.winner === mySeatIndex ? 'victory' : 'defeat');
     }
   }, [state, isMyTurn, mySeatIndex, audio]);
 
@@ -332,6 +334,14 @@ export function Board() {
       />
       <PenaltyFlash penaltyKey={event.penalty && event.seat === mySeatIndex ? event.seq : null} />
 
+      {/* THE COMMENTARY, WHICH DRAWS NOWHERE NEAR HERE. `<MoveLog>` is a `<TableAside>`, so it
+          portals into the lobby's sidebar under the chat; this element occupies no space on the
+          felt. It used to be a strip at the BOTTOM of this card, below the hand — under the one
+          element that grows — so on any real table it was off the bottom of the screen, and the
+          room it took came out of the felt it exists to comment on. The call stays in the board
+          because the scrollback is derived from the projection the board already subscribes to. */}
+      <MoveLog lines={lines} mySeat={mySeatIndex} />
+
       {/* THE POT. The referee's own number, off the projection — not `potFor(seats, ante)` computed
           here, which is the same figure right up until it is not (a seat that changed hands after
           the deal, an ante that was refused) and then the table quotes a pot nobody will be paid. */}
@@ -348,19 +358,26 @@ export function Board() {
           sat a dozen pixels off the deck, so the same table read as three unrelated groups instead
           of one felt. A table's shape is information in UNO (see the layout note below), and a
           shape that changes with the viewport carries none. So the row is content-width and
-          CENTRED, with a deliberate gap either side — the seats land ~12–13rem out, just clear of
-          the direction ring, and the gap tightens on a phone rather than the layout changing.
+          CENTRED, with a deliberate gap either side, and the gap tightens on a phone rather than
+          the layout changing.
 
-          The vertical gap is the same measurement taken the other way: the far seats sit clear of
-          the ring's top arrow (~3.25rem above the pile box) instead of on top of it. A big table
-          rings wider than a small one for free, because two stacked flank seats make the middle
-          row taller and `items-center` pushes the far side out with it. */}
-      <div className="flex flex-col items-center gap-14">
+          THE GAPS ARE MEASURED FROM THE RING, NOT FROM THE CARDS, and that is what `TableCentre`'s
+          own padding buys: the centre column reserves the direction ring's overhang, so every
+          number here is clear air on top of it and no table size can push a seat into an arrow.
+          Before that the clearance was a coincidence of the flanks being tall, and the heads-up
+          table — which has no flank seats at all — put the top arrow in the far player's hand.
+
+          THEY OPEN UP ON A DESKTOP, because the felt is ~80rem wide and the table was drawing
+          itself into the middle 40 of them, with everything piled around one small ring. The rungs
+          are deliberate rather than one big number: a phone keeps a compact table, and `xl` gets a
+          seat-to-seat span of ~41rem, which is open enough to read as a table and short of the
+          point where the two flanks stop looking like they are at the same one. */}
+      <div className="flex flex-col items-center gap-6 lg:gap-8">
         {/* TOP SEATS — across the far side of the table. Rendered only when somebody sits there: a
             three-handed table seats its two opponents on the flanks, and a reserved-but-empty row
             left a band of dead felt above the piles. */}
         {topSeats.length > 0 && (
-          <div className="flex flex-wrap items-start justify-center gap-8 sm:gap-14">
+          <div className="flex flex-wrap items-start justify-center gap-8 sm:gap-12 xl:gap-24 2xl:gap-32">
             {topSeats.map((s) => seatView(s.seat, 'top'))}
           </div>
         )}
@@ -369,9 +386,9 @@ export function Board() {
             with the discard rather than floating at the top of a tall row. An empty flank is not
             rendered at all: a heads-up table has nobody on either side, and two reserved columns
             plus their gaps is the same dead felt the top row avoids, turned on its side. */}
-        <div className="flex items-center justify-center gap-2 sm:gap-10 lg:gap-16">
+        <div className="flex items-center justify-center gap-2 sm:gap-6 lg:gap-14 xl:gap-24 2xl:gap-48">
           {leftSeats.length > 0 && (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-6">
               {leftSeats.map((s) => seatView(s.seat, 'left'))}
             </div>
           )}
@@ -389,7 +406,7 @@ export function Board() {
           />
 
           {rightSeats.length > 0 && (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-6">
               {rightSeats.map((s) => seatView(s.seat, 'right'))}
             </div>
           )}
@@ -500,8 +517,6 @@ export function Board() {
           You went out {ordinal(myPlace)} — playing on for the rest of the places.
         </p>
       )}
-
-      <MoveLog lines={lines} mySeat={mySeatIndex} />
 
       {/* THE RESULT IS THE OS'S SURFACE, not a panel at the bottom of this card. It used to be
           exactly that — under the move log, under the hand, under the felt — so the answer to "did

@@ -40,7 +40,7 @@ export function HandView({ cards, myTurn, isPlayable, onPlay, pendingId }: HandV
     <div
       role="group"
       aria-label="Your hand"
-      className="flex w-full justify-center overflow-x-auto px-4 pt-8 pb-2"
+      className="flex w-full justify-center overflow-x-auto px-4 pt-7 pb-1"
     >
       <div className="flex shrink-0 items-end">
         {cards.map((card, i) => {

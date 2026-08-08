@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Button, Card } from '@/ui';
+import { ExitGame } from '@/system/game/ExitGame';
 import { useAudio } from '@/system/audio/useAudio';
 import { GameResult } from '@/system/game/GameResult';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
@@ -105,9 +106,7 @@ export function Table({ onExit }: { onExit: () => void }) {
         <h1 className="font-display text-base-content text-2xl font-bold tracking-[0.08em] uppercase">
           Blackjack
         </h1>
-        <Button variant="quiet" size="sm" onClick={onExit}>
-          Leave table
-        </Button>
+        <ExitGame onExit={onExit} />
       </div>
 
       <Card felt={felt} className="flex flex-col gap-8 p-6 sm:p-8">

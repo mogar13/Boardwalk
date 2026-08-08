@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Input, cx } from '@/ui';
 import { groupMessages } from '@/system/chat/grouping';
 import { useChat } from '@/system/chat/useChat';
 import { useRoom } from '@/system/room/useRoom';
+import { useTailPin } from '@/system/room/useTailPin';
 
 /**
  * The room chat — a message list and a composer, both from `src/ui`. It is a plain reader of
@@ -20,15 +21,14 @@ import { useRoom } from '@/system/room/useRoom';
  *      because there was no height to exceed. A `max-h` is the actual bound, and it is what makes
  *      the other two behaviours mean anything.
  *   2. IT FOLLOWS THE TAIL — but only while the reader is already at the tail. A log that does not
- *      follow its own tail shows you the first thing anyone said for the rest of the game (the
- *      `MoveLog` rule); one that follows it unconditionally yanks a reader out of scrollback every
- *      time somebody types. Hence the pin, released by scrolling up and taken back by the button.
+ *      follow its own tail shows you the first thing anyone said for the rest of the game; one that
+ *      follows it unconditionally yanks a reader out of scrollback every time somebody types. Hence
+ *      the pin, released by scrolling up and taken back by the button. That behaviour is now
+ *      `useTailPin`, shared with UNO's move log — which had the unconditional version, and was
+ *      therefore impossible to read back one turn in.
  *   3. IT SAYS REPETITION ONCE. A run of identical lines is one line and a count. See `grouping.ts`
  *      for why the collapse is strictly local.
  */
-
-/** How close to the bottom still counts as reading the live end rather than scrollback. */
-const NEAR_BOTTOM_PX = 48;
 
 export function ChatPanel() {
   const { messages, send } = useChat();
@@ -36,25 +36,12 @@ export function ChatPanel() {
   const [draft, setDraft] = useState('');
   const groups = useMemo(() => groupMessages(messages), [messages]);
 
-  const box = useRef<HTMLDivElement>(null);
-  const [pinned, setPinned] = useState(true);
-  const [seenCount, setSeenCount] = useState(0);
-  const count = messages.length;
-
-  useEffect(() => {
-    const el = box.current;
-    if (el === null || !pinned) return;
-    el.scrollTop = el.scrollHeight;
-    setSeenCount(count);
-  }, [count, pinned]);
-
-  // Only meaningful while unpinned — pinned, `seenCount` tracks `count` and this is always 0.
-  const missed = Math.max(0, count - seenCount);
+  const { attach, onScroll, pinned, missed, pin } = useTailPin<HTMLDivElement>(messages.length);
 
   const submit = () => {
     send(draft); // sanitizes and drops an empty message itself
     setDraft('');
-    setPinned(true); // sending is asking to see the end of the conversation
+    pin(); // sending is asking to see the end of the conversation
   };
 
   return (
@@ -65,12 +52,8 @@ export function ChatPanel() {
 
       <div className="flex flex-col gap-2">
         <div
-          ref={box}
-          onScroll={() => {
-            const el = box.current;
-            if (el === null) return;
-            setPinned(el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX);
-          }}
+          ref={attach}
+          onScroll={onScroll}
           className="flex max-h-[60vh] min-h-32 flex-col gap-2 overflow-y-auto overscroll-contain"
           aria-live="polite"
           // "Chat log", not "Chat messages": the composer below is labelled "Chat message", and two
@@ -122,9 +105,7 @@ export function ChatPanel() {
             variant={missed > 0 ? 'secondary' : 'quiet'}
             size="sm"
             className="w-full"
-            onClick={() => {
-              setPinned(true);
-            }}
+            onClick={pin}
           >
             {missed > 0 ? `${String(missed)} new ↓` : 'Latest ↓'}
           </Button>

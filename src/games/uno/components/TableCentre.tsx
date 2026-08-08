@@ -24,32 +24,59 @@ import type { Card, UnoColor } from '@boardwalk/game-logic/games/uno';
  * own set, and it is legible in a still screenshot before the animation contributes anything.
  * So both halves now carry the state: the arrowheads say which way, the spin repeats it in motion.
  *
- * THE ACTIVE COLOUR is a tinted pill rather than v1's solid one. Solid was the obvious port and it
- * fails on contrast: `--color-uno-yellow` is a light token and `--color-uno-red` a mid one, so one
- * label would need dark text and the other light, and a per-colour text rule is two more tokens for
- * a thing that is already unambiguous. Tint the surface, keep the border and the dot at full
- * strength, and the text stays `base-content` against a background the theme has already checked.
+ * ═══ TWO THINGS WERE WRONG WITH IT ON SCREEN, AND ONLY ONE WAS VISIBLE IN THE CODE ═══
+ *
+ * 1. THE RING WANDERED OFF THE PILES AS IT TURNED, which is what "the spinny thing and the deck
+ *    aren't centred on each other" turned out to be. The centring (`-translate-x-1/2
+ *    -translate-y-1/2`) and the rotation were on the SAME element, and `animate-spin`'s keyframe
+ *    sets the whole `transform` property — so the animation's implicit `from` is the element's
+ *    translated transform, its `to` is a bare `rotate(360deg)` with no translation in it, and the
+ *    browser interpolates the two by decomposing matrices. The ring therefore slides off centre
+ *    over the cycle and snaps back at the seam. It is CORRECT at t=0, which is why it survives
+ *    every static reading and every screenshot taken at the wrong moment.
+ *
+ *    `SeatView` documents the identical trap one file over ("on one element `animate-deal`'s
+ *    keyframed `transform` would replace the rotation"), and the fix is the same: two elements. The
+ *    outer one is placed and centred and never animated; the inner one only ever spins.
+ *
+ * 2. THE ARROWS CUT THROUGH THE CORNERS OF THE CARDS. Their radius was ~6.25rem while the piles box
+ *    measures 10.5 × 7rem, whose own circumscribed radius is 6.31rem — so the orbit passed INSIDE
+ *    the corners of the thing it is supposed to be orbiting, and the top and bottom arrows had
+ *    3.5rem of daylight while the side ones grazed the discard. That reads as "off centre" even in
+ *    a still. The ring is sized off that measurement now, and the four glyphs are placed by their
+ *    own CENTRES (`-translate-x-1/2 -translate-y-1/2` on each, in both axes) rather than by
+ *    whichever edge happened to be convenient — so all four sit exactly on one circle instead of
+ *    approximately on one.
+ *
+ * THE ACTIVE COLOUR IS THE LIGHT COMING OFF THE DISCARD, and the pill it replaced is gone. The pill
+ * said "RED" under a red card next to a red-tinted border: three statements of one fact, stacked, in
+ * the middle of the table. What the pill was genuinely load-bearing for is the ONE case where the
+ * top card cannot say it — a wild, which is black and whose chosen colour lives nowhere else — so
+ * the halo is painted from `color` rather than from the card, and a wild sits in the light of
+ * whatever was called. Redundant when the card is coloured (harmlessly: it reads as the felt lit by
+ * the card), and the whole answer when it is not. The screen-reader line stays, because a blur is
+ * not text.
  */
 
-const SWATCH: Record<UnoColor, string> = {
-  red: 'bg-uno-red',
-  blue: 'bg-uno-blue',
-  green: 'bg-uno-green',
-  yellow: 'bg-uno-yellow',
-};
-const TINT: Record<UnoColor, string> = {
-  red: 'bg-uno-red/15 border-uno-red/70',
-  blue: 'bg-uno-blue/15 border-uno-blue/70',
-  green: 'bg-uno-green/15 border-uno-green/70',
-  yellow: 'bg-uno-yellow/15 border-uno-yellow/70',
+/** The colour the felt is lit in — the active colour, which is NOT always the top card's. */
+const HALO: Record<UnoColor, string> = {
+  red: 'bg-uno-red/50',
+  blue: 'bg-uno-blue/50',
+  green: 'bg-uno-green/50',
+  yellow: 'bg-uno-yellow/50',
 };
 
-/** Where each arrow sits on the ring. The glyph it carries depends on which way play is going. */
+/**
+ * Where each arrow sits on the ring — by its own CENTRE, so the four are genuinely concentric.
+ * `left-full`/`top-full` put the anchor on the far edge; the pair of `-translate-*-1/2` then pulls
+ * the glyph back onto it. See note 2 above for why "the edge that was convenient" is not good
+ * enough here.
+ */
 const AT = [
-  'top-0 left-1/2 -translate-x-1/2',
-  'top-1/2 right-0 -translate-y-1/2',
-  'bottom-0 left-1/2 -translate-x-1/2',
-  'top-1/2 left-0 -translate-y-1/2',
+  'top-0 left-1/2 -translate-x-1/2 -translate-y-1/2',
+  'top-1/2 left-full -translate-x-1/2 -translate-y-1/2',
+  'top-full left-1/2 -translate-x-1/2 -translate-y-1/2',
+  'top-1/2 left-0 -translate-x-1/2 -translate-y-1/2',
 ] as const;
 
 /** Tangential, in the same order as `AT`: top, right, bottom, left. Clockwise, then anticlockwise. */
@@ -79,112 +106,125 @@ export function TableCentre({
   onDraw,
 }: TableCentreProps) {
   return (
-    <div className="flex flex-col items-center gap-3 py-2">
-      {/* THE RING IS CENTRED ON THE PILES, not on this whole column, and it is the reason the
-          wrapper below exists. It used to be absolutely placed against the outer box — which
-          includes the colour pill — so it sat ~1.25rem BELOW the cards it is supposed to orbit,
-          and its top arrow landed in the far seat's hand instead of on the felt between them.
-          Wrapping the piles gives it a box whose centre is the piles' centre, and the piles row is
-          `relative` so it paints over the ring rather than under it.
-
-          SIZE IS A CLEARANCE, not a look: at 14rem the arrows orbit ~6.25rem out, which is 0.75rem
-          clear of the discard and ~2.75rem above the cards — the gap the seats are then placed
-          outside of (see the table's spacing in Board.tsx). The old 16rem ring reached further than
-          the seats did, which is most of why the felt read as empty in the middle and crowded at
-          the edges. */}
-      <div className="relative">
+    // THE COLUMN RESERVES THE RING'S OWN OVERHANG (`px-10 py-18` ≈ the 2.25rem / 4rem the 15rem
+    // ring reaches past a 10.5 × 7rem pile box, plus a little for the glyphs' ink). That is what
+    // makes the table's spacing composable: every gap in `Board.tsx` is then measured from the
+    // outside of the ring rather than from the cards, so no arrangement of seats can be pushed into
+    // it — including the heads-up table, which has no flank seats to hold the far player off and is
+    // exactly where the top arrow used to land in somebody's hand.
+    <div className="relative flex items-center justify-center px-10 py-18">
+      {/* PLACED AND CENTRED — never animated. See note 1: a rotation keyframe on this element would
+          replace the centring transform and walk the ring off the piles as it turns. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-1/2 size-60 -translate-x-1/2 -translate-y-1/2"
+      >
+        {/* THE ORBIT, DRAWN. Four arrows alone are four specks on a big felt: they were legible on
+            a 14rem ring wrapped tight around the cards and stopped being so the moment the ring was
+            sized to clear them. A faint circle costs nothing, reads as a table marking rather than
+            a widget, and — the actual point — makes CONCENTRICITY something a player can see
+            instead of something the arithmetic promises. It does not spin, because a circle has
+            nothing to say about which way it is turning. */}
+        <div className="border-bw-line/70 absolute inset-0 rounded-full border" />
+        {/* SPUN — and it carries no placement of its own, so there is nothing for the keyframe to
+            overwrite. */}
         <div
-          aria-hidden
           className={cx(
-            'text-bw-line-strong pointer-events-none absolute top-1/2 left-1/2 size-56 -translate-x-1/2 -translate-y-1/2',
-            'animate-spin [animation-duration:14s]',
+            'text-bw-muted relative size-full animate-spin [animation-duration:14s]',
             direction === -1 && '[animation-direction:reverse]'
           )}
         >
           {AT.map((at, i) => (
-            <span key={at} className={cx('absolute text-2xl leading-none', at)}>
+            <span
+              key={at}
+              // Sat ON the line, so each arrow reads as a marker travelling round the circle rather
+              // than as a glyph near it — hence the base surface behind it, which is what makes the
+              // arrowhead legible against the stroke it is standing on.
+              className={cx('bg-base-200 absolute px-1 text-3xl leading-none', at)}
+            >
               {GLYPHS[direction][i]}
             </span>
           ))}
         </div>
+      </div>
 
-        <div className="relative flex items-center gap-8">
-          {/* DRAW PILE — a real stack, because "how much deck is left" is a thing players watch. */}
-          <button
-            type="button"
-            disabled={!canDraw}
-            onClick={onDraw}
-            aria-label={
-              pending > 0
-                ? `Take the stack — ${String(pending)} cards`
-                : `Draw a card — ${String(deckCount)} left in the deck`
-            }
-            className={cx(
-              'group relative rounded-box transition',
-              canDraw
-                ? 'hover:-translate-y-1 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary'
-                : 'cursor-default brightness-75'
-            )}
-          >
-            {/* The two cards UNDER the top one. They are darkened, not faded: a translucent card
+      <div className="relative flex items-center gap-6">
+        {/* DRAW PILE — a real stack, because "how much deck is left" is a thing players watch. */}
+        <button
+          type="button"
+          disabled={!canDraw}
+          onClick={onDraw}
+          aria-label={
+            pending > 0
+              ? `Take the stack — ${String(pending)} cards`
+              : `Draw a card — ${String(deckCount)} left in the deck`
+          }
+          className={cx(
+            'group rounded-box relative transition',
+            canDraw
+              ? 'focus-visible:outline-secondary cursor-pointer hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-offset-4'
+              : 'cursor-default brightness-75'
+          )}
+        >
+          {/* The two cards UNDER the top one. They are darkened, not faded: a translucent card
               shows the felt through the sliver of it that sticks out, which reads as a smudge
               rather than a deck. Brightness keeps them opaque, so the stack reads as depth. */}
-            <img
-              src={unoBackSrc()}
-              alt=""
-              aria-hidden
-              className="absolute top-1 left-1 h-28 w-auto rounded-md brightness-50"
-            />
-            <img
-              src={unoBackSrc()}
-              alt=""
-              aria-hidden
-              className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md brightness-75"
-            />
-            <img
-              src={unoBackSrc()}
-              alt=""
-              aria-hidden
-              className={cx(
-                'relative h-28 w-auto rounded-md transition',
-                canDraw && 'group-hover:shadow-glow-primary'
-              )}
-            />
-            <span className="bg-base-100/90 border-bw-line text-bw-muted absolute -right-2 -bottom-2 rounded-full border px-1.5 py-0.5 text-[0.65rem] tabular-nums">
-              {deckCount}
-            </span>
-            {/* WHAT THE PILE OWES YOU. The deck-count badge's own treatment mirrored to the opposite
+          <img
+            src={unoBackSrc()}
+            alt=""
+            aria-hidden
+            className="absolute top-1 left-1 h-28 w-auto rounded-md brightness-50"
+          />
+          <img
+            src={unoBackSrc()}
+            alt=""
+            aria-hidden
+            className="absolute top-0.5 left-0.5 h-28 w-auto rounded-md brightness-75"
+          />
+          <img
+            src={unoBackSrc()}
+            alt=""
+            aria-hidden
+            className={cx(
+              'relative h-28 w-auto rounded-md transition',
+              canDraw && 'group-hover:shadow-glow-primary'
+            )}
+          />
+          <span className="bg-base-100/90 border-bw-line text-bw-muted absolute -right-2 -bottom-2 rounded-full border px-1.5 py-0.5 text-[0.65rem] tabular-nums">
+            {deckCount}
+          </span>
+          {/* WHAT THE PILE OWES YOU. The deck-count badge's own treatment mirrored to the opposite
               corner, because it is the same kind of fact about the same object — how many cards are
               coming off it. FLAT `warning` and no glow: the budget is blue=act, cyan=here,
               gold=money, and a stack is a threat rather than any of the three. It is also the one
               number on the felt that makes the dimmed fan legible — without it, a hand where only
               the +2s light up reads as a bug. */}
-            {pending > 0 && (
-              <span className="bg-base-100/90 border-warning text-warning absolute -top-2 -left-2 rounded-full border px-1.5 py-0.5 text-[0.7rem] font-bold tabular-nums">
-                +{pending}
-              </span>
-            )}
-          </button>
+          {pending > 0 && (
+            <span className="bg-base-100/90 border-warning text-warning absolute -top-2 -left-2 rounded-full border px-1.5 py-0.5 text-[0.7rem] font-bold tabular-nums">
+              +{pending}
+            </span>
+          )}
+        </button>
 
-          {/* DISCARD — keyed on the card's id so a new top card MOUNTS and plays `pitch` once. */}
+        {/* DISCARD — keyed on the card's id so a new top card MOUNTS and plays `pitch` once, sitting
+            in the light of whatever colour is live. */}
+        <div className="relative">
+          <span
+            aria-hidden
+            className={cx('absolute -inset-2 rounded-2xl blur-lg transition-colors', HALO[color])}
+          />
           <img
             key={top.id}
             src={unoCardSrc(top)}
             alt="Top of the pile"
-            className="animate-pitch h-28 w-auto rounded-md"
+            className="animate-pitch relative h-28 w-auto rounded-md"
           />
         </div>
       </div>
 
-      <span
-        className={cx(
-          'font-display inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[0.7rem] font-semibold tracking-[0.15em] uppercase',
-          TINT[color]
-        )}
-      >
-        <span aria-hidden className={cx('inline-block size-2.5 rounded-full', SWATCH[color])} />
-        {color}
-      </span>
+      {/* The halo is light, not text. A wild's chosen colour is information a reader would otherwise
+          have no way at all to get, since the card's own face does not carry it. */}
+      <span className="sr-only" aria-live="polite">{`Colour in play: ${color}`}</span>
     </div>
   );
 }

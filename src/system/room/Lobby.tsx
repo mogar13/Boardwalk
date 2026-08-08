@@ -1,13 +1,15 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Card } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
+import { ExitGame } from '@/system/game/ExitGame';
 import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
 import { formatMoney } from '@boardwalk/game-logic';
 import { RoomProvider } from '@/system/room/RoomProvider';
 import { SeatList } from '@/system/room/SeatList';
+import { TableAsideProvider } from '@/system/room/TableAside';
 import { tableBacking } from '@/system/room/ante';
 import { houseRuleChoices, isRuleOn } from '@/system/room/houseRules';
 import { MODE_LABEL, roomModesOf } from '@/system/room/modes';
@@ -98,13 +100,14 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
     setParams(next);
   };
 
-  /** Leave the table AND the link that put us there, or a "leave" would immediately re-enter it. */
-  const leaveTable = () => {
-    const next = new URLSearchParams(params);
-    next.delete('table');
-    next.delete('mode');
-    setParams(next, { replace: true });
-  };
+  /**
+   * There is no `leaveTable` any more, and its absence is the point — see `<ExitGame>`.
+   *
+   * It used to drop `?table=` and leave you sitting on this component's OTHER branch, the
+   * create-or-join page, which is a form nobody asked for at the moment they said "leave". The way
+   * back to a table's setup is the browser's Back button, which works because `enterTable` PUSHES;
+   * the way out of a game is the hub, and there is now exactly one control that says so.
+   */
 
   /** The mode buttons write the URL too, so the choice is still there after a reload. */
   const chooseMode = (m: RoomIdentity['mode']) => {
@@ -117,7 +120,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
     const identity: RoomIdentity = { gameId: manifest.id, roomId: activeRoomId, myUid, mode };
     return (
       <RoomProvider identity={identity}>
-        <LobbyRoom manifest={manifest} onLeave={leaveTable} onExit={onExit}>
+        <LobbyRoom manifest={manifest} onExit={onExit}>
           {children}
         </LobbyRoom>
       </RoomProvider>
@@ -169,9 +172,7 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
       <TableSetup manifest={manifest} mode={mode} onEntered={enterTable} />
 
       <div>
-        <Button variant="quiet" onClick={onExit}>
-          Back to the hub
-        </Button>
+        <ExitGame onExit={onExit} />
       </div>
     </div>
   );
@@ -183,17 +184,22 @@ export function Lobby({ manifest, onExit, children }: LobbyProps) {
  */
 function LobbyRoom({
   manifest,
-  onLeave,
   onExit,
   children,
 }: {
   manifest: GameManifest;
-  onLeave: () => void;
   onExit: () => void;
   children?: ReactNode;
 }) {
   const { seats, status, meta, isHost, setStatus } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
+  /**
+   * THE SIDEBAR'S SPARE SLOT — see `<TableAside>`. A game's own running panel (UNO's move log, and
+   * whatever the seventh game brings) portals in UNDER the chat, because the alternative is what
+   * UNO did for six phases: draw it at the bottom of the board, below the player's own hand, where
+   * it is off the screen on every real table and squeezing the felt it exists to comment on.
+   */
+  const [asideSlot, setAsideSlot] = useState<HTMLDivElement | null>(null);
   // WHO IS PAYING FOR THIS TABLE — what the stake line says, and whether the options control is
   // locked. The referee asks the same question of the game's own rulebook when it deals; this is
   // the OS's copy of it, and the two are asserted to agree (see `tableBacking`).
@@ -209,9 +215,7 @@ function LobbyRoom({
     return (
       <Card className="flex flex-col items-start gap-4 p-6">
         <p className="text-bw-muted text-sm">This table has closed.</p>
-        <Button variant="primary" onClick={onLeave}>
-          Back to the lobby
-        </Button>
+        <ExitGame onExit={onExit} />
       </Card>
     );
   }
@@ -227,17 +231,19 @@ function LobbyRoom({
   const canStart = isHost && status === 'waiting' && tableIsFull(seats) && humanCount(seats) >= 1;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h1 className="font-display text-base-content text-2xl font-bold tracking-[0.06em] uppercase">
-            {manifest.name}
-          </h1>
-          <p className="text-bw-muted text-sm">
-            Table <span className="text-secondary font-display tracking-[0.3em]">{roomIdView}</span>{' '}
-            · {status} · {humanCount(seats)} player{humanCount(seats) === 1 ? '' : 's'}
-          </p>
-          {/*
+    <TableAsideProvider slot={asideSlot}>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h1 className="font-display text-base-content text-2xl font-bold tracking-[0.06em] uppercase">
+              {manifest.name}
+            </h1>
+            <p className="text-bw-muted text-sm">
+              Table{' '}
+              <span className="text-secondary font-display tracking-[0.3em]">{roomIdView}</span> ·{' '}
+              {status} · {humanCount(seats)} player{humanCount(seats) === 1 ? '' : 's'}
+            </p>
+            {/*
             WHAT THIS CHAIR COSTS, said before anybody sits in it.
 
             The whole reason the ante is room META rather than a create-time value the host keeps to
@@ -250,25 +256,25 @@ function LobbyRoom({
             The "needs two players" half is said here too, because the stake is otherwise a promise
             the table cannot keep — a bot has no bankroll, so below two humans nothing is charged.
           */}
-          {meta !== null && meta.anteCents > 0 && (
-            <p className="text-warning text-sm font-semibold">
-              {formatMoney(meta.anteCents)} a seat ·{' '}
-              {backing === 'house' ? 'the house banks the pot' : 'winner takes the pot'}
-              {backing === 'none' && (
-                <span className="text-bw-muted font-normal">
-                  {' '}
-                  — needs two human players, or the table plays for XP alone
-                </span>
-              )}
-              {backing === 'house' && (
-                <span className="text-bw-muted font-normal">
-                  {' '}
-                  — you against the bots, at the house&rsquo;s odds
-                </span>
-              )}
-            </p>
-          )}
-          {/*
+            {meta !== null && meta.anteCents > 0 && (
+              <p className="text-warning text-sm font-semibold">
+                {formatMoney(meta.anteCents)} a seat ·{' '}
+                {backing === 'house' ? 'the house banks the pot' : 'winner takes the pot'}
+                {backing === 'none' && (
+                  <span className="text-bw-muted font-normal">
+                    {' '}
+                    — needs two human players, or the table plays for XP alone
+                  </span>
+                )}
+                {backing === 'house' && (
+                  <span className="text-bw-muted font-normal">
+                    {' '}
+                    — you against the bots, at the house&rsquo;s odds
+                  </span>
+                )}
+              </p>
+            )}
+            {/*
             WHAT GAME THIS TABLE IS PLAYING, said before anybody sits down — the ante line's
             sibling, and it exists for the identical reason. The rules reach a guest on their own
             room subscription (the gateway test asserts exactly that, over a real socket, from a
@@ -282,50 +288,43 @@ function LobbyRoom({
             `UnoState`, which is the match's own copy. Absent/empty draws nothing, so every table
             that agreed to nothing looks exactly as it did.
           */}
-          {meta !== null && ruleLabels.length > 0 && (
-            <p className="text-secondary text-sm font-semibold">
-              House rules: {ruleLabels.join(' · ')}
-            </p>
-          )}
+            {meta !== null && ruleLabels.length > 0 && (
+              <p className="text-secondary text-sm font-semibold">
+                House rules: {ruleLabels.join(' · ')}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {canStart && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  void setStatus('playing');
+                }}
+              >
+                Start
+              </Button>
+            )}
+            <ExitGame onExit={onExit} />
+          </div>
         </div>
-        <div className="flex gap-2">
-          {canStart && (
-            <Button
-              variant="primary"
-              onClick={() => {
-                void setStatus('playing');
-              }}
-            >
-              Start
-            </Button>
-          )}
-          <Button
-            variant="quiet"
-            onClick={() => {
-              onLeave();
-            }}
-          >
-            Leave table
-          </Button>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
-        <div className="flex flex-col gap-4">
-          {status === 'playing' ? (
-            // The game's board — rendered inside <RoomProvider>, so its hooks reach the one
-            // subscription. Falls back to a placeholder when the lobby is used bare (dev harness).
-            (children ?? (
-              <Card className="p-6">
-                <p className="text-bw-muted text-sm">
-                  The game is in progress. A game passed as children renders its board here — the
-                  room, seats, chat and ordering it stands on are all live.
-                </p>
-              </Card>
-            ))
-          ) : (
-            <>
-              {/*
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
+          <div className="flex flex-col gap-4">
+            {status === 'playing' ? (
+              // The game's board — rendered inside <RoomProvider>, so its hooks reach the one
+              // subscription. Falls back to a placeholder when the lobby is used bare (dev harness).
+              (children ?? (
+                <Card className="p-6">
+                  <p className="text-bw-muted text-sm">
+                    The game is in progress. A game passed as children renders its board here — the
+                    room, seats, chat and ordering it stands on are all live.
+                  </p>
+                </Card>
+              ))
+            ) : (
+              <>
+                {/*
                 The options seam's other half, and the gap it shipped with: `<GameOptions>` was
                 rendered only by solo games, because every option-declaring game was solo. AI
                 difficulty (V1_FEATURE_GAPS #1) is the room game that closes it — the tier is
@@ -343,7 +342,7 @@ function LobbyRoom({
                 a tier cannot be retuned mid-game. v1's Chess reached the same place by queueing a
                 difficulty change to the next game; here the shape of the lobby says it instead.
               */}
-              {/*
+                {/*
                 `forMoney` when the HOUSE is the counterparty, which is the only arrangement where
                 an option can price itself: the player picks the tier and the house pays the bill,
                 so a game may pin one (`GameOption.pinnedForMoney`) and the control shows the pinned
@@ -351,24 +350,23 @@ function LobbyRoom({
                 there is paying for anybody else's difficulty. The referee pins it either way; this
                 is what stops the screen offering a choice the deal will not honour.
               */}
-              {isHost && <GameOptions layout="panel" forMoney={backing === 'house'} />}
-              <SeatList allowAi={manifest.modes.includes('ai')} />
-            </>
-          )}
-          {meta !== null && (
-            <p className="text-bw-muted text-xs">Hosted by {isHost ? 'you' : 'another player'}.</p>
-          )}
-        </div>
-        <div className="min-h-64">
-          <ChatPanel />
+                {isHost && <GameOptions layout="panel" forMoney={backing === 'house'} />}
+                <SeatList allowAi={manifest.modes.includes('ai')} />
+              </>
+            )}
+            {meta !== null && (
+              <p className="text-bw-muted text-xs">
+                Hosted by {isHost ? 'you' : 'another player'}.
+              </p>
+            )}
+          </div>
+          <div className="flex min-h-64 flex-col gap-6">
+            <ChatPanel />
+            {/* `empty:hidden` so a table whose game contributes no panel does not pay a gap for it. */}
+            <div ref={setAsideSlot} className="flex flex-col gap-6 empty:hidden" />
+          </div>
         </div>
       </div>
-
-      <div>
-        <Button variant="quiet" onClick={onExit}>
-          Back to the hub
-        </Button>
-      </div>
-    </div>
+    </TableAsideProvider>
   );
 }

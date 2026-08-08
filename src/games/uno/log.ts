@@ -36,19 +36,30 @@ function nameOf(names: readonly string[], seat: number): string {
   return n === undefined || n === '' ? `Player ${String(seat + 1)}` : n;
 }
 
-/** A card as words, for the log (the face art carries the colour; the log has to say it). */
+/**
+ * A card as words, for the log — the card's NAME, in title case, with no article.
+ *
+ * IT USED TO SHOUT: `RED 5`, `a WILD DRAW FOUR`. The log paints this label in the card's own colour
+ * (`MoveLog`'s `CARD_TEXT`), so an all-caps colour word says the same thing twice on the one
+ * surface that exists to be read at a glance — and it was the only shouting on the page, which made
+ * a running commentary read like an alarm. Title case, and the colour carries the colour.
+ *
+ * The article went with it. `RED 5` never had one and `a WILD` did, so one move read "played Red 5"
+ * and the next "played a Wild" — treating the label as a card's NAME makes both of them the same
+ * sentence, and it is what the log is doing anyway.
+ */
 export function cardLabel(card: Card): string {
-  if (card.kind === 'wild') return 'a WILD';
-  if (card.kind === 'wild4') return 'a WILD DRAW FOUR';
+  if (card.kind === 'wild') return 'Wild';
+  if (card.kind === 'wild4') return 'Wild Draw Four';
   const face =
     card.kind === 'number'
       ? String(card.value)
       : card.kind === 'skip'
-        ? 'SKIP'
+        ? 'Skip'
         : card.kind === 'reverse'
-          ? 'REVERSE'
-          : 'DRAW TWO';
-  return `${card.color.toUpperCase()} ${face}`;
+          ? 'Reverse'
+          : 'Draw Two';
+  return `${card.color.charAt(0).toUpperCase()}${card.color.slice(1)} ${face}`;
 }
 
 /**

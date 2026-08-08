@@ -286,12 +286,12 @@ describe('linesFor', () => {
   });
 
   it('labels a card the way the log needs to say it out loud', () => {
-    expect(cardLabel(card('x', 'red', 'number', 5))).toBe('RED 5');
-    expect(cardLabel(card('x', 'blue', 'draw2'))).toBe('BLUE DRAW TWO');
-    expect(cardLabel(card('x', 'green', 'skip'))).toBe('GREEN SKIP');
-    expect(cardLabel(card('x', 'yellow', 'reverse'))).toBe('YELLOW REVERSE');
+    expect(cardLabel(card('x', 'red', 'number', 5))).toBe('Red 5');
+    expect(cardLabel(card('x', 'blue', 'draw2'))).toBe('Blue Draw Two');
+    expect(cardLabel(card('x', 'green', 'skip'))).toBe('Green Skip');
+    expect(cardLabel(card('x', 'yellow', 'reverse'))).toBe('Yellow Reverse');
     // A wild has no colour of its own — the log must not claim one.
-    expect(cardLabel(card('x', 'wild', 'wild'))).toBe('a WILD');
-    expect(cardLabel(card('x', 'wild', 'wild4'))).toBe('a WILD DRAW FOUR');
+    expect(cardLabel(card('x', 'wild', 'wild'))).toBe('Wild');
+    expect(cardLabel(card('x', 'wild', 'wild4'))).toBe('Wild Draw Four');
   });
 });

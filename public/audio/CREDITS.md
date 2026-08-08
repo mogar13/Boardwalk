@@ -31,6 +31,8 @@ for private play; it is **not** cleared for redistribution or sale.
 |---|---|---|
 | Casino SFX — card slides/places, chip lays, shuffle, win/lose/push, click, notify (`public/audio/`) | Kenney — *Casino Audio* & *Music Jingles* packs (kenney.nl) | CC0 |
 | Celebration stingers — `unlock.ogg`, `fanfare.ogg` (P5): an achievement firing and a pack reveal | Kenney — *Music Jingles* pack, Sax set (kenney.nl) | CC0 |
+| End-of-round stingers — `victory.ogg`, `defeat.ogg`: a whole game won or lost at a table, as against `win`/`lose`, which settle a single hand. Chosen by MEASUREMENT rather than by name — the Sax set is a sustained instrument, so its spectral contour is the melody and not the decay, and these are the pack's clearest riser and faller | Kenney — *Music Jingles* pack, Sax set (kenney.nl) | CC0 |
+| Turn cue — `notify.ogg`, replacing `notify.mp3`: an octave lower (368 Hz against 754) at the same level and a fifth of the length, because the old one read as shrill for something that fires on every turn | Kenney — *Interface Sounds* pack (kenney.nl) | CC0 |
 | Table felts — `public/felts/felt-{blue,green,red}.png` (P5's `felt` cosmetic) | Game Shack asset trove (`public/assets/boards/table_*.png`) | Mixed (see note) — **private use only** |
 | Standard 52-card deck + backs, UNO deck (`public/cards/`) | Kenney — *Boardgame Pack* (kenney.nl) | CC0 |
 | Poker chips (`public/chips/`) | Rad Potato — *Pixel Perfect* board-game asset pack (itch.io) | CC0 |
