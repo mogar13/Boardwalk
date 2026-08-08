@@ -1326,9 +1326,16 @@ green and deployed. **Phase 6 is complete: Tic-Tac-Toe, Blackjack, Chess, UNO an
 shipped. The launch set of five is done — the next game is built only because one sounds fun, never
 to reach a number (see Scope discipline).**
 
-**Every plan in `plans/` that was ever started is closed** — Phases 0–6, backend Phases A–D, the
-Progression Overhaul P1–P5, and (2026-08-08) the launch modal, all four slices. The one file left
-beside the ROADMAP is [plans/DOMINOES_BRIEF.md](plans/DOMINOES_BRIEF.md), which is a brief for a
+**Every plan that was started before 2026-08-08 is closed** — Phases 0–6, backend Phases A–D, the
+Progression Overhaul P1–P5, and the launch modal, all four slices. **One plan is OPEN**:
+[plans/BLACKJACK_DEPTH.md](plans/BLACKJACK_DEPTH.md), the seats / dealer-stand tier / insurance gap
+the launch modal's Decision 3 carried a rider about and its §6 table still shows as *nothing yet*.
+Three slices, none of them started, and its middle one is the reason it needed a design at all:
+**a dealer-stand tier is the first client-named value in this repo that changes what a hand PAYS**,
+which UNO answered by PINNING the tier (unavailable here — every Blackjack hand has a stake, so a
+pinned tier is a control that never appears) and which this must answer by pricing every tier off a
+measured house edge. The other file beside the ROADMAP is
+[plans/DOMINOES_BRIEF.md](plans/DOMINOES_BRIEF.md), which is a brief for a
 session that has not happened rather than work in flight — and it is a game, so it is optional
 forever by the same rule as any other. What outlived the phases is in [plans/ROADMAP.md](plans/ROADMAP.md), ordered by what goes
 wrong if it is never done — and **both items that could still cost data or chips are now closed**:
