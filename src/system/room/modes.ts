@@ -1,4 +1,5 @@
 import type { GameManifest } from '@/games/registry';
+import type { SeatFill } from '@/system/room/seats';
 
 /**
  * WHAT A WAY IN IS CALLED — the one place the words are written.
@@ -55,4 +56,29 @@ export const MODE_HINT: Partial<Record<GameMode, string>> = {
  */
 export function roomModesOf(modes: readonly GameMode[]): RoomMode[] {
   return modes.filter((m): m is RoomMode => m !== 'solo');
+}
+
+/**
+ * WHAT A WAY IN MEANS FOR THE EMPTY CHAIRS — the one place a mode becomes a fill.
+ *
+ * It lives HERE and not in `seats.ts` because that file's header is a promise ("below this line
+ * there is no mode, only seats") and this is the mode vocabulary's own module — the same reason
+ * `MODE_LABEL` is here rather than in the components that draw it.
+ *
+ * It became a function the moment a second reader appeared. `TableSetup` maps mode to fill to build
+ * the table, and the guard on the entrance's auto-start has to ask the same question of the real
+ * registry; a test that re-spelled the ternary would be comparing a copy of the rule to the rule,
+ * which is the vacuous guard CLAUDE.md's Enforcement note keeps warning about. One function means
+ * the sweep is asking the shipped mapping what it does.
+ *
+ * ONLINE STAYS OPEN, and that is a decision rather than an omission
+ * (plans/done/GAME_LAUNCH_MODAL.md §5.3): a public table that comes up full starts before anyone
+ * can walk up to it, which is the wrong default for the one mode whose entire point is other
+ * people. It is also exactly what makes online the one mode that still shows a Start button —
+ * a table with open chairs is a table waiting for somebody, and that wait is the feature.
+ */
+export function fillForMode(mode: RoomMode): SeatFill {
+  if (mode === 'ai') return 'ai';
+  if (mode === 'hotseat') return 'local';
+  return 'none';
 }

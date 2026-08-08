@@ -16,12 +16,13 @@ import {
   tableRulesFor,
   type TableRules,
 } from '@/system/room/houseRules';
-import type { RoomMode } from '@/system/room/modes';
+import { fillForMode, type RoomMode } from '@/system/room/modes';
 import { SeatPreview } from '@/system/room/SeatPreview';
 import {
   humanCapacity,
   localSeatName,
   plannedSeats,
+  seatsAreReady,
   tableSizeChoices,
   type SeatFill,
 } from '@/system/room/seats';
@@ -163,7 +164,7 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
    * mode whose entire point is other people. The host fills it from the room instead — that is
    * what "Fill with CPUs" in `SeatList` is for.
    */
-  const fill: SeatFill = mode === 'ai' ? 'ai' : mode === 'hotseat' ? 'local' : 'none';
+  const fill: SeatFill = fillForMode(mode);
   const host = { uid: myUid, name: session.username || 'Player' };
   // The array the preview draws AND the array the create is about to produce — one call, so the
   // preview cannot promise a table create does not deliver. See `plannedSeats`.
@@ -238,14 +239,52 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
        * preview drew — arriving to a half-seated board and watching chairs fill in is the same
        * "wait, is this working?" the six clicks were.
        */
+      let allSeated = true;
       if (fill === 'local') {
         for (let i = 1; i < planned.length; i += 1) {
-          await repos.room.claimSeat(manifest.id, result.value, i, {
+          const claimed = await repos.room.claimSeat(manifest.id, result.value, i, {
             uid: myUid,
             name: localSeatName(i),
           });
+          if (!claimed.ok) allSeated = false;
         }
       }
+
+      /**
+       * A TABLE THAT WAS FULL WHEN YOU MADE IT DOES NOT ASK YOU TO START IT.
+       *
+       * The entrance already asked every question this game has — how many chairs, who is in them,
+       * what a chair costs, what rules it is played under — and drew the answer as a seat preview
+       * you pressed Create underneath. An AI table comes back from `create` with every chair filled
+       * and a hot-seat one is filled by the loop above, so by here `canStart` is ALREADY TRUE and
+       * the lobby's Start button is a click on a foregone conclusion. It is not a decision; it is a
+       * screen between a decision and its consequence, and it read as one.
+       *
+       * ONLINE IS NOT THIS CASE and deliberately keeps its button (§5.3's sibling): its chairs are
+       * open on purpose, so the moment it fills is a moment somebody ARRIVED, and the host gets a
+       * beat before the deal. The predicate is what tells the two apart, and it is the SAME
+       * `seatsAreReady` the lobby gates Start on — asked of `planned`, which is the array `create`
+       * just produced. Two spellings could disagree and the disagreement would be a preview that
+       * promised a seated table and a lobby that asked for a click anyway.
+       *
+       * Asked of the PLAN rather than of a re-read snapshot because the plan is what the referee
+       * was told to build and what `tests/room.test.ts` pins the result against — and because a
+       * round trip to confirm what we already know is the pause this whole change is removing.
+       *
+       * `allSeated` is not belt-and-braces: a hot-seat claim that lost is a table with an open
+       * chair, and starting one strands a board on a seat nobody holds. A failure here (or a
+       * refused `setStatus`) leaves the room `waiting` and you land on the lobby with the Start
+       * button — which is exactly today's behaviour, so every way this can go wrong degrades into
+       * the thing it replaced rather than into a broken table.
+       */
+      if (allSeated && seatsAreReady(planned)) {
+        try {
+          await repos.room.setStatus(manifest.id, result.value, 'playing');
+        } catch {
+          // Deliberately swallowed — see above. The host still has a Start button.
+        }
+      }
+
       setBusy(false);
       onEntered(result.value);
     })();

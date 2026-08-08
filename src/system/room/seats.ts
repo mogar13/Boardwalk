@@ -13,7 +13,7 @@
  * disappears; below this line there is no mode, only seats.
  */
 
-import type { Seat, SeatOccupant } from '@/system/room/types';
+import type { RoomMeta, Seat, SeatOccupant } from '@/system/room/types';
 
 /** A table of `size` open seats. The starting array a room is created with. */
 export function emptyTable(size: number): Seat[] {
@@ -206,6 +206,60 @@ export function humanCount(seats: readonly Seat[]): number {
  */
 export function humanCapacity(seats: readonly Seat[]): number {
   return seats.filter((s) => s.kind === 'human' || s.kind === 'open').length;
+}
+
+/**
+ * WHETHER THESE SEATS ARE A GAME — every chair filled, and a human in one of them to host and deal.
+ *
+ * THE POINT IS THAT THERE IS ONE OF IT. This is asked in two places about two different things: of
+ * the array `plannedSeats` draws in the entrance, to decide whether a create has anything left to
+ * wait for, and of the array the room actually holds, to decide whether the host is shown Start.
+ * Two spellings of it could disagree, and the way they would disagree is the worst one available —
+ * the preview promises a seated table, the create delivers a seated table, and the lobby asks for a
+ * click anyway. `plannedSeats` already carries the sibling property one level down ("the plan IS
+ * the preview"); this is that argument applied to READINESS rather than to occupancy.
+ *
+ * The human clause is not `humanCount >= seats.min`: that conflated "min PLAYERS" with "min HUMANS"
+ * and wrongly refused a legitimately bot-filled table. A full table with one human and six CPUs is
+ * a game; a full table of nothing but CPUs is a room with nobody to deal it.
+ */
+export function seatsAreReady(seats: readonly Seat[]): boolean {
+  return tableIsFull(seats) && humanCount(seats) >= 1;
+}
+
+/**
+ * THE CHAIR AN ARRIVING PLAYER TAKES, or `-1` for "stay standing".
+ *
+ * ARRIVING AT A TABLE IS SITTING DOWN AT IT. Before this, joining by code or from the browser put
+ * you in the room holding nothing, looking at a list of chairs, one of which you then had to
+ * identify and click — a step with exactly one sensible answer, which is the definition of a step
+ * a machine should take. `firstClaimableIndex` was written for this question in Phase 5 and sat
+ * with NO caller until now; the retry it needs is free, because a lost race changes the snapshot
+ * and the snapshot is what re-asks the question.
+ *
+ * Three refusals, each load-bearing:
+ *
+ * - NOT WHILE PLAYING. A live game has no free chairs by construction (it started full), so the
+ *   only claimable seat mid-game is an `ai` one — which is a DEPARTED PLAYER'S HAND being driven
+ *   on, not an invitation. Walking into it would hand a spectator somebody else's cards, and at a
+ *   betting table somebody else's stake. The way back into your OWN seat after a blip is the
+ *   gateway's grace window, which is a different mechanism and already works.
+ * - NOT IF I AM ALREADY SEATED. Keeps this idempotent under a re-render, a StrictMode double mount
+ *   and a reconnect replay, so the effect that calls it needs no memory of having fired.
+ * - NOT IF THERE IS NOWHERE TO SIT. A full table is spectated, exactly as it is today.
+ *
+ * OPEN BEFORE AI comes free from `firstClaimableIndex`: you fill an empty chair before you evict a
+ * bot, and a person displacing the house is the same rule the open-table index already publishes.
+ */
+export function autoSeatIndex(args: {
+  readonly seats: readonly Seat[];
+  readonly myUid: string;
+  readonly status: RoomMeta['status'] | 'gone';
+}): number {
+  const { seats, myUid, status } = args;
+  if (status !== 'waiting') return -1;
+  if (mySeatIndex(seats, myUid) !== -1) return -1;
+  return firstClaimableIndex(seats);
 }
 
 /**
