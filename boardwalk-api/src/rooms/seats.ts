@@ -61,6 +61,25 @@ export function releaseSeat(seats: readonly Seat[], index: number, fallback: 'ai
   return next;
 }
 
+/**
+ * Sit the house in every EMPTY chair — the one-shot version of pressing "Add CPU" six times
+ * (plans/GAME_LAUNCH_MODAL.md §5.2). Used at create, so a table asked for as an AI table comes up
+ * playable instead of asking for six clicks first.
+ *
+ * Only `open` chairs are touched. A human is never displaced (that would be `claimSeat`'s
+ * no-evict rule broken from the other side), and an existing `ai` seat keeps the NAME it already
+ * had — which matters because a mid-game leaver's chair is released to `'ai'` carrying their
+ * display name, and re-labelling it "CPU 4" would quietly erase who had been sitting there.
+ *
+ * `CPU <n>`, one-based, matching what `SeatList` writes when a host fills a chair by hand: the two
+ * paths seat the same table, so they had better call the same seat the same thing.
+ */
+export function fillWithAi(seats: readonly Seat[]): Seat[] {
+  return seats.map((seat, i) =>
+    seat.kind === 'open' ? { kind: 'ai', name: `CPU ${String(i + 1)}`, uid: null } : { ...seat }
+  );
+}
+
 /** Every seat index this uid holds — usually one, but a shared-screen host can hold several. */
 export function seatsHeldBy(seats: readonly Seat[], uid: string): number[] {
   const out: number[] = [];

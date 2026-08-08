@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RoomStore } from '../src/rooms/store';
-import { claimSeat, emptyTable, releaseSeat, seatsHeldBy } from '../src/rooms/seats';
+import { claimSeat, emptyTable, fillWithAi, releaseSeat, seatsHeldBy } from '../src/rooms/seats';
 import type { SeatOccupant } from '../src/rooms/types';
 
 const ada: SeatOccupant = { uid: 'ada', name: 'Ada' };
@@ -54,6 +54,39 @@ describe('seats (pure)', () => {
     if (!seated.ok) throw new Error('setup');
     expect(releaseSeat(seated.seats, 0, 'ai')[0]).toEqual({ kind: 'ai', name: 'Ada', uid: null });
     expect(releaseSeat(seated.seats, 0, 'open')[0]).toEqual({ kind: 'open', name: '', uid: null });
+  });
+
+  it('fillWithAi seats the house in the empty chairs and leaves the taken ones alone', () => {
+    const seated = claimSeat(emptyTable(4), 0, ada);
+    if (!seated.ok) throw new Error('setup');
+    const filled = fillWithAi(seated.seats);
+    // One-based, matching what `SeatList` writes when a host fills a chair by hand: the two paths
+    // seat the same table, so a chair must not be called "CPU 2" by one and "CPU 1" by the other.
+    expect(filled).toEqual([
+      { kind: 'human', name: 'Ada', uid: 'ada' },
+      { kind: 'ai', name: 'CPU 2', uid: null },
+      { kind: 'ai', name: 'CPU 3', uid: null },
+      { kind: 'ai', name: 'CPU 4', uid: null },
+    ]);
+    // The input is untouched — every seat function here returns a new array.
+    expect(seated.seats[1]).toEqual({ kind: 'open', name: '', uid: null });
+  });
+
+  it('fillWithAi never displaces a human and never renames a bot that is already sitting', () => {
+    // The second half is not tidiness: a mid-game leaver's chair is released to `'ai'` CARRYING
+    // their display name, so relabelling it "CPU 3" would erase who had been sitting there.
+    const seats = [
+      { kind: 'human' as const, name: 'Ada', uid: 'ada' },
+      { kind: 'human' as const, name: 'Bob', uid: 'bob' },
+      { kind: 'ai' as const, name: 'Cleo', uid: null },
+      { kind: 'open' as const, name: '', uid: null },
+    ];
+    expect(fillWithAi(seats)).toEqual([
+      { kind: 'human', name: 'Ada', uid: 'ada' },
+      { kind: 'human', name: 'Bob', uid: 'bob' },
+      { kind: 'ai', name: 'Cleo', uid: null },
+      { kind: 'ai', name: 'CPU 4', uid: null },
+    ]);
   });
 
   it('seatsHeldBy finds every seat a uid holds', () => {
@@ -170,6 +203,59 @@ describe('RoomStore — create + snapshot', () => {
     // `rulesOf` feeds a deal. A missing room reading as anything but "plays it straight" would be a
     // rule somebody's hand gets played under — the same failure `anteOf` returns `0` to avoid.
     expect(fixedStore().rulesOf('uno', 'ZZZZ')).toEqual({});
+  });
+
+  /**
+   * A TABLE THAT COMES UP SEATED (plans/GAME_LAUNCH_MODAL.md §5.2).
+   *
+   * An AI table used to mean claiming a chair and then pressing "Add CPU" once per remaining seat
+   * before Start would light — six clicks on a 7-seat UNO table, to play alone. `fillAi` seats them
+   * in the same construction as the host, so the table is never observably half-filled.
+   */
+  it('seats the house in every chair but the host’s when the create asks for it', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'private', 0, undefined, true);
+    if (!res.ok) throw new Error(res.error);
+    const seats = store.snapshot('uno', res.roomId)?.seats;
+    // The host is still seat 0 and still a human — filling chairs must not fill THEIRS.
+    expect(seats?.[0]).toEqual({ kind: 'human', name: 'Ada', uid: 'ada' });
+    expect(seats?.slice(1)).toEqual([
+      { kind: 'ai', name: 'CPU 2', uid: null },
+      { kind: 'ai', name: 'CPU 3', uid: null },
+      { kind: 'ai', name: 'CPU 4', uid: null },
+    ]);
+  });
+
+  /**
+   * THE DEPLOY-ORDER CASE, and the reason this field is optional rather than required. A new client
+   * always meets an old referee at some point, and the reverse: an absent `fillAi` must read as the
+   * honest default — today's table of open chairs — not as anything a client has to remember to
+   * turn OFF. Asserted alongside `false` and `undefined` so the default cannot drift to truthy.
+   */
+  it('an absent fillAi is no fill at all — the table this store made before the field existed', () => {
+    const store = fixedStore();
+    for (const fill of [undefined, false]) {
+      const res = store.create('uno', ada, 3, 'public', 0, undefined, fill);
+      if (!res.ok) throw new Error(res.error);
+      expect(store.snapshot('uno', res.roomId)?.seats.slice(1)).toEqual([
+        { kind: 'open', name: '', uid: null },
+        { kind: 'open', name: '', uid: null },
+      ]);
+    }
+  });
+
+  /**
+   * A ONE-CHAIR TABLE HAS NOTHING TO FILL, and asking must not invent a chair or throw. Reachable
+   * today: Tic-Tac-Toe declares `seats: { min: 1, max: 2 }` and the lobby defaults to `min`
+   * (§5.5 — the manifest fix is slice 2's, and this is the referee not caring either way).
+   */
+  it('fills nothing on a table with no other chairs', () => {
+    const store = fixedStore();
+    const res = store.create('tic-tac-toe', ada, 1, 'private', 0, undefined, true);
+    if (!res.ok) throw new Error(res.error);
+    expect(store.snapshot('tic-tac-toe', res.roomId)?.seats).toEqual([
+      { kind: 'human', name: 'Ada', uid: 'ada' },
+    ]);
   });
 
   it('defaults to no rules for a client that sends none', () => {
@@ -443,6 +529,21 @@ describe('RoomStore — the open-table index', () => {
     store.setAi('uno', roomId, 3, 'CPU 4');
     // A table padded with bots is exactly the table a browser exists to fill; counting only empty
     // chairs would hide it.
+    expect(store.listOpen()[0]).toMatchObject({ players: 1, openSeats: 3, seatCount: 4 });
+  });
+
+  /**
+   * A TABLE THAT CAME UP SEATED IS STILL A TABLE YOU CAN WALK UP TO. `fillAi` writes `ai` chairs,
+   * and an `ai` chair is joinable (the test above), so an AI-filled table must be indistinguishable
+   * from a hand-filled one to the index — same listing, same counts. The alternative, filling
+   * chairs and thereby hiding the table, would make §5.4's "Fill with CPUs" a way to accidentally
+   * take your own table off the board.
+   */
+  it('lists a table that came up bot-filled, exactly as if the chairs were filled by hand', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, undefined, true);
+    if (!res.ok) throw new Error(res.error);
+    store.addPresence('uno', res.roomId, ada.uid);
     expect(store.listOpen()[0]).toMatchObject({ players: 1, openSeats: 3, seatCount: 4 });
   });
 

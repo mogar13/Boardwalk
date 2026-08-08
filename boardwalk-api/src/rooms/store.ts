@@ -14,7 +14,12 @@
  * claim-then-verify race dies (BACKEND_PLAN.md). There is no optimistic write to reconcile.
  */
 
-import { claimSeat as claimSeatPure, emptyTable, releaseSeat as releaseSeatPure } from './seats';
+import {
+  claimSeat as claimSeatPure,
+  emptyTable,
+  fillWithAi,
+  releaseSeat as releaseSeatPure,
+} from './seats';
 import type {
   ChatMessage,
   RoomListing,
@@ -197,6 +202,14 @@ export class RoomStore {
    *
    * `houseRules` is BOUNDED here for the same reason and in the same place — see `sanitizeRules`.
    * Its keys are not the server's to understand; its shape and size are.
+   *
+   * `fillAi` SEATS THE HOUSE IN EVERY REMAINING CHAIR, in this same construction
+   * (plans/GAME_LAUNCH_MODAL.md §5.2). It is here and not a loop of `setAi` calls from the client
+   * for two reasons: the table is seated ATOMICALLY — there is no window where a 7-seat AI table
+   * exists half-filled and a stranger can walk into a chair the host is about to fill — and the
+   * seat array stays the referee's, which is the property every other seat rule in this file rests
+   * on. Absent (or absent-minded) reads as `false`: a table of open chairs, which is what every
+   * client that predates this field meant and exactly what this store did before it existed.
    */
   create(
     gameId: string,
@@ -204,12 +217,14 @@ export class RoomStore {
     seatCount: number,
     visibility: RoomVisibility = 'public',
     anteCents = 0,
-    houseRules: unknown = undefined
+    houseRules: unknown = undefined,
+    fillAi = false
   ): { ok: true; roomId: string } | { ok: false; error: string } {
     const claimed = claimSeatPure(emptyTable(seatCount), 0, host);
     if (!claimed.ok) return { ok: false, error: 'Could not seat the host.' };
     const ante = Number.isFinite(anteCents) ? Math.max(0, Math.floor(anteCents)) : 0;
     const rules = sanitizeRules(houseRules);
+    const seats = fillAi ? fillWithAi(claimed.seats) : claimed.seats;
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const roomId = this.makeCode();
@@ -225,7 +240,7 @@ export class RoomStore {
         status: 'waiting',
         createdAt: this.now(),
         seq: 0,
-        seats: claimed.seats,
+        seats,
         state: null,
         privates: new Map(),
         presence: new Set(),
