@@ -1,5 +1,5 @@
 /**
- * THE ENTRANCE, as far as a test without a DOM can reach it (plans/GAME_LAUNCH_MODAL.md §9).
+ * THE ENTRANCE, as far as a test without a DOM can reach it (plans/done/GAME_LAUNCH_MODAL.md §9).
  *
  * `<GameLaunchModal>` renders what these functions return and holds no second opinion, which is
  * what makes them the right thing to assert — the same split `plannedSeats`/`<SeatPreview>` and

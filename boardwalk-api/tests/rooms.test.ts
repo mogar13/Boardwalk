@@ -206,7 +206,7 @@ describe('RoomStore — create + snapshot', () => {
   });
 
   /**
-   * A TABLE THAT COMES UP SEATED (plans/GAME_LAUNCH_MODAL.md §5.2).
+   * A TABLE THAT COMES UP SEATED (plans/done/GAME_LAUNCH_MODAL.md §5.2).
    *
    * An AI table used to mean claiming a chair and then pressing "Add CPU" once per remaining seat
    * before Start would light — six clicks on a 7-seat UNO table, to play alone. `fillAi` seats them

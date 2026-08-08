@@ -10,7 +10,7 @@ import { TableSetup } from '@/system/room/TableSetup';
 import { isRoomMode, launchModes, launchStepFor, playPath } from '@/shell/launch';
 
 /**
- * THE ENTRANCE — one modal, every game (plans/GAME_LAUNCH_MODAL.md).
+ * THE ENTRANCE — one modal, every game (plans/done/GAME_LAUNCH_MODAL.md).
  *
  * Clicking a game used to navigate to `/play/:id`, which mounts the game, which mounts `<Lobby>`,
  * whose no-table branch is a full PAGE of create/join panels. So three of the six games answered

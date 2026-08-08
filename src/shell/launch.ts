@@ -5,7 +5,7 @@ import type { OptionValues } from '@/system/options/options';
 
 /**
  * THE LAUNCH MODAL, as pure functions — everything the entrance decides, decided where a test can
- * reach it (plans/GAME_LAUNCH_MODAL.md §1, §9).
+ * reach it (plans/done/GAME_LAUNCH_MODAL.md §1, §9).
  *
  * The component renders what these return and holds no second opinion, the same split
  * `plannedSeats`/`<SeatPreview>` and `opponentSlots`/UNO's board already use. What is left in

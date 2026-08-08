@@ -39,7 +39,7 @@ export function SeatList({ allowAi }: SeatListProps) {
   };
 
   /**
-   * ONE BUTTON INSTEAD OF SIX (plans/GAME_LAUNCH_MODAL.md §5.4). An AI table comes up seated from
+   * ONE BUTTON INSTEAD OF SIX (plans/done/GAME_LAUNCH_MODAL.md §5.4). An AI table comes up seated from
    * `create`, so this is the ESCAPE HATCH for the case that deliberately does not: an online table
    * nobody joined, which is what makes §5.3's decline ("a public table that comes up full starts
    * before anyone can walk up to it") cheap rather than a limitation.

@@ -67,7 +67,7 @@ export type RequestMsg =
        */
       houseRules?: unknown;
       /**
-       * SEAT THE HOUSE IN EVERY REMAINING CHAIR (plans/GAME_LAUNCH_MODAL.md §5.2). An AI table
+       * SEAT THE HOUSE IN EVERY REMAINING CHAIR (plans/done/GAME_LAUNCH_MODAL.md §5.2). An AI table
        * asked for from the launch modal comes up playable rather than asking the host to press
        * "Add CPU" once per chair — six clicks on a 7-seat UNO table, to play alone.
        *

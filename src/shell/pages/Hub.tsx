@@ -61,7 +61,7 @@ function GameCard({ game, onLaunch }: { game: RegisteredGame; onLaunch: () => vo
   const iconSrc = gameIconSrc(icon);
   return (
     /*
-      IT STAYS AN ANCHOR (plans/GAME_LAUNCH_MODAL.md §2). The launch modal intercepts the plain
+      IT STAYS AN ANCHOR (plans/done/GAME_LAUNCH_MODAL.md §2). The launch modal intercepts the plain
       click, but the card is still a real link to a real route — so ctrl/cmd-click, middle-click,
       "open in new tab" and a copied address all keep working, and `/play/uno` typed directly still
       lands somewhere sensible. A <button> would take every one of those away silently; nobody

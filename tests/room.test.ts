@@ -175,7 +175,7 @@ describe('mySeatIndex / tableIsFull / humanCount', () => {
 });
 
 /**
- * A ROOM GAME HAS AT LEAST TWO CHAIRS (plans/GAME_LAUNCH_MODAL.md §5.5) — stated as a rule over the
+ * A ROOM GAME HAS AT LEAST TWO CHAIRS (plans/done/GAME_LAUNCH_MODAL.md §5.5) — stated as a rule over the
  * whole registry rather than as a fix to the one manifest that broke it, because the next game to
  * get this wrong will get it wrong the same way.
  *
@@ -351,7 +351,7 @@ describe('tableSizeChoices', () => {
 });
 
 /**
- * THE PLAN **IS** THE PREVIEW (plans/GAME_LAUNCH_MODAL.md §5.1). The lobby draws `plannedSeats`
+ * THE PLAN **IS** THE PREVIEW (plans/done/GAME_LAUNCH_MODAL.md §5.1). The lobby draws `plannedSeats`
  * before the table exists and the create path produces it, so what is at stake here is a PROMISE:
  * a preview that disagrees with what gets created is worse than no preview at all.
  *

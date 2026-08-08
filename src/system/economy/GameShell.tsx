@@ -34,7 +34,7 @@ export function GameShell({ manifest, children }: GameShellProps) {
    * game's for the same reason the manifest is: a game that owned them would draw its own control
    * (Solitaire did, and that is the hand-rolled shape this seam replaces).
    *
-   * THEY ARE DERIVED FROM THE URL AND HELD NOWHERE (plans/GAME_LAUNCH_MODAL.md §4). This used to be
+   * THEY ARE DERIVED FROM THE URL AND HELD NOWHERE (plans/done/GAME_LAUNCH_MODAL.md §4). This used to be
    * a `useState` seeded from the defaults, which had two consequences worth naming: a tier chosen
    * in the launch modal — drawn on the HUB, one navigation before this component exists — had
    * nowhere to live across that navigation, and a mid-lobby refresh silently reset the AI tier to

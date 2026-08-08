@@ -243,7 +243,7 @@ export type SeatFill = 'ai' | 'local' | 'none';
 
 /**
  * THE TABLE A CREATE IS ABOUT TO MAKE — v1's `buildSeats(count)` with the fill folded in
- * (plans/GAME_LAUNCH_MODAL.md §5.1).
+ * (plans/done/GAME_LAUNCH_MODAL.md §5.1).
  *
  * THE PLAN **IS** THE PREVIEW. The lobby draws this array before the table exists and the create
  * path produces this array, which is the one property worth having here: a preview that disagrees

@@ -5,7 +5,7 @@ import {
 } from '@/system/options/options';
 
 /**
- * AN OPTION VALUE LIVES IN THE URL (plans/GAME_LAUNCH_MODAL.md §4) — the pure half.
+ * AN OPTION VALUE LIVES IN THE URL (plans/done/GAME_LAUNCH_MODAL.md §4) — the pure half.
  *
  * WHY THE URL AND NOT `useState`. The launch modal draws a game's option controls on the HUB, and
  * the values are read by a game the play route mounts one navigation later. `<GameShell>` is the

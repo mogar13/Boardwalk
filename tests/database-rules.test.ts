@@ -706,7 +706,7 @@ describe('rooms/<gameId>/<roomId> — Phase 5, and strictly more closed than v1'
   });
 
   /**
-   * A TABLE THAT COMES UP SEATED, on the fallback path (plans/GAME_LAUNCH_MODAL.md §5.2). On the WS
+   * A TABLE THAT COMES UP SEATED, on the fallback path (plans/done/GAME_LAUNCH_MODAL.md §5.2). On the WS
    * path `fillAi` is a field the referee applies inside its own construction; there is no referee
    * here, so the CLIENT builds the array and this one multi-path update writes it — which means the
    * rules have to permit a shape they were never asked for before: an `ai` chair, carrying a NAME,

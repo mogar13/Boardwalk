@@ -295,7 +295,7 @@ describe('RoomGateway — over a real socket', () => {
   });
 
   /**
-   * A TABLE ASKED FOR SEATED COMES BACK SEATED (plans/GAME_LAUNCH_MODAL.md §5.2).
+   * A TABLE ASKED FOR SEATED COMES BACK SEATED (plans/done/GAME_LAUNCH_MODAL.md §5.2).
    *
    * The store test proves the seats are filled; this proves the field SURVIVES THE FRAME. That is a
    * separate failure and a quiet one: the store can be entirely right while `onCreate` drops
