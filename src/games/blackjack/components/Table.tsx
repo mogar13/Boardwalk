@@ -87,9 +87,15 @@ export function Table({ onExit }: { onExit: () => void }) {
   // dealer for the money. This one can be wrong (a stale balance) and costs a refusal toast; the
   // other one cannot be, which is the division the whole seam exists to draw.
   const canDoubleNow = hand !== null && hand.canDouble && balance >= hand.wagerCents;
+  // The hand's true net, INSURANCE INCLUDED — it is a separate bet settled at the same moment, so
+  // a line that quoted the main bet alone would tell a player who insured a dealer natural that
+  // they were down $500 on a hand they broke even on.
   const netCents =
     hand !== null && hand.result !== null
-      ? payoutCents(hand.result, hand.wagerCents) - hand.wagerCents
+      ? payoutCents(hand.result, hand.wagerCents) -
+        hand.wagerCents +
+        hand.insurancePaidCents -
+        hand.insuranceCents
       : 0;
 
   return (
@@ -118,9 +124,20 @@ export function Table({ onExit }: { onExit: () => void }) {
         tone={result === 'lose' ? 'loss' : result === 'push' ? 'draw' : 'win'}
         title={result === null ? '' : RESULT_COPY[result]}
         detail={
-          <p className="text-bw-muted" data-money>
-            {netCents >= 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)} this hand.
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-bw-muted" data-money>
+              {netCents >= 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)} this hand.
+            </p>
+            {/* Said out loud, because the net above folds two bets into one number and an
+                insurance that paid is the only reason a LOST hand can come out level. */}
+            {hand !== null && hand.insured && (
+              <p className="text-bw-muted text-sm">
+                {hand.insurancePaidCents > 0
+                  ? `Insurance paid ${formatMoney(hand.insurancePaidCents - hand.insuranceCents)}.`
+                  : `Insurance lost ${formatMoney(hand.insuranceCents)}.`}
+              </p>
+            )}
+          </div>
         }
       >
         <Button variant="primary" disabled={busy} onClick={nextHand}>
@@ -129,6 +146,35 @@ export function Table({ onExit }: { onExit: () => void }) {
       </GameResult>
 
       {hand === null && <BetRack onDeal={deal} disabled={busy} />}
+
+      {/* THE INSURANCE OFFER — the one decision at this table whose outcome the dealer alone can
+          see. The board knows it is offered because `canInsure` says so (a function of the UP-card,
+          which is on screen), and it does NOT know whether it will pay: the hole card is still
+          absent from `hand.dealer`, exactly as it is on every other live frame. */}
+      {hand !== null && hand.canInsure && (
+        <div className="flex flex-col gap-3">
+          <p className="text-bw-muted text-sm">
+            Dealer shows an Ace. Insure for {formatMoney(hand.insuranceCents)}? It pays 2 to 1 if
+            the dealer has blackjack.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              disabled={busy || balance < hand.insuranceCents}
+              onClick={() => {
+                play('chip');
+                move('insure');
+              }}
+            >
+              Insure {formatMoney(hand.insuranceCents)}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => move('decline')}>
+              No insurance
+            </Button>
+          </div>
+        </div>
+      )}
+
       {hand !== null && hand.phase === 'player' && (
         <div className="flex flex-wrap gap-3">
           {/* Every action disables while a request is in flight. The dealer is idempotent on the

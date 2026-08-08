@@ -33,8 +33,10 @@
  */
 import {
   canDouble,
+  canInsure,
   freshDeck,
   initialState,
+  insuranceStake,
   isBlackjack,
   payoutCents,
   reducer,
@@ -171,7 +173,10 @@ function settleHand(db: Db, uid: string, handId: number, state: BlackjackState, 
   // silently would hide it, so it is treated as the impossibility it is.
   if (result === null) throw new Error('settleHand: the hand has no result');
 
-  const payout = payoutCents(result, state.wagerCents);
+  // The main bet, plus whatever insurance returned. Both are the REDUCER's numbers, computed from
+  // the server's own cards — `insurancePaidCents` is 0 unless the dealer turned over a natural the
+  // player had paid to be protected against, and the client has never seen that card.
+  const payout = payoutCents(result, state.wagerCents) + state.insurancePaidCents;
   if (payout > 0) appendLedger(db, uid, GAME_ID, payout, 'settle', now);
 
   // Both stakes for THIS hand, by name. Not "the oldest open wager for blackjack" — that rule is
@@ -191,7 +196,19 @@ function settleHand(db: Db, uid: string, handId: number, state: BlackjackState, 
   // every feat should eventually take: the server-dealt game is the one that can stop asking.
   const feats = result === 'blackjack' ? ['feat_natural'] : [];
 
-  recordOutcome(db, uid, GAME_ID, resultOutcome(result), state.wagerCents, payout, feats, now);
+  // The MAIN bet's numbers, with insurance handed over separately — see `recordOutcome`'s own note
+  // for why folding a side bet into either one gets a different achievement wrong.
+  recordOutcome(
+    db,
+    uid,
+    GAME_ID,
+    resultOutcome(result),
+    state.wagerCents,
+    payoutCents(result, state.wagerCents),
+    feats,
+    now,
+    state.insurancePaidCents - state.insuranceCents
+  );
 }
 
 /**
@@ -295,7 +312,13 @@ export function dealHand(
 
 /* ------------------------------------------------------------------ move */
 
-export type Move = 'hit' | 'stand' | 'double';
+/**
+ * `insure` and `decline` are moves rather than a route of their own, and that is the whole wire
+ * cost of insurance: the body still carries a nonce, a hand id and a decision, and still has no
+ * field for a card, an outcome or a payout. v1's version decided the payout in the browser off
+ * `calculateScore(dealerHand)`, reading the hole card its own renderer was hiding.
+ */
+export type Move = 'hit' | 'stand' | 'double' | 'insure' | 'decline';
 
 export interface MoveInput {
   readonly nonce: string;
@@ -329,19 +352,33 @@ export function playMove(db: Db, uid: string, input: MoveInput, now: number): Bl
     if (row.settled === 1) return deny('that hand is already settled');
 
     const before = stateOf(row);
-    if (before.phase !== 'player') return deny('that hand is not awaiting a move');
+    // Which moves are legal is the PHASE's business: hit/stand/double play a hand, insure/decline
+    // answer the offer that stands before the dealer has peeked. Each rejects the other's phase,
+    // and the rulebook agrees (its reducer returns the state unchanged either way) — this is the
+    // early, specific refusal rather than a second copy of the rule.
+    const answering = input.move === 'insure' || input.move === 'decline';
+    if (answering && before.phase !== 'insurance') return deny('there is no insurance to answer');
+    if (!answering && before.phase !== 'player') return deny('that hand is not awaiting a move');
 
-    // A double commits a SECOND stake of the same size. Both its checks run before anything is
-    // written, so an unaffordable double leaves the hand exactly as it found it — still playable,
-    // with one open stake and no orphan ledger row.
-    let doubleStake: number | null = null;
+    // A double commits a SECOND stake of the same size, and insurance a side stake of half. Both
+    // run every check before anything is written, so an unaffordable one leaves the hand exactly
+    // as it found it — still playable, with no orphan ledger row.
+    let extraStake: number | null = null;
     if (input.move === 'double') {
       // Legality first, affordability second. `canDouble` is the rulebook's own predicate (opening
       // two cards, still the player's turn) rather than a re-derivation of it here.
       if (!canDouble(before)) return deny('a double is not legal on this hand');
       const staked = checkStake(db, uid, before.wagerCents);
       if (!staked.ok) return deny(staked.error);
-      doubleStake = staked.value;
+      extraStake = staked.value;
+    }
+    if (input.move === 'insure') {
+      if (!canInsure(before)) return deny('insurance is not offered on this hand');
+      // `insuranceStake` is the rulebook's, so the price checked here is the price the reducer is
+      // about to record. Deriving it twice is how a $12 button becomes a $13 charge on an odd stake.
+      const staked = checkStake(db, uid, insuranceStake(before.wagerCents));
+      if (!staked.ok) return deny(staked.error);
+      extraStake = staked.value;
     }
 
     const state = reducer(before, { type: input.move });
@@ -352,7 +389,7 @@ export function playMove(db: Db, uid: string, input: MoveInput, now: number): Bl
     if (state === before) return deny('that move does nothing on this hand');
 
     // Nothing can refuse from here on.
-    if (doubleStake !== null) commitStake(db, uid, row.id, doubleStake, now);
+    if (extraStake !== null) commitStake(db, uid, row.id, extraStake, now);
 
     pinNonce(db, uid, input.nonce, row.id);
     // `settleHand` writes the row itself (with `settled = 1`), so persisting first would be a

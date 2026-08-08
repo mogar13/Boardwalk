@@ -356,7 +356,7 @@ export interface TicketRepo {
  */
 
 /** The three decisions a player may make on a live hand. Not results — a player may choose badly. */
-export type BlackjackMove = 'hit' | 'stand' | 'double';
+export type BlackjackMove = 'hit' | 'stand' | 'double' | 'insure' | 'decline';
 
 /**
  * WHAT A BLACKJACK PLAYER MAY SEE — the shared projection, re-exported so the repo interface

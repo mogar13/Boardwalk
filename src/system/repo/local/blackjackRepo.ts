@@ -1,8 +1,10 @@
 import { applyResult, validateBet, type Profile } from '@boardwalk/game-logic';
 import {
   canDouble,
+  canInsure,
   freshDeck,
   initialState,
+  insuranceStake,
   payoutCents,
   reducer,
   resultOutcome,
@@ -149,10 +151,18 @@ export function localBlackjackRepo(deps: LocalBlackjackDeps): BlackjackRepo {
     // would hide it.
     if (result === null) throw new Error('settle: the hand has no result');
 
+    // INSURANCE RIDES IN BOTH NUMBERS HERE, where the referee hands it over separately, and the
+    // divergence is forced rather than sloppy. `payoutCents` CREDITS the bankroll, so it has to be
+    // the true gross returned — the side stake already left as its own `bet` intent — and once it
+    // is, `wagerCents` must include the side stake too or `applyResult`'s net (payout − wager) pays
+    // out a 2:1 win with no cost against it. `EconomyIntent` has no field for a side bet and this
+    // is not the place to add one: `checkSettle` refuses `blackjack` outright, so this intent only
+    // ever reaches the client-authoritative fallback. The cost is that `high_roller` reads the
+    // combined stake on THIS path alone and can fire one hand early. Named, and the smaller error.
     const report = {
       outcome: resultOutcome(result),
-      payoutCents: payoutCents(result, state.wagerCents),
-      wagerCents: state.wagerCents,
+      payoutCents: payoutCents(result, state.wagerCents) + state.insurancePaidCents,
+      wagerCents: state.wagerCents + state.insuranceCents,
       ...(result === 'blackjack' ? { feats: ['feat_natural'] } : {}),
     };
     const predicted = applyResult(profile, GAME_ID, report, Date.now());
@@ -257,17 +267,32 @@ export function localBlackjackRepo(deps: LocalBlackjackDeps): BlackjackRepo {
       const before = hands.get(input.handId);
       if (before === undefined) return { ok: false, error: 'no such hand' };
       if (before.phase === 'settled') return { ok: false, error: 'that hand is already settled' };
-      if (before.phase !== 'player')
+      // The same phase split the referee makes: hit/stand/double play a hand, insure/decline
+      // answer the offer standing before the dealer peeks.
+      const answering = input.move === 'insure' || input.move === 'decline';
+      if (answering && before.phase !== 'insurance')
+        return { ok: false, error: 'there is no insurance to answer' };
+      if (!answering && before.phase !== 'player')
         return { ok: false, error: 'that hand is not awaiting a move' };
 
       let profile = await currentProfile(uid);
       if (profile === null) return { ok: false, error: 'no profile' };
 
-      // A double commits a SECOND stake of the same size, and both its checks run before anything
-      // is written — an unaffordable double leaves the hand exactly as it found it, still playable.
-      if (input.move === 'double') {
-        if (!canDouble(before)) return { ok: false, error: 'a double is not legal on this hand' };
-        const staked = checkStake(before.wagerCents, profile);
+      // A double commits a SECOND stake of the same size and insurance a side stake of half; both
+      // check before anything is written, so an unaffordable one leaves the hand as it found it.
+      const extra =
+        input.move === 'double'
+          ? canDouble(before)
+            ? before.wagerCents
+            : null
+          : input.move === 'insure'
+            ? canInsure(before)
+              ? insuranceStake(before.wagerCents)
+              : null
+            : 0;
+      if (extra === null) return { ok: false, error: 'that move is not legal on this hand' };
+      if (extra > 0) {
+        const staked = checkStake(extra, profile);
         if (!staked.ok) return staked;
         const paid = await stake(uid, input.nonce, profile, staked.value);
         if (!paid.ok) return paid;

@@ -433,14 +433,20 @@ describe('the projected view', () => {
       phase: 'player',
       wagerCents: 100,
       doubled: false,
+      insuranceCents: 0,
+      insurancePaidCents: 0,
       result: null,
       handId: 1,
     });
     expect(Object.keys(view).sort()).toEqual([
       'canDouble',
+      'canInsure',
       'dealer',
       'doubled',
       'handId',
+      'insuranceCents',
+      'insurancePaidCents',
+      'insured',
       'phase',
       'player',
       'result',
@@ -599,5 +605,171 @@ describe('the routes', () => {
       .post('/blackjack/deal')
       .send({ nonce: 'n1', wagerCents: 1_000, uid: 'u1' })
       .expect(401);
+  });
+});
+
+/* ----------------------------------------------- the peek, and insurance */
+
+describe('the peek and insurance, at the referee', () => {
+  /** A hand sat on the insurance offer: ace up, the hole card the caller's choice. */
+  const offered = (db: Db, hole: Card, wagerCents = 1_000): HandView =>
+    ok(
+      dealHand(
+        db,
+        'u1',
+        { nonce: 'deal', wagerCents },
+        1,
+        rngFor(deal4(c('5'), c('A'), c('9'), hole))
+      )
+    ).hand;
+
+  const settledRows = (db: Db, uid: string): number =>
+    (
+      db.prepare('SELECT COUNT(*) AS n FROM wagers WHERE uid = ? AND settled_at IS NOT NULL').get(uid) as {
+        n: number;
+      }
+    ).n;
+
+  const statsOf = (db: Db, uid: string): { played: number; won: number; lost: number } =>
+    (db
+      .prepare('SELECT played, won, lost FROM stats WHERE uid = ? AND game_id = ?')
+      .get(uid, 'blackjack') as { played: number; won: number; lost: number } | undefined) ?? {
+      played: 0,
+      won: 0,
+      lost: 0,
+    };
+
+  it('settles a dealer natural AT THE DEAL, so a double cannot be taken against it', () => {
+    // The defect this closes, at the money layer. With a TEN up there is no insurance offer, so
+    // this is the plain peek: the hand is over before the client is asked anything.
+    const db = seeded();
+    const before = balanceOf(db, 'u1');
+    const hand = ok(
+      dealHand(db, 'u1', { nonce: 'd', wagerCents: 1_000 }, 1, rngFor(deal4(c('5'), c('K'), c('9'), c('A'))))
+    ).hand;
+
+    expect(hand.phase).toBe('settled');
+    expect(hand.result).toBe('lose');
+    expect(hand.canDouble).toBe(false);
+
+    // ONE stake left the ledger, not two, and the double is refused rather than silently taken.
+    expect(balanceOf(db, 'u1')).toBe(before - 1_000);
+    const refused = playMove(db, 'u1', { nonce: 'm', handId: hand.handId, move: 'double' }, 2);
+    expect(refused.ok).toBe(false);
+    expect(balanceOf(db, 'u1')).toBe(before - 1_000);
+  });
+
+  it('takes the side stake through the LEDGER and pays 2:1 when the dealer has it', () => {
+    const db = seeded();
+    const start = balanceOf(db, 'u1');
+    const hand = offered(db, c('K'), 1_000);
+    expect(hand.canInsure).toBe(true);
+    expect(hand.insuranceCents).toBe(500); // quoted before it is taken
+    expect(balanceOf(db, 'u1')).toBe(start - 1_000);
+
+    const after = ok(playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 2)).hand;
+
+    expect(after.phase).toBe('settled');
+    expect(after.result).toBe('lose'); // the HAND is lost; the side bet is what paid
+    expect(after.insurancePaidCents).toBe(1_500);
+    // −1000 main −500 insurance +1500 insurance = exactly level, which is what insurance is for.
+    expect(balanceOf(db, 'u1')).toBe(start);
+    // Both wager rows are named by this hand and both closed by its settlement.
+    expect(openWagers(db, 'u1')).toEqual([]);
+    expect(settledRows(db, 'u1')).toBe(2);
+  });
+
+  it('records ONE outcome for the hand — a paying side bet is not a win', () => {
+    // v1 called `SystemStats.recordWin("blackjack", insBet * 3)` right here, inflating the win
+    // count and the mastery chain that reads it for a hand the player had just LOST.
+    const db = seeded();
+    const hand = offered(db, c('K'));
+    ok(playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 2));
+
+    expect(statsOf(db, 'u1')).toEqual({ played: 1, won: 0, lost: 1 });
+  });
+
+  it('is simply lost when the dealer has no natural, and the hand plays on', () => {
+    const db = seeded();
+    const start = balanceOf(db, 'u1');
+    const hand = offered(db, c('7')); // dealer A,7 = soft 18
+    const after = ok(playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 2)).hand;
+
+    expect(after.phase).toBe('player');
+    expect(after.insurancePaidCents).toBe(0);
+    expect(after.insured).toBe(true);
+    expect(balanceOf(db, 'u1')).toBe(start - 1_500); // main + side, both gone
+    // The hand is still live, so its stakes are still open.
+    expect(openWagers(db, 'u1')).toHaveLength(2);
+  });
+
+  it('refuses an unaffordable insurance WHOLE, leaving the hand playable', () => {
+    // The `return`-out-of-a-transaction-COMMITS ordering, on the new stake. A refusal must leave
+    // no orphan ledger row and must not consume the offer.
+    const db = seeded();
+    const all = balanceOf(db, 'u1');
+    const hand = offered(db, c('7'), all); // the whole bankroll on the main bet
+    const mid = balanceOf(db, 'u1');
+    expect(mid).toBe(0);
+
+    const refused = playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 2);
+    expect(refused.ok).toBe(false);
+    expect(balanceOf(db, 'u1')).toBe(0);
+    expect(openWagers(db, 'u1')).toHaveLength(1); // only the main stake
+
+    // Still offered, and still answerable the other way.
+    const declined = ok(playMove(db, 'u1', { nonce: 'dec', handId: hand.handId, move: 'decline' }, 3)).hand;
+    expect(declined.phase).toBe('player');
+  });
+
+  it('refuses insure/decline on a hand that is not offering, and hit/stand while it is', () => {
+    const db = seeded();
+    // No ace up → straight to 'player', so there is nothing to answer.
+    const live = ok(
+      dealHand(db, 'u1', { nonce: 'd', wagerCents: 1_000 }, 1, rngFor(deal4(c('5'), c('K'), c('9'), c('7'))))
+    ).hand;
+    expect(live.canInsure).toBe(false);
+    expect(playMove(db, 'u1', { nonce: 'a', handId: live.handId, move: 'insure' }, 2).ok).toBe(false);
+    expect(playMove(db, 'u1', { nonce: 'b', handId: live.handId, move: 'decline' }, 3).ok).toBe(false);
+
+    // And the reverse: the hand may not be PLAYED while the offer stands, because the dealer has
+    // not peeked yet — a hit here draws against a hand that may already be finished.
+    //
+    // WHERE THIS IS ENFORCED, stated because falsifying it proved the obvious answer wrong: the
+    // REDUCER is, by returning the state unchanged for an action its phase does not accept, which
+    // `playMove` turns into a refusal at the `state === before` check. Deleting the phase guard in
+    // `playMove` leaves every case here GREEN. That guard is defence in depth and a specific error
+    // message; it is not what makes this true, and a comment claiming otherwise would be the
+    // vacuous-guard failure this repo keeps finding in its own suite.
+    const waiting = offered(db, c('7'));
+    expect(playMove(db, 'u1', { nonce: 'c', handId: waiting.handId, move: 'hit' }, 4).ok).toBe(false);
+    expect(playMove(db, 'u1', { nonce: 'e', handId: waiting.handId, move: 'double' }, 5).ok).toBe(false);
+  });
+
+  it('replays an insurance instead of taking a second side stake', () => {
+    const db = seeded();
+    const start = balanceOf(db, 'u1');
+    const hand = offered(db, c('K'));
+    const first = ok(playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 2));
+    const again = ok(playMove(db, 'u1', { nonce: 'ins', handId: hand.handId, move: 'insure' }, 3));
+
+    expect(again.replayed).toBe(true);
+    expect(again.hand.insurancePaidCents).toBe(first.hand.insurancePaidCents);
+    expect(balanceOf(db, 'u1')).toBe(start); // still exactly level, not paid twice
+    expect(statsOf(db, 'u1').played).toBe(1);
+  });
+
+  it('never sends the hole card while the offer stands', () => {
+    // The whole point: the client is asked to bet on a card it cannot see. `canInsure` is true and
+    // the dealer array still holds ONE card, on the very frame the decision is made.
+    const db = seeded();
+    const hand = offered(db, c('K'));
+    expect(hand.canInsure).toBe(true);
+    expect(hand.dealer).toHaveLength(1);
+    expect(JSON.stringify(hand)).not.toContain('"deck"');
+    // Two hands differing only in the hole card look identical to the client at this moment.
+    const db2 = seeded();
+    const other = offered(db2, c('7'));
+    expect({ ...other, handId: 0 }).toEqual({ ...hand, handId: 0 });
   });
 });
