@@ -120,6 +120,47 @@ describe('theme tokens', () => {
     });
   }
 
+  it('every GAME-CONTENT colour a component spells is one the theme defines', () => {
+    // The same silent-nothing failure as the three families above, one namespace across. A
+    // `--color-*` token that does not exist generates no utility, so `bg-bj-felt` on a table with
+    // no `--color-bj-felt` renders a TRANSPARENT surface — which on a dark page looks like a
+    // slightly different dark page, not like a bug. Blackjack's felt is the case that prompted
+    // this; UNO's suits, the chess colourways and the rarity ladder get it retroactively.
+    //
+    // Scoped to the four families this repo OWNS rather than sweeping `bg-`/`text-`/`border-`
+    // wholesale: the semantic tokens (`base-200`, `primary-content`, …) come from DaisyUI's own
+    // theme layer as well as this file, so a blanket sweep would report framework tokens as
+    // dangling and be deleted on its first red run.
+    const OWNED = ['bj-', 'uno-', 'chess-', 'rarity-'] as const;
+    const declared = declaredTokens('--color-');
+    const dangling: string[] = [];
+    for (const family of OWNED) {
+      for (const utility of ['bg-', 'text-', 'border-', 'from-', 'to-', 'via-']) {
+        for (const use of usesOf(files, `${utility}${family}`)) {
+          // Tailwind's opacity modifier is not part of the token name: `bg-bj-rail/50`.
+          const name = `${family}${use.name}`.split('/')[0] ?? '';
+          if (!declared.has(name)) dangling.push(`${utility}${name} (${use.file})`);
+        }
+      }
+    }
+    expect(dangling, `colour utilities with no theme token:\n  ${dangling.join('\n  ')}`).toEqual(
+      []
+    );
+    // Guard the guard: this sweep is worthless if it matched nothing.
+    expect(declared.has('bj-felt')).toBe(true);
+    expect(declared.has('uno-red')).toBe(true);
+  });
+
+  it("blackjack's table colours are SURFACES and spend no glow", () => {
+    // The budget is blue = act, cyan = here, gold = money. Two new hues landed with the table
+    // rebuild and they are cloth and rail — the category that has never been allowed to glow. A
+    // `--shadow-glow-bj-*` would typecheck, render beautifully, and quietly make it four.
+    expect(declaredTokens('--color-').has('bj-felt')).toBe(true);
+    expect(declaredTokens('--color-').has('bj-rail')).toBe(true);
+    for (const name of declaredTokens('--shadow-glow-')) expect(name.startsWith('bj')).toBe(false);
+    for (const name of declaredTokens('--text-shadow-')) expect(name.startsWith('bj')).toBe(false);
+  });
+
   it('the two tokens UNO added are real, and gold is still money', () => {
     // Named directly rather than left to the sweep, because the sweep only proves that whatever is
     // spelled resolves — it cannot say these two exist, and a rename would silently satisfy it.
