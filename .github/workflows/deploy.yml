@@ -102,7 +102,6 @@ jobs:
           # and the payout as ordinary bet/settle intents. `tests/deploy-env.test.ts` caught this
           # line missing — which is the guard doing exactly the job it was written for, on the
           # very next flag added after the hole it was written about.
-          VITE_API_BLACKJACK: ${{ secrets.VITE_API_BLACKJACK }}
         run: npm run build
 
       - uses: actions/configure-pages@v5

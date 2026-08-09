@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { CHIP_TIERS_CENTS, chipSrc, chipStack } from '@/games/blackjack/chips';
+import { CHIP_TIERS_CENTS, chipSrc, chipStack, rackChips } from '@/games/blackjack/chips';
 import { registry } from '@/games/registry';
 
 const CHIP_DIR = fileURLToPath(new URL('../public/chips/', import.meta.url));
@@ -133,5 +133,64 @@ describe('chipStack — the breakdown adds up', () => {
     const runs = chipStack(550.9);
     expect(runs).toEqual([{ denomCents: 500, count: 1 }]);
     for (const run of runs) expect(Number.isInteger(run.count)).toBe(true);
+  });
+});
+
+describe('rackChips — the chips a player may pick UP', () => {
+  /** The blackjack manifest, read rather than restated: this is a claim about the shipped game. */
+  const betting = registry.find((g) => g.manifest.id === 'blackjack')?.manifest.betting;
+
+  it('offers only chips this table can actually stake', () => {
+    // The `tableSizeChoices` rule in chip form: `clampBet` snaps an over-max stake straight back,
+    // so a rack button above `betting.max` is a control that cannot change the outcome. Read off
+    // the REAL manifest, so raising the table maximum grows the rack and nothing else has to move.
+    expect(betting).toBeDefined();
+    const rack = rackChips(betting?.max ?? 0);
+    expect(rack.length).toBeGreaterThan(0);
+    for (const chip of rack) expect(chip, String(chip)).toBeLessThanOrEqual(betting?.max ?? 0);
+  });
+
+  it('offers a chip the table minimum can be reached with', () => {
+    // A rack whose smallest chip exceeds the minimum bet is one a player cannot open the smallest
+    // hand with — every click overshoots. `useBet` opens AT the minimum, so this is about whether
+    // the fine adjustment above it exists at all.
+    const rack = rackChips(betting?.max ?? 0);
+    expect(Math.min(...rack)).toBeLessThanOrEqual(betting?.min ?? 0);
+  });
+
+  it('runs low to high, distinct, and each one is art on disk', () => {
+    // ASCENDING is the opposite of `chipStack`'s order and that is deliberate — a tray runs
+    // low-to-high left-to-right, where a breakdown is greedy-largest-first. Asserting it here is
+    // what stops somebody "tidying" the two lists into one and silently reversing the rack.
+    const rack = rackChips(50_000);
+    expect(rack).toEqual([...rack].sort((a, b) => a - b));
+    expect(new Set(rack).size).toBe(rack.length);
+    const missing = rack.map((c) => rel(chipSrc(c))).filter((p) => !existsSync(CHIP_DIR + p));
+    expect(missing, `unresolved rack art: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('is a SUBSET of the breakdown tiers, so every rack click draws the chip it staged', () => {
+    // The rack and the betting circle are the same objects on purpose: click a $25, see a $25 in
+    // the circle. A rack tier the breakdown does not know would be staged as a click and then
+    // drawn as something else entirely — two smaller chips — which reads as the table changing
+    // your bet.
+    for (const chip of rackChips(50_000)) {
+      expect(CHIP_TIERS_CENTS, String(chip)).toContain(chip);
+      expect(chipStack(chip), String(chip)).toEqual([{ denomCents: chip, count: 1 }]);
+    }
+  });
+
+  it('shrinks with the ceiling rather than offering a button that snaps back', () => {
+    expect(rackChips(500)).toEqual([100, 500]);
+    expect(rackChips(2_499)).toEqual([100, 500]);
+    expect(rackChips(2_500)).toEqual([100, 500, 2_500]);
+  });
+
+  it('draws an empty rack for a nonsense ceiling rather than throwing', () => {
+    // Reachable only from a manifest that is already wrong, and a board that renders no chips is
+    // recoverable where one that throws takes the whole table down.
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(rackChips(bad), String(bad)).toEqual([]);
+    }
   });
 });

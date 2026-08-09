@@ -11,6 +11,14 @@ import { chipSrc, chipStack } from '@/games/blackjack/chips';
  * table where four chairs stake independently and none of them is your business until the dealer
  * gets there.
  *
+ * **THE CIRCLE RESERVES ITS HEIGHT WHETHER OR NOT ANYTHING IS IN IT.** A chair that has bet draws
+ * chips plus a figure; one that has not draws an empty ring, and those are different heights — so
+ * the nameplates either side of them landed on different lines and the row of chairs read as ragged
+ * rather than as a table. Every other element in a chair is the same height at every chair (a hand
+ * box, a score bubble, a plate); this was the one that was not, and it is only visible with one
+ * chair betting and another not, which is most of the betting phase. The box is bottom-aligned, so
+ * a tall stack grows UP toward the cards rather than pushing the nameplate down.
+ *
  * **THE FIGURE IS NOT OPTIONAL AND IS NOT A PROP.** `chipStack` breaks an amount into $1-and-up
  * chips, so a sub-dollar remainder has no chip to be — insurance on a $25 hand is $12.50 and draws
  * as $12. The chips ILLUSTRATE and the label STATES, so the label is rendered here, from the same
@@ -36,6 +44,9 @@ export function ChipStack({
 }) {
   const runs = chipStack(cents);
   const chipRem = size === 'sm' ? 1.7 : 2.25;
+  // The reserved height: one chip plus its figure. See the header — every chair's plate has to land
+  // on the same line, and only a bet-independent height gives that.
+  const wellRem = size === 'sm' ? 2.9 : 3.75;
 
   if (runs.length === 0) {
     // No bet is drawn as an EMPTY circle rather than as nothing: the painted circle is where a bet
@@ -43,18 +54,25 @@ export function ChipStack({
     // exactly what the table is waiting for.
     return (
       <div
-        className={cx(
-          'border-bw-line/60 flex items-center justify-center rounded-full border border-dashed',
-          size === 'sm' ? 'h-9 w-9' : 'h-12 w-12',
-          className
-        )}
-        aria-label="No bet"
-      />
+        className={cx('flex flex-col items-center justify-end', className)}
+        style={{ minHeight: `${String(wellRem)}rem` }}
+      >
+        <div
+          className={cx(
+            'border-bw-line/60 rounded-full border border-dashed',
+            size === 'sm' ? 'h-9 w-9' : 'h-12 w-12'
+          )}
+          aria-label="No bet"
+        />
+      </div>
     );
   }
 
   return (
-    <div className={cx('flex flex-col items-center gap-1', className)}>
+    <div
+      className={cx('flex flex-col items-center justify-end gap-1', className)}
+      style={{ minHeight: `${String(wellRem)}rem` }}
+    >
       <div className="flex items-end justify-center gap-1">
         {runs.map((run) => {
           const drawn = Math.min(run.count, MAX_VISIBLE);

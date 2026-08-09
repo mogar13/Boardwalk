@@ -194,8 +194,8 @@ export type EconomyIntent =
    * solitaire, tic-tac-toe). Their honest payout is 0, and `checkSettle`'s zero-wager branch
    * enforces exactly that, so the only thing this can move is XP and a stat.
    *
-   * Blackjack does NOT come through here any more. The server deals that hand and settles it
-   * from its own cards (`BlackjackRepo`, below), which is what makes the payout stop being a
+   * Blackjack does NOT come through here any more. The server deals that game and settles it
+   * from its own cards (`BlackjackTableRepo`, below), which is what makes the payout stop being a
    * claim for the one game where a claim was worth money.
    *
    * `feats` is the only achievement input left on the wire, because no state predicate can see a
@@ -341,16 +341,10 @@ export interface TicketRepo {
  * seam, where the client still computes and the repo persists.
  */
 export type {
-  BlackjackMove,
-  BlackjackDealInput,
-  BlackjackMoveInput,
-  BlackjackTurn,
-  BlackjackRepo,
   BlackjackTableStartInput,
   BlackjackTableActionInput,
   BlackjackTableRepo,
   BlackjackTableMove,
-  HandView,
   LiarsDiceAction,
   LiarsDiceStartInput,
   LiarsDiceActionInput,
@@ -361,12 +355,7 @@ export type {
   UnoMoveInput,
   UnoRepo,
 } from '@/system/repo/dealtGames';
-import type {
-  BlackjackRepo,
-  BlackjackTableRepo,
-  LiarsDiceRepo,
-  UnoRepo,
-} from '@/system/repo/dealtGames';
+import type { BlackjackTableRepo, LiarsDiceRepo, UnoRepo } from '@/system/repo/dealtGames';
 
 /**
  * One row of the public standings, read from `leaderboard/<uid>`. This is the public
@@ -640,8 +629,6 @@ export interface Repos {
   readonly profile: ProfileRepo;
   /** Phase B: the only path a chip moves. See `EconomyRepo`. */
   readonly economy: EconomyRepo;
-  /** Phase D: the one game whose cards are not the client's. See `BlackjackRepo`. */
-  readonly blackjack: BlackjackRepo;
   /** Offline hardening: the nonces a client cannot mint. See `TicketRepo`. */
   readonly tickets: TicketRepo;
   readonly leaderboard: LeaderboardRepo;

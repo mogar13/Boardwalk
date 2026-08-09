@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Card, useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
@@ -25,7 +25,7 @@ import { Spot } from '@/games/blackjack/components/Spot';
 import { seatArc } from '@/games/blackjack/seatLayout';
 
 /**
- * A BLACKJACK TABLE — the same renderer as the solo board, several chairs wide.
+ * A BLACKJACK TABLE — and since the room-less hand was deleted, the whole of blackjack.
  *
  * It holds no game and deals nothing. Every card on screen came off the room subscription, every
  * decision goes out as a nonce'd message (`repos.blackjackTable.act`), and the result comes back the
@@ -58,6 +58,22 @@ export function TableBoard() {
   const openedRef = useRef(false);
   /** Which money-moving moment this client has already refreshed its profile for. */
   const syncedRound = useRef<number>(-1);
+  /**
+   * What this player staked last, so the rack can offer REPEAT.
+   *
+   * It lives HERE and not in `<BetRack>` because the rack unmounts the instant the bet lands — a
+   * memory inside it would be wiped by the very event it needs to remember, which is the same
+   * reason `<Rematch>`'s once-per-handshake gate sits above the button it controls.
+   *
+   * Recorded at the CLICK rather than off the settled projection, and that is a choice about which
+   * number REPEAT means. A settled `wagerCents` includes a double, so repeating off it would turn
+   * "bet the same again" into "bet twice as much again" for anyone who doubled — which is the one
+   * way a convenience control can cost somebody money they did not mean to stake. The click is the
+   * opening bet by construction. The cost of reading it here is that a stake the referee REFUSES is
+   * still remembered; `clampBet` snaps it back into the affordable range the moment it is reused,
+   * so the worst case is a rack that opens on a number it then corrects.
+   */
+  const [lastWagerCents, setLastWagerCents] = useState(0);
 
   const repo = repos.blackjackTable;
 
@@ -130,8 +146,8 @@ export function TableBoard() {
     return (
       <Card className="p-6 text-center">
         <p className="text-base-content/70">
-          A blackjack table needs the game server, and this build is running without it. The solo
-          table still deals.
+          Blackjack needs the game server, and this build is running without it. There is no
+          client-side version of a dealer holding the deck and the hole card for four people.
         </p>
       </Card>
     );
@@ -149,7 +165,6 @@ export function TableBoard() {
   const mine: SpotView | undefined = state.spots[mySeatIndex];
   const settled = state.phase === 'settled';
   const myTurn = state.phase === 'player' && state.turn === mySeatIndex;
-  const waitingOnMe = state.pending.includes(mySeatIndex);
   const dealerTotal = state.dealer.length > 0 ? handValue(state.dealer).total : null;
 
   // The chairs that are actually IN this round, and the arc computed over exactly those — so a
@@ -163,10 +178,110 @@ export function TableBoard() {
   // rest are a legend" reading that the arc exists to remove.
   const size = playing.length >= 3 ? 'sm' : 'md';
 
+  /**
+   * WHAT SITS ON THE RAIL RIGHT NOW — one expression, evaluated in the order the table asks its
+   * questions, so exactly one control can ever be on the apron.
+   *
+   * These were four separately-conditioned blocks stacked BELOW the felt, and the conditions
+   * overlapped: `canInsure` and `phase === 'player'` can both be true within a beat of each other,
+   * so the page could grow an insurance offer above a hit/stand row and shift everything down. As
+   * one ladder the ambiguity is not resolved, it is unspellable.
+   *
+   * The last rung is deliberately a SENTENCE rather than nothing. A blackjack round can stall on a
+   * chair that has not bet — not on a turn — which no other dealt game in this repo can do, so
+   * "it is nobody's turn and nothing is happening" is a real state and the rail is where a player
+   * is already looking for something to press.
+   */
+  const apron = (() => {
+    if (mine === undefined) {
+      return <p className="text-bw-muted self-center text-sm">Watching this table.</p>;
+    }
+    if (mine.canInsure) {
+      return (
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-base-content/90 max-w-md text-center text-sm">
+            Dealer shows an Ace. Insure for {formatMoney(mine.insuranceCents)}? It pays 2 to 1 if
+            the dealer has blackjack.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button
+              variant="primary"
+              disabled={balance < mine.insuranceCents}
+              onClick={() => {
+                audio.play('chip');
+                send({ type: 'insure' });
+              }}
+            >
+              Insure {formatMoney(mine.insuranceCents)}
+            </Button>
+            <Button variant="secondary" onClick={() => send({ type: 'decline' })}>
+              No insurance
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    if (myTurn) {
+      return (
+        <div className="flex flex-wrap items-start justify-center gap-3 self-center">
+          <Button
+            variant="primary"
+            onClick={() => {
+              audio.play('deal');
+              send({ type: 'hit' });
+            }}
+          >
+            Hit
+          </Button>
+          <Button variant="secondary" onClick={() => send({ type: 'stand' })}>
+            Stand
+          </Button>
+          {/* Affordability is checked here for the BUTTON and again by the referee for the money. */}
+          {mine.canDouble && balance >= mine.wagerCents && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                audio.play('chip');
+                audio.play('deal');
+                send({ type: 'double' });
+              }}
+            >
+              Double
+            </Button>
+          )}
+        </div>
+      );
+    }
+    if (state.phase === 'betting' && mine.wagerCents === 0) {
+      return (
+        <BetRack
+          disabled={false}
+          lastWagerCents={lastWagerCents}
+          dealLabel="Place bet"
+          onDeal={(wagerCents) => {
+            audio.play('chip');
+            setLastWagerCents(wagerCents);
+            send({ type: 'bet', wagerCents });
+          }}
+        />
+      );
+    }
+    if (!settled && state.pending.length > 0) {
+      return (
+        <p className="text-bw-muted self-center text-sm" aria-live="polite">
+          Waiting for{' '}
+          {state.pending.map((seat) => names[seat] ?? `Player ${String(seat + 1)}`).join(', ')}…
+        </p>
+      );
+    }
+    return null;
+  })();
+
   return (
     <>
       <Felt
         felt={felt}
+        apron={apron}
         dealer={
           <>
             {/* ONE back is drawn while the round is live, because there is genuinely one card the
@@ -212,90 +327,6 @@ export function TableBoard() {
           />
         ))}
       </Felt>
-
-      {mySeatIndex < 0 && <p className="text-bw-muted mt-4 text-sm">Watching this table.</p>}
-
-      {/* WHAT THE TABLE IS WAITING FOR, said out loud. A blackjack round stalls on a chair that has
-          not bet — not on a turn — so "it is nobody's turn and nothing is happening" is a state
-          this game can be in and the other dealt games cannot. */}
-      {!settled && !waitingOnMe && state.pending.length > 0 && (
-        <p className="text-bw-muted mt-4 text-sm" aria-live="polite">
-          Waiting for{' '}
-          {state.pending.map((seat) => names[seat] ?? `Player ${String(seat + 1)}`).join(', ')}…
-        </p>
-      )}
-
-      {/* YOUR BET. The same chip rack the solo table uses, and it stages rather than commits for
-          exactly the same reason: the stake leaves the bankroll inside the referee's own
-          transaction, and committing here too would deduct it twice. */}
-      {mine !== undefined && state.phase === 'betting' && mine.wagerCents === 0 && (
-        <div className="mt-4">
-          <BetRack
-            disabled={false}
-            onDeal={(wagerCents) => {
-              audio.play('chip');
-              send({ type: 'bet', wagerCents });
-            }}
-          />
-        </div>
-      )}
-
-      {/* THE INSURANCE OFFER — the one decision at this table whose outcome only the dealer can see.
-          Every chair is asked at once and the dealer does not peek until the last one answers, so
-          nobody learns the hole card a beat before the player still deciding. */}
-      {mine !== undefined && mine.canInsure && (
-        <div className="mt-4 flex flex-col items-center gap-3">
-          <p className="text-bw-muted text-sm">
-            Dealer shows an Ace. Insure for {formatMoney(mine.insuranceCents)}? It pays 2 to 1 if
-            the dealer has blackjack.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button
-              variant="primary"
-              disabled={balance < mine.insuranceCents}
-              onClick={() => {
-                audio.play('chip');
-                send({ type: 'insure' });
-              }}
-            >
-              Insure {formatMoney(mine.insuranceCents)}
-            </Button>
-            <Button variant="secondary" onClick={() => send({ type: 'decline' })}>
-              No insurance
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {mine !== undefined && myTurn && (
-        <div className="mt-4 flex flex-wrap justify-center gap-3">
-          <Button
-            variant="primary"
-            onClick={() => {
-              audio.play('deal');
-              send({ type: 'hit' });
-            }}
-          >
-            Hit
-          </Button>
-          <Button variant="secondary" onClick={() => send({ type: 'stand' })}>
-            Stand
-          </Button>
-          {/* Affordability is checked here for the BUTTON and again by the referee for the money. */}
-          {mine.canDouble && balance >= mine.wagerCents && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                audio.play('chip');
-                audio.play('deal');
-                send({ type: 'double' });
-              }}
-            >
-              Double
-            </Button>
-          )}
-        </div>
-      )}
 
       {/* THE RESULT IS THE OS'S SURFACE, never a panel at the bottom of this card — the one place it
           must not be is below the fold, which is where a four-chair felt puts anything after it. */}

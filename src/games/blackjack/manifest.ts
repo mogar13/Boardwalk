@@ -12,25 +12,28 @@ import type { GameManifest } from '@/games/registry';
  * chip rack and what `reportResult` credits back. Money is integer cents everywhere; the field on
  * the profile is `bankrollCents` for the same reason.
  *
- * `modes: ['solo', 'ai', 'online']` — three ways in, and `'solo'` is still the FIRST because it is
- * still the game: one player against the house, no room, no seats, the board straight into
- * `<GameShell>`. Slice 3 of plans/BLACKJACK_DEPTH.md added the other two, which is a real table with
- * a lobby, a seat range and a referee-dealt round. Both are blackjack and both run the same
- * `@boardwalk/game-logic/games/blackjack`; what differs is the CONTAINER, one hand or several.
+ * **`modes: ['ai', 'online']` — TWO ways in, and dropping the third is the point.** This game
+ * declared `'solo'` for six phases: a room-less hand, no lobby, no seats, dealt behind
+ * `BlackjackRepo` straight into `<GameShell>`. It was correct and it was indistinguishable from
+ * `'ai'` at the one place a player meets it — the launch modal drew "Play" above "Solo / AI", two
+ * buttons that both mean "blackjack by myself" and differ only in whether the other chairs hold
+ * bots. `MODE_LABEL` already argues that two buttons a player cannot tell apart is a picker that
+ * cannot be used; this is that argument reaching the manifest that causes it.
  *
- * The ROOM-LESS proof moved to Solitaire when this happened, and it was already double-covered:
- * Solitaire is `modes: ['solo']` with no seats AND no bankroll, which is the stronger claim about
- * that seam. What Blackjack keeps is the half that was only ever its own — the economy, the payouts
- * and the server-dealt hand.
+ * What went with it is written where it is enforced (`BlackjackGame.tsx`): the board, the hook, the
+ * repo and both implementations are DELETED, not left behind a mode nothing offers, and the cost —
+ * no blackjack at all on the RTDB fallback, where the room-less hand used to still deal — is named
+ * there rather than discovered during an outage.
  *
- * `seats: { min: 2, max: 4 }` — v1's range was 1–4, and the 1 is not a table: `modes` already
- * carries "you can play this alone", and every room game's `seats.min` must be at least 2 (a table
- * of one is FULL, and it is still not a table — `tests/room.test.ts` asserts it over this registry).
+ * The ROOM-LESS proof was already Solitaire's before this: `modes: ['solo']` with no seats AND no
+ * bankroll is the stronger claim about that seam, where Blackjack only ever made half of it. What
+ * Blackjack keeps is the half that was only ever its own — the economy, the payouts, and cards it
+ * does not deal itself.
  *
- * `'solo'` NO LONGER MEANS "the client owns the game", and Phase D is where those two came apart.
- * There is still no seat and no room, but the hand is dealt behind `BlackjackRepo` — so the hole
- * card is not a card held locally and declined; it is a card the client was never sent, the same
- * privacy shape UNO's `hands/` node has, reached through a server instead of a room.
+ * `seats: { min: 2, max: 4 }` — v1's range was 1–4, and the 1 is not a table: every room game's
+ * `seats.min` must be at least 2 (a table of one is FULL, and it is still not a table —
+ * `tests/room.test.ts` asserts it over this registry). A lone player gets a table of bots, which is
+ * what `'ai'` means everywhere else in this app.
  *
  * `betting.perSeat` is what tells the OS this game has no TABLE stake. Every other betting game
  * charges one ante that the room stamps at create and every chair pays; here each chair names its
@@ -45,6 +48,6 @@ export const blackjackManifest = {
   icon: 'blackjack.png',
   pier: 'casino',
   seats: { min: 2, max: 4 },
-  modes: ['solo', 'ai', 'online'],
+  modes: ['ai', 'online'],
   betting: { min: 500, max: 50000, perSeat: true },
 } as const satisfies GameManifest;
