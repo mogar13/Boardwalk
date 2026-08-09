@@ -141,13 +141,29 @@ The Pi is on Tailscale (`boardwalk-pi.tail1bed2f.ts.net`), so any other node on 
 destination with no port forwarding and no public exposure.
 
 **Pull from another machine** (safer — the target holds the credentials, so a compromised Pi cannot
-reach into the backup store):
+reach into the backup store). **This is automated as of 2026-08-09** — `deploy/boardwalk-backup-pull.sh`
+plus a `systemd --user` timer on the workstation, which pulls and then restore-drills the newest
+file. Install it with:
 
 ```bash
-rsync -az --delete \
-  mogar13@boardwalk-pi.tail1bed2f.ts.net:/mnt/boardwalk-db/backups/ \
-  /srv/boardwalk-backups/
+install -D -m 755 deploy/boardwalk-backup-pull.sh ~/.local/bin/boardwalk-backup-pull.sh
+install -D -m 644 deploy/boardwalk-backup-pull.service ~/.config/systemd/user/
+install -D -m 644 deploy/boardwalk-backup-pull.timer   ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now boardwalk-backup-pull.timer
+loginctl enable-linger "$USER"   # so it runs when you are not logged in
 ```
+
+The equivalent by hand, if you want one now:
+
+```bash
+rsync -az \
+  mogar13@boardwalk-pi.tail1bed2f.ts.net:/mnt/boardwalk-db/backups/ \
+  ~/boardwalk-backups/
+```
+
+Note **no `--delete`** in either: the Pi prunes at `BACKUP_KEEP_DAYS=14`, and mirroring that here
+would delete the deep history the moment the Pi pruned it — backwards, since this is the copy that
+outlives the stick. That is the paragraph below, taken as advice rather than left as a suggestion.
 
 **Push from the Pi** (what the unit above does — simpler, one machine to schedule):
 
@@ -239,4 +255,22 @@ wrong data.
 - [x] Set up the off-box `rsync` target over Tailscale and confirm a file lands there. *(PULL to `~/boardwalk-backups/`; push is impossible — no sshd on the target)*
 - [x] Run `npm run restore:drill` on the Pi **and** on the off-box copy. *(both PASSED, `$5215.00` from 2 ledger rows)*
 - [x] Do one full stop/swap/start restore rehearsal (above) and note how long it took. *(2026-07-18 — **3 seconds**, service healthy, data identical)*
-- [x] **Drill last run: 2026-07-18** (backup + drill on the Pi and off-box, timer firing, full rehearsal).
+- [x] **AUTOMATE the off-box pull, because a manual one stops happening.** *(2026-08-09 —
+  `deploy/boardwalk-backup-pull.{sh,service,timer}`, a `systemd --user` timer on the workstation at
+  04:30 with `Persistent=true`; it pulls, then restore-drills the newest file, then fails loudly.
+  23 snapshots off-box, newest verified: 5 users, 40 ledger rows, $21,485.00.)*
+- [x] **Drill last run: 2026-08-09** (the automated pull's own drill, on the off-box copy).
+
+> **The one that was ticked and still was not true (2026-08-09).** The three boxes above were all
+> honestly ticked on 2026-07-18 — and the off-box copy then stopped moving for three weeks, because
+> "set up the rsync" was done by hand and nothing ran it again. Worse, a pull timer *was* installed
+> here at some point and had been failing **every single morning since at least 2026-08-03** with
+> `ssh: Could not resolve hostname boardwalk-pi.tail1bed2f.ts.net: Temporary failure in name
+> resolution`: `Persistent=true` fires a missed run moments after boot, and Tailscale's MagicDNS has
+> not settled by then. It went red into a journal nobody reads, which is indistinguishable from not
+> running. **A backup job must fail somewhere a person looks, and must not depend on DNS that is not
+> up yet** — hence the tailnet IP among the candidate hosts, which needs no resolver at all.
+>
+> This was found the day the stick actually dropped off the USB bus. Nothing was lost; the point is
+> that if the stick had *died* rather than unplugged, the newest off-box copy would have been three
+> weeks old, and every one of these boxes would still have been ticked.

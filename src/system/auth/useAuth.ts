@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAuthStore, subscribeToSession } from '@/system/auth/authStore';
+import type { AuthFailure } from '@/system/auth/authFailure';
 import type { Session } from '@/system/auth/session';
 import type { RepoResult, SignInInput, SignUpInput } from '@/system/repo';
 
@@ -18,6 +19,12 @@ export interface AuthApi {
   readonly status: 'unknown' | 'signed-out' | 'signed-in';
   readonly session: Session | null;
   readonly busy: boolean;
+  /**
+   * Why the last sign-in bounced, when the credentials were fine and something else failed.
+   * `null` in the ordinary case. NOT a bad password — that comes back as a `RepoResult` from
+   * `signIn` and belongs inline in the form.
+   */
+  readonly authError: AuthFailure | null;
   readonly signUp: (input: SignUpInput) => Promise<RepoResult<Session>>;
   readonly signIn: (input: SignInInput) => Promise<RepoResult<Session>>;
   readonly signOut: () => Promise<void>;
@@ -27,10 +34,11 @@ export function useAuth(): AuthApi {
   const status = useAuthStore((s) => s.status);
   const session = useAuthStore((s) => s.session);
   const busy = useAuthStore((s) => s.busy);
+  const authError = useAuthStore((s) => s.authError);
   const signUp = useAuthStore((s) => s.signUp);
   const signIn = useAuthStore((s) => s.signIn);
   const signOut = useAuthStore((s) => s.signOut);
-  return { status, session, busy, signUp, signIn, signOut };
+  return { status, session, busy, authError, signUp, signIn, signOut };
 }
 
 /**

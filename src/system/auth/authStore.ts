@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { cleanUsername } from '@/system/auth/credentials';
+import { describeAuthFailure, type AuthFailure } from '@/system/auth/authFailure';
 import { defaultProfile } from '@/system/profile/defaults';
 import type { Profile } from '@boardwalk/game-logic';
 import type { Session } from '@/system/auth/session';
@@ -52,6 +53,16 @@ interface AuthState {
   readonly profile: Profile | null;
   /** Set while a sign-in/sign-up round-trip is in flight, so the form can disable itself. */
   readonly busy: boolean;
+
+  /**
+   * Why the LAST sign-in bounced, when it bounced for a reason that is not the player's fault.
+   *
+   * It is only ever set by the profile-load rejection below, never by a bad password — a wrong
+   * password is a `RepoResult` the form renders inline, and the two must not share a channel:
+   * one is "fix your typing" and this one is explicitly "your typing was fine". See
+   * `authFailure.ts` for the outage that made a silent bounce a three-hour mystery.
+   */
+  readonly authError: AuthFailure | null;
 
   readonly signUp: (input: SignUpInput) => Promise<RepoResult<Session>>;
   readonly signIn: (input: SignInInput) => Promise<RepoResult<Session>>;
@@ -168,6 +179,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   profile: null,
   busy: false,
+  authError: null,
 
   async signUp(input) {
     set({ busy: true });
@@ -295,7 +307,16 @@ export function subscribeToSession(): () => void {
     if (session === null) {
       // HARD REPLACE, never a merge. Both fields, together. This is v1's cross-user leak
       // fix stated as an assignment instead of a comment.
-      useAuthStore.setState({ status: 'signed-out', session: null, profile: null });
+      //
+      // `authError` clears here too, and that is a deliberate signing-OUT decision rather than
+      // tidiness: a stale "the server did not answer" left over the sign-in form after a clean
+      // sign-out is a claim about a request nobody has made yet.
+      useAuthStore.setState({
+        status: 'signed-out',
+        session: null,
+        profile: null,
+        authError: null,
+      });
       return;
     }
 
@@ -303,6 +324,7 @@ export function subscribeToSession(): () => void {
       (profile) => {
         useAuthStore.setState({
           status: 'signed-in',
+          authError: null,
           // For an email account Auth has no username; the profile record is what knows.
           // Backfilling it here keeps `session.username` meaningful for every account
           // rather than only synthetic ones.
@@ -313,12 +335,22 @@ export function subscribeToSession(): () => void {
           profile,
         });
       },
-      () => {
+      (error: unknown) => {
         // The profile could not be read AND could not be created — offline, or the rules
         // said no. Signed in with no record is not a state anything downstream can use,
         // and pretending otherwise is how `undefined` reaches a component. Stay signed-out
         // and let them try again.
-        useAuthStore.setState({ status: 'signed-out', session: null, profile: null });
+        //
+        // BUT SAY WHY. Dropping the reason here is what made a dead referee look like a
+        // rejected password for three and a half hours on 2026-08-09: Auth had accepted the
+        // credentials, the toast said so, and then this line quietly put the sign-in form
+        // back with nothing to read. The sign-out is still correct; the silence was not.
+        useAuthStore.setState({
+          status: 'signed-out',
+          session: null,
+          profile: null,
+          authError: describeAuthFailure(error),
+        });
       }
     );
   });

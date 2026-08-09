@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Card } from '@/ui';
 import { AuthPanel } from '@/system/auth/AuthPanel';
+import type { AuthFailure } from '@/system/auth/authFailure';
 import { useAuth } from '@/system/auth/useAuth';
 import { firebaseReady } from '@/system/repo';
 import { Wordmark } from '@/shell/Wordmark';
@@ -48,8 +49,29 @@ function NotConfigured({ error }: { error: string }) {
   );
 }
 
+/**
+ * The sign-in bounced for a reason that is NOT the player's password.
+ *
+ * It sits above the form rather than inside it because it is not about a field: `AuthPanel`'s
+ * own inline error means "fix what you typed", and this one means the opposite, so putting them
+ * in one place would be two contradictory messages in one slot. See `authFailure.ts`.
+ */
+function SignInFailure({ failure }: { failure: AuthFailure }) {
+  return (
+    <Card className="flex w-full flex-col gap-2 p-4">
+      <h2 className="font-display text-warning text-xs font-semibold tracking-[0.2em] uppercase">
+        {failure.message}
+      </h2>
+      <p className="text-bw-muted text-sm">{failure.hint}</p>
+      <pre className="text-bw-muted overflow-x-auto font-mono text-xs whitespace-pre-wrap">
+        {failure.detail}
+      </pre>
+    </Card>
+  );
+}
+
 /** Signed out, or still checking: the boardwalk's front door under the big sign. */
-function Doorway({ checking }: { checking: boolean }) {
+function Doorway({ checking, failure }: { checking: boolean; failure: AuthFailure | null }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-8 px-6 py-16">
       <div className="flex flex-col items-center gap-3 text-center">
@@ -64,7 +86,8 @@ function Doorway({ checking }: { checking: boolean }) {
           <p className="text-bw-muted text-sm">Checking your session…</p>
         </Card>
       ) : (
-        <div className="w-full">
+        <div className="flex w-full flex-col gap-4">
+          {failure !== null && <SignInFailure failure={failure} />}
           <AuthPanel />
         </div>
       )}
@@ -74,10 +97,12 @@ function Doorway({ checking }: { checking: boolean }) {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const ready = firebaseReady();
-  const { status } = useAuth();
+  const { status, authError } = useAuth();
 
   if (!ready.ok) return <NotConfigured error={ready.error} />;
-  if (status === 'unknown') return <Doorway checking />;
-  if (status === 'signed-out') return <Doorway checking={false} />;
+  // `checking` gets no failure: the panel is about the sign-in that just bounced, and while the
+  // answer is still unknown no sign-in has bounced yet.
+  if (status === 'unknown') return <Doorway checking failure={null} />;
+  if (status === 'signed-out') return <Doorway checking={false} failure={authError} />;
   return <>{children}</>;
 }

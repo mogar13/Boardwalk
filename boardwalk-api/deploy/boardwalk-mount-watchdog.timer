@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Boardwalk DB-stick watchdog every minute
+
+[Timer]
+# Also covers booting with the stick out: fstab has `nofail`, so the box comes up fine, the referee
+# stays down (RequiresMountsFor), and this is what notices when the stick reappears.
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
