@@ -1,0 +1,15 @@
+[Unit]
+Description=Pull Boardwalk backups off the Pi daily
+
+[Timer]
+# The Pi's own backup fires ~03:15. Pull after it, so the newest file off-box is the one the Pi
+# just verified rather than yesterday's.
+OnCalendar=*-*-* 04:30:00
+# The workstation is not a server. Persistent=true is the whole reason this is a timer and not
+# cron: a run missed because the machine was off fires on the next boot instead of being skipped
+# silently -- and "silently skipped" is precisely how the off-box copy came to be three weeks old.
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

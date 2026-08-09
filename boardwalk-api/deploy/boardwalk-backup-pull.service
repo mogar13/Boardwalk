@@ -1,0 +1,15 @@
+[Unit]
+Description=Pull Boardwalk backups off the Pi and restore-drill the newest
+Documentation=file:///home/sebastian/Documents/Github/Boardwalk/boardwalk-api/BACKUP.md
+# A systemd --user unit on the WORKSTATION, not on the Pi. The Pi cannot push (no sshd on this
+# box), and pull is the safer direction anyway: the credentials live on the target, so a
+# compromised Pi cannot reach into the backup store.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/boardwalk-backup-pull.sh
+# A user unit gets a minimal PATH that has no node/npm on it, so the drill would die with
+# "npm: not found" and the pull would look like a backup problem. Set it explicitly.
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=BOARDWALK_API_DIR=%h/Documents/Github/Boardwalk/boardwalk-api
+Environment=BOARDWALK_BACKUP_DIR=%h/boardwalk-backups

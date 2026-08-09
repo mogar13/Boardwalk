@@ -1,0 +1,10 @@
+[Unit]
+Description=Boardwalk DB-stick watchdog (remount /mnt/boardwalk-db, restart the referee)
+# Deliberately NO RequiresMountsFor here — this is the unit that exists to run WHILE that mount is
+# missing. Binding it to the mount would make it unrunnable in exactly the situation it is for.
+Documentation=file:///home/mogar13/boardwalk-api/BACKUP.md
+
+[Service]
+Type=oneshot
+# root: it mounts a filesystem and starts another unit. Both need it.
+ExecStart=/usr/local/sbin/boardwalk-mount-watchdog.sh
