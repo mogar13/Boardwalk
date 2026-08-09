@@ -32,6 +32,40 @@
  */
 export const CHIP_TIERS_CENTS = [100_000, 50_000, 10_000, 2_500, 1_000, 500, 100] as const;
 
+/**
+ * THE CHIPS IN THE RACK — what a player may pick UP, as opposed to what a wager breaks DOWN into.
+ *
+ * Two different questions, and conflating them is why this is a second list rather than a reuse of
+ * `CHIP_TIERS_CENTS`. The breakdown list must cover every amount the table can hold, including
+ * denominations nobody picks ($10 exists so that $35 draws as a $25 and a $10 rather than as eleven
+ * chips). The rack is a row of BUTTONS, and a button for every tier is a row of nine that a player
+ * has to read before betting $25 — v1 offered six and it was already the widest control on its
+ * screen.
+ *
+ * ASCENDING, unlike the breakdown, because a chip tray runs low-to-high left-to-right and a player
+ * reaching for "the small one" reaches left. The breakdown is descending because greedy-largest-
+ * first is what gives the fewest chips; neither order is a preference, both are the job.
+ */
+const RACK_TIERS_CENTS = [100, 500, 2_500, 10_000, 50_000] as const;
+
+/**
+ * The chips this table's rack offers, ascending — every rack tier the table can actually stake.
+ *
+ * Bounded by the game's own `betting.max` rather than by a hardcoded list, which is the asset rule
+ * as arithmetic: a rack button for a chip that exceeds the table maximum is a control that cannot
+ * change the outcome (`clampBet` would snap it straight back), and this repo's position on those is
+ * that they are worse than none. `tests/blackjack-chips.test.ts` asserts it against the REAL
+ * manifest in both directions, so raising the table maximum grows the rack and nothing else.
+ *
+ * A nonsense maximum yields an empty rack rather than throwing — reachable only from a manifest
+ * that is already wrong, and a board that draws no chips is recoverable where one that throws takes
+ * the table down.
+ */
+export function rackChips(maxCents: number): number[] {
+  if (!Number.isFinite(maxCents) || maxCents <= 0) return [];
+  return RACK_TIERS_CENTS.filter((c) => c <= maxCents);
+}
+
 /** One denomination in a broken-down wager, and how many of it. */
 export interface ChipRun {
   /** The chip's face value in cents — what `chipSrc` needs, and what the art prints on the face. */

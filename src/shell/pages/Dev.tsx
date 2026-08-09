@@ -200,19 +200,18 @@ function WiringPanel() {
         tone={w.rooms === 'websocket' ? 'good' : 'warn'}
       />
       <Field
-        label="Blackjack dealer"
-        value={w.blackjack}
-        tone={w.blackjack === 'server-dealt' ? 'good' : 'warn'}
-      />
-      <Field
         label="Offline banking"
         value={w.tickets}
         tone={w.tickets === 'server-signed' ? 'good' : 'warn'}
       />
       <Field
         label="Server-dealt games"
-        value={w.liarsDice ? "Liar's Dice + UNO available" : 'unavailable (no gateway)'}
-        tone={w.liarsDice ? 'good' : 'bad'}
+        value={
+          w.liarsDice && w.uno && w.blackjackTable
+            ? "Liar's Dice + UNO + Blackjack available"
+            : 'unavailable (no gateway)'
+        }
+        tone={w.liarsDice && w.uno && w.blackjackTable ? 'good' : 'bad'}
         mono={false}
       />
     </Panel>

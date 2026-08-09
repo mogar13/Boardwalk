@@ -28,15 +28,45 @@ import type { Card } from '@boardwalk/game-logic/games/blackjack';
 /** The art's own aspect ratio, measured off the files: 140 × 190. Used to place the overlap. */
 const CARD_RATIO = 140 / 190;
 
-/** Card height in rem, by size. `md` is your own hand and the solo table; `sm` is a neighbour. */
-const CARD_H_REM = { sm: 5.25, md: 7 } as const;
+/**
+ * Card height in rem, by size. `md` is a one- or two-chair table; `sm` is three or four.
+ *
+ * Both went UP, and both are bounded in two directions at once. WIDTH is the easy one and it is
+ * arithmetic: four chairs holding three cards each at `sm` measure ~790px including the seat gaps,
+ * inside the ~960px of usable cloth, so the widest ordinary table still fits on one row. HEIGHT is
+ * the one that bites, and only a browser can see it — a card height lands on the felt TWICE (the
+ * dealer's row and the chairs') plus once more as the empty placeholder, so a rem here is ~2.5rem
+ * of table, and the table has to leave its own controls above the fold. 8rem was measured and put
+ * PLACE BET on the last pixel of a 1000px viewport. That is why these are not simply as large as
+ * they look good.
+ */
+const CARD_H_REM = { sm: 5.5, md: 7.5 } as const;
 
 /**
- * How much of a card the next one covers, as a fraction of its width. Blackjack hands are small
- * (two to five cards) and every card is face up, so they overlap far less than an UNO fan — enough
- * to read as a dealt hand, little enough that every rank and suit stays visible.
+ * How much of a card the next one covers, as a fraction of its width — LESS at `md`, because a
+ * table with one or two chairs has the room and a fanned hand wants it.
+ *
+ * Blackjack hands are small (two to five cards) and every card is face up, so they overlap far less
+ * than an UNO fan: enough to read as a dealt hand, little enough that every rank and suit stays
+ * visible. At `sm` the value is tighter for the reason above — four chairs share one row.
  */
-const OVERLAP = 0.46;
+const OVERLAP = { sm: 0.44, md: 0.36 } as const;
+
+/**
+ * How many degrees apart consecutive cards sit in the fan.
+ *
+ * **THE FAN IS THE DIFFERENCE BETWEEN A HAND AND A STACK.** The cards were drawn perfectly square
+ * and perfectly overlapped, which is what a dealt hand looks like face-down on a table and not what
+ * one looks like when somebody is holding it. A few degrees per card is all it takes, and it costs
+ * nothing at two cards (±2.5°) while making a five-card hand read instantly as five.
+ *
+ * **IT CANNOT GO ON THE ANIMATED ELEMENT.** `animate-deal` keyframes `transform`, so a rotation on
+ * the same element is REPLACED for the length of the animation and then snaps back into place —
+ * every dealt card would straighten out and then bend. That is the trap UNO's `SeatView` documents
+ * and the spinning direction ring hit for real, so the rotation gets an element of its own between
+ * the animated wrapper and the art.
+ */
+const FAN_STEP_DEG = { sm: 3.5, md: 5 } as const;
 
 export type HandSize = keyof typeof CARD_H_REM;
 
@@ -59,8 +89,15 @@ export function Hand({
 
   const heightRem = CARD_H_REM[size];
   const widthRem = heightRem * CARD_RATIO;
-  const overlapRem = widthRem * OVERLAP;
+  const overlapRem = widthRem * OVERLAP[size];
   const total = cards.length + faceDown;
+
+  /**
+   * The fan angle for card `i`, centred on the hand: a two-card hand splays ±half a step, a
+   * five-card hand ±two. Zero for a single card, which is what a lone up-card should look like.
+   */
+  const angleDeg = (i: number): number =>
+    total <= 1 ? 0 : (i - (total - 1) / 2) * FAN_STEP_DEG[size];
 
   /**
    * A SHORT STAGGER ON THE OPENING TWO CARDS ONLY.
@@ -88,21 +125,34 @@ export function Hand({
         zIndex: i,
       }}
     >
-      <img
-        src={src}
-        alt={alt}
-        width={140}
-        height={190}
-        className="border-bw-line/70 shadow-lift w-auto rounded-md border"
-        style={{ height: `${String(heightRem)}rem` }}
-      />
+      {/* THE ROTATOR — its own element, and that is not tidiness. See `FAN_STEP_DEG`: sharing an
+          element with `animate-deal` would have the keyframe overwrite the fan mid-deal. Pivoting
+          at the BOTTOM keeps the cards' lower edges together and splays the tops, which is how a
+          hand held in a hand actually opens. */}
+      <div
+        style={{
+          transform: `rotate(${String(angleDeg(i))}deg)`,
+          transformOrigin: 'bottom center',
+        }}
+      >
+        <img
+          src={src}
+          alt={alt}
+          width={140}
+          height={190}
+          className="border-bw-line/70 shadow-lift w-auto rounded-md border"
+          style={{ height: `${String(heightRem)}rem` }}
+        />
+      </div>
     </div>
   );
 
   return (
     <div
       className={cx('flex items-end', className)}
-      style={{ minHeight: `${String(heightRem)}rem` }}
+      // A hair over one card: the fan pivots at the bottom, so the outermost cards lift their far
+      // corners above the flat height. Without the margin the tops clip whatever sits above.
+      style={{ minHeight: `${String(heightRem * 1.06)}rem` }}
     >
       {total === 0 && (
         // The empty box is where cards will land — a chair with nothing dealt is still a place at

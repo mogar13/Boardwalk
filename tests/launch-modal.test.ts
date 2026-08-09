@@ -115,12 +115,37 @@ describe('launchStepFor — what a mode has to ask before the game starts', () =
     }
   });
 
-  it('covers both answers on the registry as it stands', () => {
-    // Otherwise the case above passes vacuously the day every solo game declares options — or
-    // none of them does.
+  it('covers the answer the registry still carries, and the other one off a fixture', () => {
+    // The case above passes vacuously if every solo game answers the same way, so both answers are
+    // asserted to OCCUR — but they are asserted from different places now, and the split is worth
+    // stating rather than hiding.
+    //
+    // `'options'` is still a registry fact: Solitaire declares a draw count. `'none'` USED to be
+    // one, and its carrier was Blackjack — a solo game with nothing to ask, which went straight to
+    // the board on a click. Blackjack dropped `'solo'` when its two indistinguishable entrances
+    // were collapsed into one, and Solitaire is now the only solo game there is, so no registered
+    // manifest reaches that branch.
+    //
+    // The branch is still LIVE (`GameLaunchModal` navigates immediately on it) and the next
+    // no-options solo game will take it, so deleting the assertion would leave a reachable path
+    // with no coverage. It is asserted against a fixture instead, which is the honest form of the
+    // claim: the rule holds, the registry just does not exercise it today.
     const solo = registry.filter((g) => g.manifest.modes.includes('solo'));
-    const steps = new Set(solo.map((g) => launchStepFor(g.manifest, 'solo')));
-    expect(steps).toEqual(new Set(['options', 'none']));
+    expect(solo.length, 'a solo game must exist or this whole block is vacuous').toBeGreaterThan(0);
+    expect(new Set(solo.map((g) => launchStepFor(g.manifest, 'solo')))).toEqual(
+      new Set(['options'])
+    );
+
+    const noOptions = {
+      id: 'fixture',
+      name: 'Fixture',
+      blurb: 'A solo game with nothing to ask.',
+      icon: 'blackjack.png',
+      pier: 'arcade',
+      seats: { min: 1, max: 1 },
+      modes: ['solo'],
+    } as const satisfies GameManifest;
+    expect(launchStepFor(noOptions, 'solo')).toBe('none');
   });
 });
 

@@ -1,95 +1,27 @@
 /**
- * THE SEAMS FOR THE GAMES THE REFEREE DEALS — blackjack (a hand, and a table), Liar's Dice and UNO.
+ * THE SEAMS FOR THE GAMES THE REFEREE DEALS — Liar's Dice, UNO and the blackjack table.
  *
  * Split out of `types.ts` when that file crossed the 800-line ceiling, and the cut is a real
  * relationship rather than a convenient one: every interface below describes a game where THE CLIENT
  * IS A RENDERER. None of them has a field for a card, a hand, an outcome or a payout, all of them
- * answer with the authoritative profile, and each is `null` on the Firebase fallback (except the
- * room-less blackjack hand, which has an offline twin because one player's hand can be dealt by a
- * reducer). Everything left in `types.ts` is the ordinary seam, where the client still computes.
+ * answer with the authoritative profile, and every one is `null` on the Firebase fallback.
+ *
+ * That last clause used to carry an exception — the ROOM-LESS blackjack hand, which had an offline
+ * twin because one player's hand can be dealt by a reducer. It is gone: the game declares
+ * `['ai','online']` now, so the only blackjack there is is a table, and a table cannot be dealt by
+ * anybody's browser. Everything left in `types.ts` is the ordinary seam, where the client still
+ * computes.
  *
  * `types.ts` re-exports all of it, so nothing that imports `@/system/repo/types` moved.
  */
 import type { Profile } from '@boardwalk/game-logic';
 import type { RepoResult } from '@/system/repo/types';
-import type { HandView } from '@boardwalk/game-logic/games/blackjack';
-export type { HandView };
 import type { Action as LiarsDiceAction } from '@boardwalk/game-logic/games/liars-dice';
 export type { LiarsDiceAction };
 import type { Move as UnoMove, UnoLevel } from '@boardwalk/game-logic/games/uno';
 export type { UnoMove, UnoLevel };
 import type { TableMove as BlackjackTableMove } from '@boardwalk/game-logic/games/blackjack';
 export type { BlackjackTableMove };
-
-/**
- * THE DEALT HAND — Phase D's seam, and the one place a game's rules live behind the repo.
- *
- * Every other game in this repo runs its rulebook in the browser and tells the economy what
- * happened. That is fine for the four that cannot win money, and it was never fine for Blackjack:
- * through Phase B the referee knew a stake had been placed and that the payout claimed against it
- * was under 2.5×, and nothing more, because there were no cards on the server. A client that
- * answered "blackjack" to every hand was inside every rule the referee had. A ceiling bounds that
- * theft; it cannot stop it, because "did this player actually win" is not a question you can ask
- * about a number.
- *
- * So the deal moves behind this interface. `deal` and `move` are the ONLY two verbs, and read what
- * they carry: a stake, a hand id, and one of three decisions. There is no field on either for a
- * card, an outcome or a payout — not validated away, ABSENT, which is the meta-rule (make the wrong
- * thing unspellable) applied to the last money surface the client still owned.
- *
- * The interface names one game, which is a thing this codebase otherwise refuses to do. It is
- * earned rather than assumed: the referee exposes `/blackjack/deal` and `/blackjack/move`, so the
- * game's name is already on the wire, and a `GameSessionRepo<TState>` invented for a second caller
- * that does not exist would be `validateAndCommit()` — the shared abstraction designed before
- * anyone needed it, with zero adopters. When a second game is dealt server-side, THAT is when the
- * shape of the general one is knowable.
- */
-
-/** The three decisions a player may make on a live hand. Not results — a player may choose badly. */
-export type BlackjackMove = 'hit' | 'stand' | 'double' | 'insure' | 'decline';
-
-/**
- * WHAT A BLACKJACK PLAYER MAY SEE — the shared projection, re-exported so the repo interface
- * names it without redeclaring it.
- *
- * This interface was written out here and again in `boardwalk-api/src/domain/blackjack.ts`, with a
- * test comparing the two. Both are gone: the rule lives in
- * `@boardwalk/game-logic/games/blackjack` and both sides import it. Three copies of "what may a
- * client see" is three chances to reveal a card, and the two that are not the referee's are the
- * ones nobody would think to audit.
- *
- * The guarantee it carries is structural, not procedural: `HandView` has no `deck` field and no
- * hole card, so there is nothing to forget to strip. Same discipline as UNO's `toPublic`, pointed
- * at a server boundary instead of a room node.
- */
-
-export interface BlackjackDealInput {
-  readonly nonce: string;
-  readonly wagerCents: number;
-}
-
-export interface BlackjackMoveInput {
-  readonly nonce: string;
-  readonly handId: number;
-  readonly move: BlackjackMove;
-}
-
-/**
- * Both halves of an answer, always. A response carrying the hand without the balance would let a
- * client learn a card without learning what the card cost it, which is exactly the reconciliation
- * gap `EconomyRepo.apply` closes by returning the whole authoritative profile.
- */
-export interface BlackjackTurn {
-  readonly profile: Profile;
-  readonly hand: HandView;
-}
-
-export interface BlackjackRepo {
-  /** Stake, shuffle, deal. A dealt NATURAL comes back already `settled` and already paid. */
-  deal(uid: string, input: BlackjackDealInput): Promise<RepoResult<BlackjackTurn>>;
-  /** Hit, stand or double against a live hand. A double commits its second stake behind the seam. */
-  move(uid: string, input: BlackjackMoveInput): Promise<RepoResult<BlackjackTurn>>;
-}
 
 /**
  * THE DEALT-MATCH SEAM (Phase E) — Liar's Dice, the second game the referee deals and the first
@@ -180,10 +112,12 @@ export interface UnoRepo {
 }
 
 /**
- * THE BLACKJACK TABLE'S SEAM — the fourth dealt game, and the only one whose SOLO half already had a
- * seam of its own (`BlackjackRepo`, above). Both are here and both are blackjack: one deals a hand
- * to a player with no room, the other deals a round to a table of chairs, and they run the same
- * rulebook out of `@boardwalk/game-logic/games/blackjack`.
+ * THE BLACKJACK TABLE'S SEAM — the fourth dealt game, and now the ONLY blackjack there is.
+ *
+ * There used to be a `BlackjackRepo` above this one: a room-less hand, `deal`/`move`, with an
+ * offline twin. It went when the game stopped declaring `'solo'`, because two entrances a player
+ * cannot tell apart is worse than one — and a seam whose only caller has been deleted is the dead
+ * reference this repo names everywhere else.
  *
  * `open` HAS NO STAKE, and that is the difference from every other dealt `start` in this file.
  * `LiarsDiceStartInput` carries one and `UnoStartInput` deliberately does not (the table's ante is

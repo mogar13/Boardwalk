@@ -1,41 +1,38 @@
-import { useSearchParams } from 'react-router-dom';
 import type { GameProps } from '@/games/registry';
 import { Lobby } from '@/system/room/Lobby';
 import { useGame } from '@/system/economy/useGame';
-import { roomModesOf } from '@/system/room/modes';
-import { Table } from '@/games/blackjack/components/Table';
 import { TableBoard } from '@/games/blackjack/components/TableBoard';
 
 /**
- * Blackjack — the SDK's economy proof, and since slice 3 of plans/BLACKJACK_DEPTH.md the only game
- * with TWO containers for one rulebook.
+ * Blackjack — the SDK's economy proof, and now a TABLE and nothing else.
  *
- * `'solo'` is the room-less game it has always been: no lobby, no seats, no subscription, the table
- * straight into the `<GameShell>` the play route already wrapped it in. `'ai'`/`'online'` are a real
- * table — `<Lobby>` owns create/join/seats/chat/start and the one `<RoomProvider>` subscription, and
+ * **IT USED TO HAVE TWO CONTAINERS FOR ONE RULEBOOK AND NOW HAS ONE.** `'solo'` was the room-less
+ * game this repo shipped first: no lobby, no seats, no subscription, a hand dealt behind
+ * `BlackjackRepo` straight into the `<GameShell>` the play route already wrapped it in. It worked,
+ * it was correct, and it was the wrong thing to keep, because a player standing at the entrance
+ * could not tell it apart from `'ai'` — two buttons, "Play" and "Solo / AI", that both mean "play
+ * blackjack by myself" and differ only in whether the empty chairs hold bots. A picker whose
+ * options a player cannot distinguish is a picker that cannot be used, which is the argument
+ * `MODE_LABEL` already makes one level up about two buttons reading the same word.
+ *
+ * So the room-less half is DELETED rather than hidden behind a mode nothing offers. `Table.tsx`,
+ * `useBlackjackTable`, `BlackjackRepo` and both its implementations went with it, in the commit
+ * that stopped declaring `'solo'` — because the cheapest way to defeat a cutover is to leave the
+ * road it replaced standing, and an unreachable board is the same dead reference as a cosmetic
+ * with no reader.
+ *
+ * WHAT IT COST, NAMED: blackjack no longer deals during a Pi outage. The room-less hand had a local
+ * twin that ran the shared reducer client-side over ordinary `bet`/`settle` intents, so a fresh
+ * clone and the RTDB fallback could still play it; a TABLE cannot exist on that path at all, for
+ * UNO's and Liar's Dice's reason — the only client-side dealer available is one player's browser
+ * holding the deck and the hole card. That is a real loss and it is the price of one entrance.
+ *
+ * The lobby owns create/join/seats/chat/start and the one `<RoomProvider>` subscription;
  * `<TableBoard>` renders inside it as `children` once play starts, which is how its `useRoom`/
  * `useSeats` reach that subscription without this game registering a listener.
- *
- * WHICH ONE IS DECIDED BY THE URL, and that is not a routing preference — it is the same rule
- * `<Lobby>` states about `?table=`: which table you are at lives in the URL and only there. The
- * launch modal writes `?mode=` when a room mode is picked and writes none for solo, so a shared
- * table link and a fresh click land on the same branch by construction. `?table=` alone is enough
- * too, because a link somebody pasted has a room in it whether or not it kept the mode.
- *
- * THE DEFAULT IS SOLO, deliberately: `/play/blackjack` typed directly, an old bookmark, or a hub
- * card clicked before this slice existed all mean the game that was already there. A default of
- * "online" would answer "I want to play blackjack" with a create-a-table form, which is the exact
- * friction the launch modal was built to remove.
  */
 export default function BlackjackGame({ onExit }: GameProps) {
   const { manifest } = useGame();
-  const [params] = useSearchParams();
-  const mode = params.get('mode');
-  const atTable = params.get('table');
-  const roomModes = roomModesOf(manifest.modes);
-  const wantsRoom = (atTable !== null && atTable !== '') || roomModes.some((m) => m === mode);
-
-  if (!wantsRoom) return <Table onExit={onExit} />;
   return (
     <Lobby manifest={manifest} onExit={onExit}>
       <TableBoard />

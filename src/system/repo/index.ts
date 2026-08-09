@@ -6,7 +6,6 @@ import { firebaseEconomyRepo } from '@/system/repo/firebase/economyRepo';
 import { firebaseLeaderboardRepo } from '@/system/repo/firebase/leaderboardRepo';
 import { firebaseProfileRepo } from '@/system/repo/firebase/profileRepo';
 import { firebaseRoomRepo } from '@/system/repo/firebase/roomRepo';
-import { localBlackjackRepo } from '@/system/repo/local/blackjackRepo';
 import { localTicketRepo } from '@/system/repo/api/ticketRepo';
 import { shadowProfileRepo } from '@/system/repo/shadow/profileRepo';
 import type { EconomyRepo, ProfileRepo, Repos } from '@/system/repo/types';
@@ -99,27 +98,6 @@ const economy: EconomyRepo = apiEconomyOn ? api.economy : firebaseEconomyRepo;
 const leaderboard = apiEconomyOn ? api.leaderboard : firebaseLeaderboardRepo;
 
 /**
- * PHASE D CUTOVER — the referee deals blackjack, so the one game that can win money stops telling
- * us how much it won.
- *
- * `VITE_API_BLACKJACK=0` is the kill switch, and it restores something real rather than something
- * improvised: `localBlackjackRepo` runs the SAME shared reducer client-side and moves the stake and
- * the payout as `bet`/`settle` intents through whatever `economy` is composed above. So with the
- * API up, turning this off puts the table back on the Phase-B economy exactly — server-priced
- * intents, the 2.5× settle ceiling, the lot — and with no API at all it is the pre-Phase-B table
- * unchanged, which is what makes a fresh clone and the emulator loop still deal a hand.
- *
- * It follows the ECONOMY's flag rather than carrying a second base-URL check, because a table whose
- * cards the server deals and whose money the server does not price is a state nobody designed: the
- * deal would stake through the referee's ledger while the settle wrote a client-computed profile
- * over the top. One switch, one coherent pair.
- */
-const blackjack =
-  apiEconomyOn && import.meta.env.VITE_API_BLACKJACK !== '0'
-    ? api.blackjack
-    : localBlackjackRepo({ economy, profile });
-
-/**
  * PHASE C CUTOVER — room + chat run over the WebSocket referee instead of RTDB. Now **on by default**
  * wherever the API is configured (prod carries `VITE_API_BASE_URL` already): the deployed gateway was
  * soaked end-to-end against the live Pi with real Firebase tokens — handshake, seat arbitration and
@@ -161,7 +139,6 @@ export const repos: Repos = {
   auth: firebaseAuthRepo,
   profile,
   economy,
-  blackjack,
   tickets,
   leaderboard,
   room: wsRooms ? wsRooms.room : firebaseRoomRepo,
@@ -208,8 +185,6 @@ export interface RepoWiring {
   readonly economy: 'api' | 'firebase';
   /** Rooms/chat over the WebSocket referee, or the RTDB fallback. */
   readonly rooms: 'websocket' | 'firebase';
-  /** Is the one game that can win money dealt by the referee, or by the local reducer? */
-  readonly blackjack: 'server-dealt' | 'local';
   /** Are offline results banked against server-signed tickets? */
   readonly tickets: 'server-signed' | 'client-minted';
   /** The three server-dealt room games are null without the gateway, by design. */
@@ -223,7 +198,6 @@ export const repoWiring: RepoWiring = Object.freeze({
   apiBaseUrl: apiBaseUrl !== undefined && apiBaseUrl !== '' ? apiBaseUrl : null,
   economy: apiEconomyOn ? 'api' : 'firebase',
   rooms: wsRooms ? 'websocket' : 'firebase',
-  blackjack: api !== null && blackjack === api.blackjack ? 'server-dealt' : 'local',
   tickets: apiEconomyOn ? 'server-signed' : 'client-minted',
   liarsDice: wsRooms !== null,
   uno: wsRooms !== null,
@@ -239,16 +213,10 @@ export { firebaseReady } from '@/system/repo/firebase/app';
 
 export type {
   AuthRepo,
-  BlackjackDealInput,
-  BlackjackMove,
-  BlackjackMoveInput,
-  BlackjackRepo,
-  BlackjackTurn,
   ChatRepo,
   EconomyIntent,
   EconomyOutcome,
   EconomyRepo,
-  HandView,
   LeaderboardEntry,
   LeaderboardRepo,
   PackPullWire,
