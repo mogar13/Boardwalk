@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Button, Card, cx, useToast } from '@/ui';
+import { Button, Card, useToast } from '@/ui';
 import { useAudio } from '@/system/audio/useAudio';
 import { useEquippedFelt } from '@/system/felt/useEquippedFelt';
 import { GameResult } from '@/system/game/GameResult';
@@ -18,7 +18,11 @@ import {
   type TableMove,
 } from '@boardwalk/game-logic/games/blackjack';
 import { BetRack } from '@/games/blackjack/components/BetRack';
+import { Felt } from '@/games/blackjack/components/Felt';
 import { Hand } from '@/games/blackjack/components/Hand';
+import { ScoreBubble } from '@/games/blackjack/components/ScoreBubble';
+import { Spot } from '@/games/blackjack/components/Spot';
+import { seatArc } from '@/games/blackjack/seatLayout';
 
 /**
  * A BLACKJACK TABLE — the same renderer as the solo board, several chairs wide.
@@ -30,25 +34,18 @@ import { Hand } from '@/games/blackjack/components/Hand';
  *
  * IT DOES NOT CALL `reportResult`, which is the sharpest consequence of a dealt game and the one a
  * browser found at Liar's Dice: the referee banks the stat, the XP and the badges inside its settle,
- * so reporting would be a client claiming a result the server already recorded. `checkSettle`
- * refuses `blackjack` outright, so it could not double-count — it would simply toast "settled by the
- * dealer, not by a claim" at every player at the end of every round. What IS still needed is the
- * authoritative PROFILE, and every action's reply carries it.
+ * so reporting would be a client claiming a result the server already recorded. What IS still needed
+ * is the authoritative PROFILE, and every action's reply carries it.
  *
  * THE HOLE CARD IS ABSENT, NOT HIDDEN, and here that is stronger than it is solo: `state.dealer`
  * carries one card until the round settles, for EVERY seat including the host's. There is no private
  * channel in this game at all — a blackjack player's cards are face up, so `useHand` has no caller
  * here and every chair renders every other chair's hand from the public projection.
+ *
+ * **THE CHAIRS SIT ON AN ARC AND ARE NOT ROTATED TO CENTRE YOU** — see `seatLayout.ts`. Reading the
+ * table left to right is reading the order the dealer works along it, which is a property an arc
+ * only keeps if every screen draws the seats in the same order.
  */
-
-/** What the line under a chair says once the round is over. One place, so the copy cannot drift. */
-const RESULT_COPY: Record<string, string> = {
-  blackjack: 'Blackjack!',
-  win: 'Wins',
-  push: 'Push',
-  lose: 'Loses',
-};
-
 export function TableBoard() {
   const { state, seats, status, isHost, gameId, roomId, myId } = useRoom<BlackjackTableState>();
   const { mySeatIndex } = useSeats();
@@ -66,8 +63,7 @@ export function TableBoard() {
 
   /**
    * The host asks the referee to open a round. `state === null` is the not-yet-opened signal, and
-   * the nonce makes a double-fire a replay rather than a second round — the ref is belt to the
-   * server's braces rather than the only thing between a table and two deals.
+   * the nonce makes a double-fire a replay rather than a second round.
    */
   useEffect(() => {
     if (!isHost || status !== 'playing' || state !== null || openedRef.current) return;
@@ -154,88 +150,76 @@ export function TableBoard() {
   const settled = state.phase === 'settled';
   const myTurn = state.phase === 'player' && state.turn === mySeatIndex;
   const waitingOnMe = state.pending.includes(mySeatIndex);
-  // The dealer's own total is only the truth once it has revealed; while a round is live this is
-  // what the UP-CARD shows, which is what every seat can see and all any of them can reason from.
-  const dealerLabel = settled
-    ? `Dealer has ${String(handValue(state.dealer).total)}`
-    : state.dealer.length > 0
-      ? `Dealer shows ${String(handValue(state.dealer).total)}`
-      : 'Dealer';
+  const dealerTotal = state.dealer.length > 0 ? handValue(state.dealer).total : null;
+
+  // The chairs that are actually IN this round, and the arc computed over exactly those — so a
+  // table with an empty seat draws a symmetric curve over the players it has rather than a gap.
+  const playing = state.spots
+    .map((spot, seat) => ({ spot, seat }))
+    .filter((entry) => entry.spot.seated);
+  const arc = seatArc(playing.length);
+  // Uniform card size across the table. Blackjack is not UNO: every hand here is face up and
+  // equally readable, so scaling your own up would re-introduce exactly the "one row matters, the
+  // rest are a legend" reading that the arc exists to remove.
+  const size = playing.length >= 3 ? 'sm' : 'md';
 
   return (
-    <Card felt={felt} className="flex flex-col gap-6 p-4 sm:p-6">
-      {/* THE DEALER, once, at the top — one hand for the whole table, which is the shape of the
-          game: every chair plays the same dealer rather than its own. ONE back is drawn while the
-          round is live, because there is genuinely one card the client does not have. */}
-      <Hand
-        cards={state.dealer}
-        faceDown={settled ? 0 : state.dealer.length > 0 ? 1 : 0}
-        label={dealerLabel}
-      />
-
-      {/* THE CHAIRS. Every seat's cards are public in this game, so each one renders in full for
-          everybody — there is no per-seat channel and nothing to withhold from a neighbour. */}
-      <div className="flex flex-wrap items-start gap-4">
-        {state.spots.map((spot, seat) => {
-          if (!spot.seated) return null;
-          const active = state.phase === 'player' && state.turn === seat;
-          const you = seat === mySeatIndex;
-          const total = spot.cards.length > 0 ? handValue(spot.cards).total : 0;
-          return (
-            <div
-              key={seat}
-              className={cx('flex min-w-[9rem] flex-col gap-1', you && 'order-first')}
-            >
-              <span
-                className={cx(
-                  'font-display flex items-center gap-1 text-sm font-semibold tracking-wide',
-                  // The ACTIVE CUE is the NAME rather than a box around the chair — UNO's board
-                  // settled that argument, and a felt with four lit rectangles on it spends the
-                  // glow budget without buying the distinction it exists for.
-                  active ? 'text-secondary text-shadow-neon-cyan' : 'text-base-content'
-                )}
-              >
-                {active && <span aria-hidden>★</span>}
-                {you
-                  ? `${names[seat] ?? 'You'} (you)`
-                  : (names[seat] ?? `Player ${String(seat + 1)}`)}
-              </span>
-              <Hand
-                cards={spot.cards}
-                label={spot.cards.length > 0 ? `${String(total)}` : 'Waiting for a bet'}
+    <>
+      <Felt
+        felt={felt}
+        dealer={
+          <>
+            {/* ONE back is drawn while the round is live, because there is genuinely one card the
+                client does not have. */}
+            <Hand
+              cards={state.dealer}
+              faceDown={settled ? 0 : state.dealer.length > 0 ? 1 : 0}
+              size={size}
+            />
+            {dealerTotal !== null && (
+              <ScoreBubble
+                total={dealerTotal}
+                tone={settled && dealerTotal > 21 ? 'bust' : 'idle'}
+                size={size}
               />
-              <span className="text-bw-muted text-xs" data-money>
-                {spot.wagerCents > 0 ? formatMoney(spot.wagerCents) : '—'}
-                {spot.doubled && ' · doubled'}
-                {spot.insured && ' · insured'}
+            )}
+            <span className="font-display border-accent/30 text-accent/85 bg-base-300/50 rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-[0.1em] uppercase">
+              Dealer
+            </span>
+            {dealerTotal !== null && (
+              <span className="text-bw-muted text-[0.65rem] tracking-wide uppercase">
+                {settled ? 'total' : 'showing'}
               </span>
-              {settled && spot.result !== null && (
-                <span
-                  className={cx(
-                    'text-xs font-semibold',
-                    spot.result === 'lose'
-                      ? 'text-error'
-                      : spot.result === 'push'
-                        ? 'text-bw-muted'
-                        : 'text-success'
-                  )}
-                >
-                  {RESULT_COPY[spot.result] ?? spot.result}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            )}
+          </>
+        }
+      >
+        {playing.map(({ spot, seat }, i) => (
+          <Spot
+            key={seat}
+            name={names[seat] ?? `Player ${String(seat + 1)}`}
+            you={seat === mySeatIndex}
+            active={state.phase === 'player' && state.turn === seat}
+            waiting={state.pending.includes(seat)}
+            cards={spot.cards}
+            wagerCents={spot.wagerCents}
+            insuranceCents={spot.insuranceCents}
+            doubled={spot.doubled}
+            result={spot.result}
+            settled={settled}
+            size={size}
+            dropRem={arc[i]?.dropRem ?? 0}
+          />
+        ))}
+      </Felt>
 
-      {mySeatIndex < 0 && <p className="text-bw-muted text-sm">Watching this table.</p>}
+      {mySeatIndex < 0 && <p className="text-bw-muted mt-4 text-sm">Watching this table.</p>}
 
       {/* WHAT THE TABLE IS WAITING FOR, said out loud. A blackjack round stalls on a chair that has
           not bet — not on a turn — so "it is nobody's turn and nothing is happening" is a state
-          this game can be in and the other dealt games cannot. Saying who reads as a table; saying
-          nothing reads as a bug. */}
+          this game can be in and the other dealt games cannot. */}
       {!settled && !waitingOnMe && state.pending.length > 0 && (
-        <p className="text-bw-muted text-sm" aria-live="polite">
+        <p className="text-bw-muted mt-4 text-sm" aria-live="polite">
           Waiting for{' '}
           {state.pending.map((seat) => names[seat] ?? `Player ${String(seat + 1)}`).join(', ')}…
         </p>
@@ -245,25 +229,27 @@ export function TableBoard() {
           exactly the same reason: the stake leaves the bankroll inside the referee's own
           transaction, and committing here too would deduct it twice. */}
       {mine !== undefined && state.phase === 'betting' && mine.wagerCents === 0 && (
-        <BetRack
-          disabled={false}
-          onDeal={(wagerCents) => {
-            audio.play('chip');
-            send({ type: 'bet', wagerCents });
-          }}
-        />
+        <div className="mt-4">
+          <BetRack
+            disabled={false}
+            onDeal={(wagerCents) => {
+              audio.play('chip');
+              send({ type: 'bet', wagerCents });
+            }}
+          />
+        </div>
       )}
 
       {/* THE INSURANCE OFFER — the one decision at this table whose outcome only the dealer can see.
           Every chair is asked at once and the dealer does not peek until the last one answers, so
           nobody learns the hole card a beat before the player still deciding. */}
       {mine !== undefined && mine.canInsure && (
-        <div className="flex flex-col gap-3">
+        <div className="mt-4 flex flex-col items-center gap-3">
           <p className="text-bw-muted text-sm">
             Dealer shows an Ace. Insure for {formatMoney(mine.insuranceCents)}? It pays 2 to 1 if
             the dealer has blackjack.
           </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap justify-center gap-3">
             <Button
               variant="primary"
               disabled={balance < mine.insuranceCents}
@@ -282,7 +268,7 @@ export function TableBoard() {
       )}
 
       {mine !== undefined && myTurn && (
-        <div className="flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap justify-center gap-3">
           <Button
             variant="primary"
             onClick={() => {
@@ -295,8 +281,7 @@ export function TableBoard() {
           <Button variant="secondary" onClick={() => send({ type: 'stand' })}>
             Stand
           </Button>
-          {/* Affordability is checked here for the BUTTON and again by the referee for the money.
-              This one can be wrong (a stale balance) and costs a refusal toast; the other cannot. */}
+          {/* Affordability is checked here for the BUTTON and again by the referee for the money. */}
           {mine.canDouble && balance >= mine.wagerCents && (
             <Button
               variant="ghost"
@@ -363,6 +348,6 @@ export function TableBoard() {
             (`dealAgain` no-ops for anyone else); what the OS owns is who gets asked. */}
         <Rematch restart={dealAgain} label="Next round" />
       </GameResult>
-    </Card>
+    </>
   );
 }

@@ -178,6 +178,29 @@
   --color-chess-green-dark: oklch(76% 0.152 130);
   --color-chess-green-light: oklch(96% 0.028 85);
 
+  /* THE BLACKJACK TABLE. GAME CONTENT, exactly like --color-uno-* and --color-chess-* above and
+     admitted on the same grounds: a casino table's cloth and its padded rail are the object's own
+     identity, not a UI signal. FLAT, no glow — the budget stays blue/cyan/gold, and these two are
+     SURFACES, which is the category that has never been allowed to glow anyway.
+
+     Only `src/games/blackjack/components/Felt.tsx` reads them, in the commit that adds them. The
+     board drew `bg-base-200` before this and read as a dark panel with cards on it: a blackjack
+     table is one of the most recognisable objects in a casino and essentially all of that is the
+     green cloth inside a dark rail, so the surface IS the game here in a way it is not for chess
+     (whose squares are already `base-200`/`base-300`).
+
+     This does NOT make a default felt. `feltSrc(undefined) === null` is untouched and the `felt`
+     cosmetic still draws OVER this when a player owns one — so buying a felt still changes the
+     table, and owning none now gets blackjack's own cloth rather than a bare panel. Every other
+     board is unmoved, because nothing else reads these.
+
+     Deliberately dark and low-chroma. The cloth sits behind white cards and a gold print, and the
+     theme's contrast pairs are computed against the base surfaces — a bright casino green would
+     become a background colour nothing had checked text against, which is the same trap the felt
+     cosmetic answers by drawing itself at opacity-80. */
+  --color-bj-felt: oklch(41% 0.076 158);
+  --color-bj-rail: oklch(30% 0.045 25);
+
   /* Cosmetic RARITY tiers (P2 store). GAME CONTENT like the UNO suits, not chrome — a scarcity
      LABEL on a store card, so it is FLAT and does NOT touch the glow budget (blue=act, cyan=here,
      gold=money stay the only three that glow). Four hues chosen to read as a rising ladder and to
