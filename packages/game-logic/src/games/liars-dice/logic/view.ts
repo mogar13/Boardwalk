@@ -1,10 +1,11 @@
 /**
  * WHAT A LIAR'S DICE PLAYER IS ALLOWED TO SEE — the projection, shared.
  *
- * Blackjack's `viewOf` is the model and its docblock is the argument: this is the single most
+ * Blackjack's `toPublic` is the model and its docblock is the argument: this is the single most
  * security-relevant function in the game, and the reason it lives in the shared package rather
  * than in the referee is that the alternative is three copies of "what may a client see", two of
- * which nobody would think to audit.
+ * which nobody would think to audit. (It was modelled on that game's `viewOf`, which projected
+ * the room-less hand and was deleted with it — same argument, one container along.)
  *
  * THE STAKES ARE HIGHER HERE THAN IN BLACKJACK. There, a leaked hole card costs you one hand of
  * information. Here, the entire game IS the hidden information: a player who can see the other

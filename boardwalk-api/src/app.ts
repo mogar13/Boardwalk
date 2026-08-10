@@ -5,7 +5,6 @@ import { authMiddleware } from './auth/middleware';
 import type { TokenVerifier } from './auth/verify';
 import { firebaseVerifier, insecureDevVerifier } from './auth/verify';
 import type { Db } from './db/db';
-import { blackjackRouter } from './routes/blackjack';
 import { economyRouter } from './routes/economy';
 import { healthRouter } from './routes/health';
 import { leaderboardRouter } from './routes/leaderboard';
@@ -80,7 +79,6 @@ export function buildApp({ cfg, db, verifier }: AppDeps): Express {
   // ticket provably unspent.
   app.post('/settle', ticketGate(db, keys));
   app.use(economyRouter(db));
-  app.use(blackjackRouter(db));
 
   return app;
 }

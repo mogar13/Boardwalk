@@ -18,9 +18,9 @@
  * WHAT IS HIDDEN, AND FROM WHOM. Every player's cards are face up in blackjack — that is the game —
  * so there is no per-seat private channel here and no `hands/` node. The ONLY hidden things are the
  * deck and `dealer[1]`, and they are hidden from EVERYONE equally, including whoever is hosting the
- * room. Both stay in the stored table and neither reaches `toPublic`, which is the same structural
- * guarantee `viewOf` gives the solo hand: `BlackjackTableState` has no `deck` field, so it cannot be
- * forwarded by accident.
+ * room. Both stay in the stored table and neither reaches `toPublic`, and the guarantee is
+ * STRUCTURAL rather than procedural: `BlackjackTableState` has no `deck` field, so it cannot be
+ * forwarded by accident. It cannot be spelled.
  *
  * THE DECK CANNOT RUN OUT, and it is worth writing down because `drawOne` throws rather than
  * degrading. A fresh 52 holds 340 pips counting every ace as 1 (4×1 + 4×(2+…+9) + 16×10). A hand
@@ -524,9 +524,9 @@ export interface SpotView {
 }
 
 /**
- * THE WHOLE TABLE, AS A CLIENT MAY SEE IT. `HandView`'s sibling, and it carries the same structural
- * guarantee for the same reason: there is no `deck` field, so the deck cannot be forwarded by
- * accident — it cannot be spelled.
+ * THE WHOLE TABLE, AS A CLIENT MAY SEE IT — and since the room-less hand was deleted, the ONLY
+ * projection this game has. It carries the guarantee structurally: there is no `deck` field, so
+ * the deck cannot be forwarded by accident — it cannot be spelled.
  */
 export interface BlackjackTableState {
   readonly round: number;
@@ -543,9 +543,10 @@ export interface BlackjackTableState {
 /**
  * Project a round down to what the table may see.
  *
- * `slice(0, 1)`, not a placeholder card — `viewOf`'s argument, unchanged: sending a fake hole card
- * puts a lie on the wire that a renderer could believe and a player could read, where an absent
- * card is honestly absent and the board draws a back for it.
+ * `slice(0, 1)`, not a placeholder card: sending a fake hole card puts a lie on the wire that a
+ * renderer could believe and a player could read, where an absent card is honestly absent and the
+ * board draws a back for it. (The deleted `viewOf` made this same argument for the room-less
+ * hand; it outlived that container because it was never about the container.)
  */
 export function toPublic(table: BlackjackTable): BlackjackTableState {
   const revealed = table.phase === 'settled';
