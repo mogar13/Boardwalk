@@ -39,7 +39,7 @@ export function Die({
  * Deliberately NOT a die image with a question mark on it. The player is not looking at a die whose
  * face is being withheld by the UI; they are looking at a cup, because the number does not exist on
  * this machine. Drawing the honest thing keeps the interface and the data model saying the same
- * sentence — the same argument `viewOf` makes for sending one dealer card instead of a fake one.
+ * sentence — the same argument `toPublic` makes for sending one dealer card instead of a fake one.
  */
 export function HiddenDie({ size = 'md' }: { size?: 'sm' | 'md' }) {
   return (

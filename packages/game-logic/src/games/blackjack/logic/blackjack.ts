@@ -416,10 +416,11 @@ export function canDouble(state: BlackjackState): boolean {
  * **IT IS A FUNCTION OF THE PHASE, AND THE PHASE WAS DECIDED BY THE UP-CARD.** That is the whole
  * security property of this feature, and it is why this is one comparison rather than something
  * that looks more thorough: an offer that asked what the dealer's hand TOTALS would read
- * `dealer[1]`, and `viewOf` sends this boolean to a client while deliberately withholding that
+ * `dealer[1]`, and `toPublic` sends this boolean to a client while deliberately withholding that
  * card. The bit would be free instead of bought (§3.3 of the plan), and nothing about the screen
  * would look wrong. `tests/blackjack.test.ts` pins it by asserting the answer is identical across
- * two states differing only in the hole card.
+ * two states differing only in the hole card, and `tests/blackjack-table.test.ts` does the same
+ * for `canInsureAt`, which is the seated caller.
  */
 export function canInsure(state: BlackjackState): boolean {
   return state.phase === 'insurance';

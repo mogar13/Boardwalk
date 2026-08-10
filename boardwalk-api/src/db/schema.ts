@@ -144,17 +144,25 @@ CREATE TABLE IF NOT EXISTS mutations (
   PRIMARY KEY (uid, nonce)
 );
 
--- PHASE D. The server's own blackjack hands — the table that makes \`payoutCents\` stop being a
+-- PHASE D. The server's own blackjack hands — the table that made \`payoutCents\` stop being a
 -- client claim.
 --
--- Through Phase B the server knew a stake existed and what the payout could not exceed; it did not
--- know what cards were on the table, so a client that reported "blackjack, pay me 2.5x" every hand
--- was inside every rule. Now the deck is shuffled here, the reducer runs here, and the payout is
--- computed from THESE cards. The client is told what it is allowed to see (\`HandView\`) and is
--- never sent the deck or the hole card.
+-- RETAINED AS HISTORY. NOTHING WRITES HERE ANY MORE. This was the ROOM-LESS hand's record, and
+-- that game is gone: the client half went when blackjack stopped declaring \`'solo'\`, and
+-- \`domain/blackjack.ts\` plus \`POST /blackjack/deal|move\` went one deploy later, once no cached
+-- bundle could still be calling them. The live path is \`blackjack_rounds\`/\`blackjack_players\`.
+-- The rows are kept because dropping them would mean rewriting a live table to reclaim nothing —
+-- the ledger is the money record and is untouched either way — and \`wagers.hand_id\` still names
+-- them.
 --
--- \`state_json\` is the whole \`BlackjackState\` — including the undealt remainder of the deck, which
--- is precisely the thing that must live server-side and nowhere else. It is a blob rather than
+-- Why it existed: through Phase B the server knew a stake existed and what the payout could not
+-- exceed; it did not know what cards were on the table, so a client that reported "blackjack, pay
+-- me 2.5x" every hand was inside every rule. The deck moved here, the reducer ran here, and the
+-- payout was computed from THESE cards. That argument did not retire with the table — it is what
+-- \`blackjack_rounds\` is built on, and \`toPublic\` is where "what a client may see" lives now.
+--
+-- \`state_json\` was the whole \`BlackjackState\` — including the undealt remainder of the deck, which
+-- is precisely the thing that had to live server-side and nowhere else. A blob rather than
 -- columns because it is opaque to SQL: nothing queries inside a hand, and the shape is owned by
 -- the shared reducer, so columns would be a second definition of it that could drift.
 CREATE TABLE IF NOT EXISTS blackjack_hands (
