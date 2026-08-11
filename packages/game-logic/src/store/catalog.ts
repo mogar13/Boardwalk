@@ -429,6 +429,64 @@ export function applyPurchase(profile: Profile, item: Cosmetic): Profile {
  * or title sets its id into the `equipped` map — spread, so equipping a title never drops the
  * card back and vice versa.
  */
+/**
+ * EVERY KIND THAT CAN BE TAKEN OFF — which is every kind but `avatar`.
+ *
+ * The exclusion is a type rather than a runtime check because "no avatar" is not a state that
+ * exists: `Profile.avatar` is a top-level required string that the top bar, the leaderboard row and
+ * the profile card all render unconditionally, and clearing it would leave three surfaces drawing
+ * an empty span. Every other kind already HAS a nothing-equipped state and has had one since it
+ * shipped — `feltSrc(undefined)` is the bare table, `cardBackSrc`/`diceSrc`/`chessSetFor` fall back
+ * to their free starters, and a frame or title simply is not drawn.
+ *
+ * So the wrong call does not need refusing at runtime; it does not typecheck. `applyEquip` takes a
+ * `Cosmetic` and switches on its kind, which is why it can handle the avatar case at all.
+ */
+export type UnequippableKind = Exclude<CosmeticKind, 'avatar'>;
+
+/** A cosmetic that can be taken off — reachable only through `isUnequippable`. */
+export interface UnequippableCosmetic extends Cosmetic {
+  readonly kind: UnequippableKind;
+}
+
+/**
+ * Narrow a catalogue row to one that can be taken off. `isPackable`'s shape, and it is here for
+ * `isPackable`'s reason: it is what lets a downstream signature REFUSE the avatar rather than
+ * accept it and no-op. A UI that calls `unequip` on an avatar should not compile.
+ */
+export function isUnequippable(item: Cosmetic): item is UnequippableCosmetic {
+  return item.kind !== 'avatar';
+}
+
+/**
+ * Take it off. Returns a NEW profile with that kind's key REMOVED from `equipped`.
+ *
+ * `applyEquip`'s inverse, and the thing the store had no way to spell: an equipped cosmetic drew a
+ * dead "Equipped" label and there was no way back to nothing. That is a real cost rather than a
+ * missing nicety, because a felt applies to EVERY game at once — buying one to look at it changes
+ * six boards permanently, and "I want my plain table back" had no answer short of buying a
+ * different felt.
+ *
+ * **THE KEY IS DELETED, NOT SET TO `undefined`, and that is load-bearing on both persistence
+ * paths.** `exactOptionalPropertyTypes` is on, so a present-but-undefined key is not even the same
+ * type — and more importantly both writers rebuild from what is THERE: the API's `coerceUpsert`
+ * reconstructs `equipped` key by key and omits what it does not find (clearing the column), and
+ * `firebaseProfileRepo.save` writes the whole profile object at its own path, so an absent child is
+ * a removed child. A key carrying `undefined` would be dropped by `JSON.stringify` before it ever
+ * reached either, which happens to work and works by accident; deleting it is the same outcome
+ * stated on purpose.
+ *
+ * Ownership is deliberately NOT checked, unlike `canBuy`: taking something off is not a privilege,
+ * and refusing to unequip an id the player somehow does not own would strand exactly the case that
+ * most needs the escape hatch (a retired cosmetic still sitting in `equipped`).
+ */
+export function applyUnequip(profile: Profile, kind: UnequippableKind): Profile {
+  if (profile.equipped[kind] === undefined) return profile;
+  // Destructure-and-rest is the one spelling that removes a key without mutating the source.
+  const { [kind]: _removed, ...rest } = profile.equipped;
+  return { ...profile, equipped: rest };
+}
+
 export function applyEquip(profile: Profile, item: Cosmetic): Profile {
   switch (item.kind) {
     case 'avatar':

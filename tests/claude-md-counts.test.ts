@@ -37,7 +37,14 @@ function claimedCounts(): Map<string, number> {
   // A BARE mention carries no claim and is ignored on purpose: the table names plenty of files
   // without a count, and `tests/economy-parity.test.ts` is discussed in the past tense as a test
   // that was deliberately DELETED. Only a parenthesised number asserts something about today.
-  const re = /`(tests\/[A-Za-z0-9._-]+\.test\.ts)` \((\d+)\)/g;
+  //
+  // THE LOOKAHEAD IS THE FIX FOR THIS GUARD'S OWN BLIND SPOT. It used to require a `)` immediately
+  // after the digits, so the four rows written as `` (51 — what it proves) `` — the long-form ones,
+  // which are the rows most worth checking — carried a claim this file could not see. It reported
+  // success by matching less than it looked like it matched, which is the exact failure the
+  // Enforcement section warns about, landing on the guard whose whole job is to catch stale claims.
+  // Found because `tests/store.test.ts` said 21 while collecting 27, and this stayed green.
+  const re = /`(tests\/[A-Za-z0-9._-]+\.test\.ts)` \((\d+)(?=[)\s])/g;
   for (const [, file, count] of md.matchAll(re)) {
     // Both groups are non-optional in the pattern, so a match always has them; `strict` cannot
     // see that, and an assertion here would be a lie the day the pattern grows an optional group.

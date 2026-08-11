@@ -217,9 +217,54 @@ describe('opening a round', () => {
 
   it('refuses a table that is not one, and a host who is not seated at it', () => {
     const db = seeded();
-    expect(openTableRound(db, 'ada', { nonce: 'a', gameId: GAME_ID, roomId: ROOM, seats: [human('ada')] }, 1).ok).toBe(false);
+    // No chairs at all — a request no lobby can produce. (A ONE-chair table is legal here and has
+    // its own case below; this game's opponent is the dealer, who takes no seat.)
+    expect(openTableRound(db, 'ada', { nonce: 'z', gameId: GAME_ID, roomId: ROOM, seats: [] }, 1).ok).toBe(false);
     expect(openTableRound(db, 'ada', { nonce: 'b', gameId: GAME_ID, roomId: ROOM, seats: [bot(), bot()] }, 1).ok).toBe(false);
     expect(openTableRound(db, 'cy', { nonce: 'c', gameId: GAME_ID, roomId: ROOM, seats: [human('ada'), human('bob')] }, 1).ok).toBe(false);
+  });
+
+  /**
+   * ONE CHAIR IS A BLACKJACK TABLE — the case this dealer refused for as long as the manifest also
+   * said `min: 2`, and the two stopped agreeing the moment the client learned that a dealer counts
+   * as an opponent (`GameManifest.dealerPlays`).
+   *
+   * The failure it fences is the clearest form of the UI that lies this repo keeps meeting: the
+   * entrance offers a 1-chair table, the room is created, and the board then sits on "Opening a
+   * round…" forever, because the referee refuses the frame the lobby just sent. Nothing throws and
+   * nothing is charged — it simply never deals, which reads as the table thinking.
+   *
+   * Asserted by PLAYING one to a settle rather than by checking `ok`, because "the guard lets it
+   * through" and "a one-chair round works" are different claims: the turn order, the peek and the
+   * settle all index over `spots`, and a table of one is the smallest input any of them ever gets.
+   */
+  it('opens, deals and settles a ONE-chair table — the dealer is the opponent', () => {
+    const db = seeded();
+    const round = ok(
+      openTableRound(db, 'ada', { nonce: 'solo-open', gameId: GAME_ID, roomId: ROOM, seats: [human('ada')] }, 1_000)
+    );
+    expect(round.table.spots).toHaveLength(1);
+    expect(playersOf(db, round.roundId).map((p) => p.uid)).toEqual(['ada']);
+
+    // The stake is taken, the cards come out, and the round leaves the betting phase — which is
+    // what "it deals" means here, since nothing else can move it on with one chair at the table.
+    const before = balanceOf(db, 'ada');
+    const bet = okMove(
+      playAction(db, 'ada', round.roundId, 'solo-bet', { type: 'bet', wagerCents: 500 }, 2_000)
+    );
+    expect(bet.table.phase).not.toBe('betting');
+    expect(balanceOf(db, 'ada')).toBe(before - 500);
+    // `RoundOk.table` is the RAW table, deck and hole card included — the projection is the
+    // transport's job and is asserted there. So what is read here is that cards were actually
+    // dealt to the one chair, which is the thing a `< 2` guard prevented outright.
+    expect(bet.table.spots[0]?.cards.length).toBeGreaterThanOrEqual(2);
+
+    // And it REACHES A SETTLE. The turn order, the peek and the settle all index over `spots`, and
+    // a table of one is the smallest input any of them ever gets — "the guard let it through" and
+    // "a one-chair round finishes" are different claims, and only this one is the feature.
+    const final = playOut(db, round.roundId, ['ada']);
+    expect(roundOver(final)).toBe(true);
+    expect(final.spots[0]?.result).not.toBeNull();
   });
 
   it('replays a repeated nonce instead of opening a second round', () => {

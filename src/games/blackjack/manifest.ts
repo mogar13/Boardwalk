@@ -30,10 +30,20 @@ import type { GameManifest } from '@/games/registry';
  * Blackjack keeps is the half that was only ever its own — the economy, the payouts, and cards it
  * does not deal itself.
  *
- * `seats: { min: 2, max: 4 }` — v1's range was 1–4, and the 1 is not a table: every room game's
- * `seats.min` must be at least 2 (a table of one is FULL, and it is still not a table —
- * `tests/room.test.ts` asserts it over this registry). A lone player gets a table of bots, which is
- * what `'ai'` means everywhere else in this app.
+ * `seats: { min: 1, max: 4 }`, and this is the ONE game that may say 1 — see `dealerPlays` below.
+ * Every room game needs somebody opposite, and that rule was enforced by counting CHAIRS until this
+ * game showed the count and the rule are different questions: the dealer plays a hand and takes no
+ * chair, so a one-chair blackjack table has an opponent where a one-chair UNO table has a person
+ * alone in a room.
+ *
+ * **It read `{ min: 2, max: 4 }` for exactly as long as this game also declared `'solo'`, and
+ * collapsing the two entrances is what turned that into a defect.** While the room-less hand
+ * existed, "play alone against the dealer" had its own button and the table's minimum of two was
+ * merely a second way in; deleting it left `'ai'` — labelled "Solo / AI" — as the only way in, with
+ * a seat picker whose smallest rung was 2. So the entrance offered SOLO and then seated a bot next
+ * to you with no way to ask it to leave. Nothing was broken by the deletion; what it removed was
+ * the other half of a pair, and this manifest still described the pair. (v1's range was 1–4 and was
+ * right about this by accident — it also permitted a 1-seat table at games that have no dealer.)
  *
  * `betting.perSeat` is what tells the OS this game has no TABLE stake. Every other betting game
  * charges one ante that the room stamps at create and every chair pays; here each chair names its
@@ -47,7 +57,13 @@ export const blackjackManifest = {
   blurb: 'Beat the dealer to 21 without busting. A natural pays 3:2 — the house stands on all 17s.',
   icon: 'blackjack.png',
   pier: 'casino',
-  seats: { min: 2, max: 4 },
+  seats: { min: 1, max: 4 },
+  /**
+   * The dealer is a player who takes no chair — see the header, and `GameManifest.dealerPlays` for
+   * what the seat rule does with it. Blackjack is the only game in this registry that can say this
+   * truthfully: UNO and Liar's Dice are dealt by the referee too, and their referee plays nothing.
+   */
+  dealerPlays: true,
   modes: ['ai', 'online'],
   betting: { min: 500, max: 50000, perSeat: true },
 } as const satisfies GameManifest;

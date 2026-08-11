@@ -182,7 +182,25 @@ export interface RoundOk {
  */
 export function openTableRound(db: Db, host: string, input: OpenInput, now: number): Decision<RoundOk> {
   const humans = input.seats.filter((s) => s.kind === 'human' && s.uid !== null && s.uid !== '');
-  if (input.seats.length < 2) return refuse('a table needs at least two seats');
+  /*
+   * ONE CHAIR IS A BLACKJACK TABLE, and this is the one dealt game where that is true.
+   *
+   * UNO and Liar's Dice keep `< 2` because their opponents are the other chairs: a one-seat round
+   * there is a player alone in a room, and the guard is what stops one being dealt. Blackjack's
+   * opponent is the DEALER, who plays a hand out of this same reducer and occupies no seat — so a
+   * one-chair round has somebody to beat, and refusing it refuses the ordinary way this game is
+   * played.
+   *
+   * It said `< 2` because it was copied from `uno.ts` when this dealer was written, at a moment when
+   * the manifest also declared `min: 2` and the two agreed. They stopped agreeing the moment the
+   * client learned that the dealer counts (`GameManifest.dealerPlays`), and the symptom was the
+   * clearest possible form of the UI that lies: the entrance offered a 1-chair table, created the
+   * room, and the board then sat on "Opening a round…" forever while the referee refused it.
+   *
+   * What is still refused is a round with NO chairs at all — a table nobody is at, which is a
+   * request that cannot have come from a lobby.
+   */
+  if (input.seats.length < 1) return refuse('a table needs a seat');
   if (humans.length === 0) return refuse('a table needs at least one human');
   if (!humans.some((s) => s.uid === host)) return refuse('only a seated player may open a round');
 

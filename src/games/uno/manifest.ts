@@ -1,6 +1,40 @@
 import type { GameManifest } from '@/games/registry';
 import type { OptionValues } from '@/system/options/options';
+import type { PlayerPrefSpec } from '@/system/prefs/prefs';
 import { HOUSE_TABLE_LEVEL, type UnoLevel } from '@boardwalk/game-logic/games/uno';
+
+/**
+ * AUTO-DRAW, the first player PREFERENCE in this app — the third kind of thing a game can be
+ * played differently under, after `options` (yours, pre-game, in the URL) and `houseRules` (the
+ * table's, at create, in room state). `src/system/prefs/prefs.ts` carries the table that separates
+ * them; this one binds nobody but you and takes effect the moment you flip it.
+ *
+ * IT PASSES THE TEST THAT DECIDES WHICH KIND SOMETHING IS, and that is worth stating, because "the
+ * board plays a move for you" sounds exactly like a rule. It fires only where `mustDraw` is true —
+ * the position in which `applyMove` refuses every play and accepts exactly one action, and in which
+ * drawing ENDS the turn, because this rulebook has no play-what-you-drew. No decision is taken from
+ * anybody: the reducer had already collapsed the legal set to one, and the table is identical
+ * either way. That is what makes it yours to switch off rather than the table's to agree on.
+ *
+ * `default: true` is the field here that could do damage. Auto-draw has shipped ON since the day it
+ * landed, so defaulting it off would silently retune a live game under every player who never opens
+ * the panel — the on-by-default house rule's defect pointing the other way. `tests/player-prefs.test.ts`
+ * pins every declared default against the behaviour that shipped for exactly that reason.
+ *
+ * The hint describes the OFF state, because that is what a reader is choosing INTO; the on-state is
+ * what they already have and did not have to be told about.
+ *
+ * Named rather than inlined into `playerPrefs` below so the BOARD can import the spec by name.
+ * `usePlayerPref` takes a spec, never an id — the default lives on the spec, so a caller holding
+ * one cannot read a preference this game does not declare — and `playerPrefs[0]` would be an index
+ * that silently means something else the day a second preference is added at the top.
+ */
+export const AUTO_DRAW_PREF: PlayerPrefSpec = {
+  id: 'autoDraw',
+  label: 'Draw for me when I am stuck',
+  hint: 'On, the table draws for you after a beat when nothing in your hand can be played — the only move you had. Off, you press the deck yourself.',
+  default: true,
+};
 
 /**
  * UNO — the SDK's proof of the hard multiplayer half: HIDDEN HANDS (each player sees only their own
@@ -164,6 +198,8 @@ export const unoManifest = {
       hint: 'The round carries on after someone goes out, ranking 2nd, 3rd and so on down to the last player left holding cards. For money, the top half of the finishers split the pot instead of the winner taking all of it.',
     },
   ],
+  /** The player's own toggles — see `AUTO_DRAW_PREF` above for what this kind is and why. */
+  playerPrefs: [AUTO_DRAW_PREF],
 } as const satisfies GameManifest;
 
 /** The chosen `bots` option as the level the pure chooser takes. See `ticTacToeHouseLevel`. */

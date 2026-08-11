@@ -36,7 +36,7 @@ import {
   seatsAreReady,
   tableSizeChoices,
 } from '@/system/room/seats';
-import { fillForMode, roomModesOf } from '@/system/room/modes';
+import { fillForMode, roomModesOf, seatRangeFor } from '@/system/room/modes';
 import { registry } from '@/games/registry';
 import type { Seat } from '@/system/room/types';
 
@@ -178,11 +178,18 @@ describe('the entrance starts what it already seated', () => {
     // test that restated the mapping would be comparing a copy of the rule to the rule. What is
     // asserted is the whole rule in one line — a table is ready the moment it is created if and
     // only if its chairs were filled by the create, which is every way in except online.
+    //
+    // THE SIZES ARE THE MODE'S, through the REAL `seatRangeFor`, and that is not a detail: the
+    // `iff` above is FALSE of a one-chair online table, which comes up full because there is no
+    // second chair to leave open. Blackjack declares `min: 1` legitimately (its opponent is the
+    // dealer, who takes no chair) and this case is what caught the consequence — "Play Online"
+    // would have auto-started a solo hand at a table nobody could ever join. `seatRangeFor` floors
+    // an online table at two, so the rule holds again by construction rather than by exception.
     let sawReady = false;
     let sawWaiting = false;
     for (const { manifest } of Object.values(registry)) {
       for (const mode of roomModesOf(manifest.modes)) {
-        for (const n of declaredSizes(manifest.seats)) {
+        for (const n of declaredSizes(seatRangeFor(manifest.seats, mode))) {
           const planned = plannedSeats({ seatCount: n, host: HOST, fill: fillForMode(mode) });
           const ready = seatsAreReady(planned);
           expect(ready, `${manifest.id} ${mode} ${String(n)}`).toBe(mode !== 'online');

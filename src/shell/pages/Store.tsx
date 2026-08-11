@@ -6,8 +6,10 @@ import {
   isEarnOnly,
   isEquipped,
   isOwned,
+  isUnequippable,
   type Cosmetic,
   type CosmeticKind,
+  type UnequippableCosmetic,
 } from '@boardwalk/game-logic';
 import { CosmeticPreview } from '@/system/store/CosmeticPreview';
 import { PackShelf } from '@/system/store/PackShelf';
@@ -78,11 +80,13 @@ function CosmeticCard({
   profile,
   buy,
   equip,
+  unequip,
 }: {
   item: Cosmetic;
   profile: Profile;
   buy: (item: Cosmetic) => void;
   equip: (item: Cosmetic) => void;
+  unequip: (item: UnequippableCosmetic) => void;
 }) {
   const owned = isOwned(profile, item);
   const equipped = isEquipped(profile, item);
@@ -119,10 +123,33 @@ function CosmeticCard({
         )}
       </div>
 
+      {/*
+        EQUIPPED IS A STATE YOU CAN LEAVE. This was a dead label — the word "Equipped" and no
+        control — so every kind was a one-way door: put a felt on and every board in the app has it
+        for good, because there is no "none" to pick and the only way out is buying a different one.
+        A felt is the loudest of them (it draws under all six games at once), which is how it
+        surfaced, but the shape is the same for a frame, a title, a card back, a die and a chess set.
+
+        The label survives above the button rather than being replaced by it, because "Equipped" is
+        the STATUS and "Take off" is the ACTION, and a card that shows only the action makes you
+        read a verb to work out the state.
+
+        The AVATAR keeps the bare label, and that is a property of the type rather than a branch
+        somebody remembered to write: there is no such thing as no avatar (`Profile.avatar` is a
+        required string three surfaces render unconditionally), so `isUnequippable` narrows it out
+        and `unequip` will not accept it.
+      */}
       {equipped ? (
-        <span className="font-display text-secondary text-xs font-semibold tracking-[0.14em] uppercase">
-          Equipped
-        </span>
+        <div className="flex flex-col items-center gap-2">
+          <span className="font-display text-secondary text-xs font-semibold tracking-[0.14em] uppercase">
+            Equipped
+          </span>
+          {isUnequippable(item) && (
+            <Button variant="ghost" size="sm" onClick={() => unequip(item)}>
+              Take off
+            </Button>
+          )}
+        </div>
       ) : owned ? (
         <Button variant="ghost" size="sm" onClick={() => equip(item)}>
           Equip
@@ -150,7 +177,7 @@ function CosmeticCard({
 
 export function Store() {
   const profile = useProfile();
-  const { buy, equip } = useStore();
+  const { buy, equip, unequip } = useStore();
   if (profile === null) return null;
 
   return (
@@ -181,7 +208,14 @@ export function Store() {
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {items.map((item) => (
-                <CosmeticCard key={item.id} item={item} profile={profile} buy={buy} equip={equip} />
+                <CosmeticCard
+                  key={item.id}
+                  item={item}
+                  profile={profile}
+                  buy={buy}
+                  equip={equip}
+                  unequip={unequip}
+                />
               ))}
             </div>
           </section>
