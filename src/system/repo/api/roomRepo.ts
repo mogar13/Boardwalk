@@ -92,6 +92,20 @@ export function apiRoomRepo(socket: RoomSocket): RoomRepo {
       asVoid(await socket.request({ t: 'setStatus', gameId, roomId, status }));
     },
 
+    /**
+     * A `RepoResult` rather than `asVoid`, unlike every other host action here, and the difference is
+     * the CALLER. `setStatus` is pressed once on a Start button by the one client that can reach it;
+     * this is a toggle a host clicks repeatedly, and its refusals are ordinary rather than
+     * exceptional — a table that closed while the panel was open, or a referee that predates the
+     * frame during the deploy window the Pi-first order exists to keep short. Throwing there would
+     * surface as an unhandled rejection behind a modal; a result lets the panel say so.
+     */
+    async setHouseRules(gameId, roomId, rules): Promise<RepoResult<void>> {
+      return asResult<void>(
+        await socket.request({ t: 'setHouseRules', gameId, roomId, houseRules: rules })
+      );
+    },
+
     async writePrivate<TPrivate>(
       gameId: string,
       roomId: string,

@@ -525,6 +525,21 @@ export interface RoomRepo {
   ): Promise<void>;
 
   /**
+   * CHANGE WHAT THE TABLE PLAYS BY (plans/done/LIVE_HOUSE_RULES.md). Host-only, enforced at the
+   * referee — a client that draws the control without being host gets a refusal, which is why the
+   * lobby draws it for the host alone.
+   *
+   * IT TAKES EFFECT AT THE NEXT DEAL, and nothing here says so. `deal` stamps the resolved rules
+   * onto the match, so a round in flight is played under what it was DEALT with; this writes the
+   * ROOM, and the next deal reads the room. There is deliberately no schedule and no pending copy:
+   * a second home for the rules is a second source of truth that can drift from the lobby.
+   *
+   * `rules` is the ON ids only (`tableRulesFor`), and the server bounds the shape again on arrival
+   * — the boundary that is not optional, because this one arrives from a browser.
+   */
+  setHouseRules(gameId: string, roomId: string, rules: TableRules): Promise<RepoResult<void>>;
+
+  /**
    * HIDDEN INFORMATION. Write a seat's private state (`rooms/.../private/<idx>`), and subscribe to
    * it — but a client only ever subscribes to ITS OWN seat's node, and `database.rules.json`
    * refuses a read of anyone else's. This is what makes "a bystander never receives opponents'

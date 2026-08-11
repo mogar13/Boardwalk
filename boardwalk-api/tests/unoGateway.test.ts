@@ -112,6 +112,16 @@ class Client {
     return rooms[rooms.length - 1]?.snapshot?.state as UnoState | undefined;
   }
 
+  /**
+   * The latest room META this socket saw — what the TABLE says, as opposed to what the dealt round
+   * is being played under. The two are the same until somebody changes the rules mid-game, and the
+   * whole of `plans/done/LIVE_HOUSE_RULES.md` lives in the window where they differ.
+   */
+  lastMeta(): { houseRules?: unknown } | undefined {
+    const rooms = this.seen.filter((f) => f.t === 'room' && f.snapshot != null);
+    return rooms[rooms.length - 1]?.snapshot?.meta as { houseRules?: unknown } | undefined;
+  }
+
   close(): void {
     this.ws.close();
   }
@@ -285,6 +295,82 @@ describe('the UNO dealer, over a real socket', () => {
 
     ada.close();
     bob.close();
+  });
+
+  /**
+   * THE HEADLINE OF plans/done/LIVE_HOUSE_RULES.md, and the one thing in it the plan refuses to take
+   * on trust. "The next-round part is free by construction" is TRUE — `deal` stamps the resolved
+   * rules onto the match, so a round in flight cannot be reached by a room-level write — but "free
+   * by construction" is how a defect ships. Nothing else in either suite can see this: the store
+   * test proves the room field moves, the `uno.test.ts` block proves a deal stamps what it is
+   * handed, and neither one asks what happens to a LIVE round when the room changes underneath it.
+   *
+   * The failure it forecloses is the whole feature inverted — a change that reaches the running
+   * match would retune a game mid-hand, which is exactly what write-once existed to prevent and what
+   * this slice promised not to do.
+   *
+   * Both halves are asserted at once, because they are the same window: the round keeps `stack`, and
+   * the ROOM (which every client is already subscribed to) shows `playToLast` — that broadcast IS
+   * the announcement host-only is conditional on.
+   */
+  it('a mid-game rules change leaves the round alone, reaches every client, and lands on the NEXT deal', async () => {
+    const { ada, bob, roomId } = await table(0, { stack: true });
+    await ada.request({ t: 'unoStart', gameId: GAME_ID, roomId, nonce: 'n1', level: 'sharp' });
+    await sleep(120);
+
+    const dealt = { stack: true, crossStack: false, playToLast: false };
+    expect(ada.lastState()?.houseRules).toEqual(dealt);
+
+    // The host changes the game MID-ROUND. Note there is no field here saying when it applies.
+    const changed = await ada.request({
+      t: 'setHouseRules',
+      gameId: GAME_ID,
+      roomId,
+      houseRules: { playToLast: true },
+    });
+    expect(changed.ok).toBe(true);
+    await sleep(60);
+
+    // 1. THE ROUND IN FLIGHT IS UNTOUCHED — for the guest too, who never sent anything.
+    for (const client of [ada, bob]) expect(client.lastState()?.houseRules).toEqual(dealt);
+    // 2. THE TABLE SAYS SO, on the ordinary room subscription both clients already hold. A guest
+    //    learning this without asking is what makes the change visible before the rematch vote.
+    for (const client of [ada, bob]) expect(client.lastMeta()?.houseRules).toEqual({ playToLast: true });
+
+    // 3. THE NEXT DEAL PICKS IT UP. Settle the round by hand — the play is not what is under test.
+    db.prepare('UPDATE uno_matches SET settled = 1 WHERE room_id = ?').run(roomId);
+    await ada.request({ t: 'unoStart', gameId: GAME_ID, roomId, nonce: 'n2', level: 'sharp' });
+    await sleep(120);
+    const next = { stack: false, crossStack: false, playToLast: true };
+    for (const client of [ada, bob]) expect(client.lastState()?.houseRules).toEqual(next);
+
+    ada.close();
+    bob.close();
+  });
+
+  /**
+   * HOST-ONLY, over the wire. The store cannot express this — it does no authorization at all, by
+   * design — so a gateway that forgot the check would leave every store assertion green while any
+   * seated player could change what the table plays.
+   *
+   * Bob is SEATED here rather than a stranger, which is the case that matters: "not at this table"
+   * is refused by a dozen other things, and a player who legitimately belongs is the one whose
+   * request has to be turned down on authority alone.
+   */
+  it('refuses a rules change from a seated player who is not the host, and changes nothing', async () => {
+    const { ada, bob, roomId } = await table(0, { stack: true });
+    const refused = await bob.request({
+      t: 'setHouseRules',
+      gameId: GAME_ID,
+      roomId,
+      houseRules: { playToLast: true },
+    });
+    await sleep(60);
+    const meta = ada.lastMeta()?.houseRules;
+    ada.close();
+    bob.close();
+    expect(refused.ok).toBe(false);
+    expect(meta).toEqual({ stack: true });
   });
 
   it('takes both antes at the deal and answers the dealer with an authoritative profile', async () => {

@@ -109,6 +109,10 @@ describe('the panel says what is YOURS, and says it is different', () => {
     const html = draw(unoManifest, { stack: true });
     // `aria-pressed` is what makes a toggle a toggle to a screen reader, and it is also the honest
     // test of the difference in kind: exactly the preferences have it, and no house rule does.
+    //
+    // THIS IS THE GUEST'S PANEL — `draw` passes no writer, which is what read-only MEANS here
+    // (plans/done/LIVE_HOUSE_RULES.md). The host's copy is the block below, and the two must not
+    // converge: a guest shown a toggle the referee refuses is the UI that lies.
     expect((html.match(/aria-pressed/g) ?? []).length).toBe(
       playerPrefChoices(unoManifest.playerPrefs).length
     );
@@ -130,6 +134,88 @@ describe('the panel says what is YOURS, and says it is different', () => {
     // Auto-draw ships on, so a fresh reader must see it on. The '✓' prefix is how the button says
     // so; `aria-pressed="true"` is the same fact in the form a machine reads.
     expect(draw(unoManifest, {})).toContain('aria-pressed="true"');
+  });
+});
+
+/**
+ * THE HOST'S COPY — the half plans/done/LIVE_HOUSE_RULES.md added, and the half that can lie.
+ *
+ * Everything here renders beautifully when it is wrong, which is why it is asserted rather than
+ * looked at. The three failures, in the order they would bite:
+ *
+ *  • **A GUEST is given toggles.** The referee refuses them (host-only, over the wire), so the
+ *    control is dead on arrival — the exact "UI that lies" this slice was ordered around, and the
+ *    reason PR #91 shipped the panel read-only in the first place.
+ *  • **The panel claims a change is in force when it is NOT.** During a live round the room's rules
+ *    and the round's differ for as long as a change is pending, and this panel reads the ROOM. An
+ *    unqualified statement there is a lie about what game is being played, told to the person
+ *    playing it. The fix is a time label, so it is a STRING — invisible to every other guard here.
+ *  • **A dependent toggle is offered before its prerequisite.** The lobby draws it disabled rather
+ *    than hidden, for the reason `houseRules.ts` states; a second drawing of the same toggles that
+ *    reached a different answer would be two controls for one rule.
+ */
+describe('the host can change what the table plays, and the panel says when it lands', () => {
+  const noop = (): Promise<{ ok: true; value: void }> =>
+    Promise.resolve({ ok: true, value: undefined });
+
+  /** The panel as the HOST sees it — a writer present is what "editable" means. */
+  const drawHost = (tableRules: Record<string, boolean>, live = false): string =>
+    renderToStaticMarkup(
+      createElement(GameRules, { manifest: unoManifest, tableRules, live, onChangeRules: noop })
+    );
+
+  it('gives the HOST a pressable toggle per house rule, where a guest gets a statement', () => {
+    const prefs = playerPrefChoices(unoManifest.playerPrefs).length;
+    const rules = houseRuleChoices(unoManifest.houseRules).length;
+    // The guest's count is the preferences alone; the host's is preferences PLUS every house rule.
+    // Asserted as counts rather than "contains aria-pressed", because the guest's panel contains it
+    // too — the preferences are pressable for everybody, and a substring check passes either way.
+    expect((draw(unoManifest, { stack: true }).match(/aria-pressed/g) ?? []).length).toBe(prefs);
+    expect((drawHost({ stack: true }).match(/aria-pressed/g) ?? []).length).toBe(prefs + rules);
+  });
+
+  it('tells the host a change lands NEXT DEAL, and never tells a guest that', () => {
+    // A guest reading "your changes apply from the next deal" over controls they do not have is
+    // a promise made to somebody who cannot act on it.
+    expect(text(drawHost({})).toLowerCase()).toContain('next deal');
+    expect(text(draw(unoManifest, {})).toLowerCase()).not.toContain('next deal');
+  });
+
+  it('says the ROUND IN PROGRESS keeps its own rules — but only while one is running', () => {
+    // THE CORRECTNESS CASE. `live` is the one bit that separates "these are the rules" from "these
+    // are the rules from now on", and the panel reads the room either way. Before a deal there is
+    // no round to except, so the caveat must be ABSENT — a panel that always says it would be
+    // hedging about a table where nothing has happened yet.
+    expect(text(drawHost({ stack: true }, true)).toLowerCase()).toContain('round in progress');
+    expect(text(drawHost({ stack: true }, false)).toLowerCase()).not.toContain('round in progress');
+    // And it is the ROOM's bit, not the host's: a guest at a live table is told the same thing.
+    expect(
+      text(
+        renderToStaticMarkup(
+          createElement(GameRules, { manifest: unoManifest, tableRules: {}, live: true })
+        )
+      ).toLowerCase()
+    ).toContain('round in progress');
+  });
+
+  it('draws a dependent rule DISABLED until its prerequisite is on, rather than hiding it', () => {
+    const dependent = houseRuleChoices(unoManifest.houseRules).find(
+      (s) => s.requires !== undefined
+    );
+    // Read off the real manifest, and asserted to EXIST — the day UNO stops declaring a dependent
+    // rule this case would otherwise pass by testing nothing.
+    expect(dependent, 'UNO declares a rule with a prerequisite').toBeDefined();
+    if (dependent === undefined) return;
+    // Off: still listed (so the relationship is visible), and not operable.
+    const without = drawHost({});
+    expect(text(without)).toContain(dependent.label);
+    expect(without).toContain('disabled');
+    // On: the same toggle, now live. Asserted by the DISABLED count falling, since the panel also
+    // disables nothing else in this state.
+    const withParent = drawHost({ [dependent.requires ?? '']: true });
+    expect((withParent.match(/disabled/g) ?? []).length).toBeLessThan(
+      (without.match(/disabled/g) ?? []).length
+    );
   });
 });
 
@@ -195,5 +281,21 @@ describe('no game draws its own rules panel', () => {
     // satisfies every case above, because they all call the component directly.
     const lobby = readFileSync(`${SRC}system/room/Lobby.tsx`, 'utf8');
     expect(strip(lobby)).toContain('<GameRules');
+  });
+
+  /**
+   * ONLY THE HOST IS HANDED THE WRITER. Every rendered case above calls the component directly, so
+   * all of them stay green if the lobby passes `onChangeRules` unconditionally — and the result is
+   * a guest clicking toggles the referee refuses, which is precisely what the read-only panel
+   * existed to avoid. There is no DOM here, so "the guest sees no toggle" is not assertable at the
+   * lobby; that the writer is GATED is, and it has one spelling.
+   */
+  it('hands the writer to the HOST alone', () => {
+    const lobby = strip(readFileSync(`${SRC}system/room/Lobby.tsx`, 'utf8'));
+    const passes = lobby.includes('onChangeRules');
+    // Gated on `isHost` in the same expression that passes it — not merely mentioned somewhere in
+    // a 400-line file, which a `&&` two components away would also satisfy.
+    const gated = /isHost\s*\?[^}]*onChangeRules|onChangeRules[^}]*isHost\s*\?/.test(lobby);
+    expect(passes && gated, 'Lobby must pass onChangeRules only when isHost').toBe(true);
   });
 });
