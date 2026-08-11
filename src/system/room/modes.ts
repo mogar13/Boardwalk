@@ -82,3 +82,34 @@ export function fillForMode(mode: RoomMode): SeatFill {
   if (mode === 'hotseat') return 'local';
   return 'none';
 }
+
+/**
+ * A TABLE YOU OPEN FOR OTHER PEOPLE HAS A CHAIR FOR ONE — the seat range a given way in may
+ * actually pick from, which is the manifest's range everywhere except online, where it floors at
+ * two.
+ *
+ * It lives HERE for `fillForMode`'s reason and not in `seats.ts`, whose header promises that below
+ * it there is no mode, only seats. And it is one function read by BOTH the picker and the default,
+ * because two spellings of a floor is how a picker offers a size the default does not use.
+ *
+ * WHAT IT CLOSES. Blackjack declares `seats { min: 1, max: 4 }` — legitimately, since the dealer is
+ * an opponent who takes no chair — and that number is a property of the GAME, true at every table
+ * it deals. Online is where it stops being sensible: a one-chair table has no chair for anybody
+ * else, so it comes up full, `seatsAreReady` is true, and the entrance's auto-start deals it on the
+ * spot. Pressing "Play Online" would hand you a solo hand, with no lobby, no joinable seat and no
+ * listing (the room browser excludes tables with no claimable chair, correctly). Nothing errors and
+ * nothing is charged wrongly; it is simply not what the button says, which is the failure this repo
+ * keeps meeting and keeps naming.
+ *
+ * The floor is TWO rather than "min + 1": the rule is that somebody can join, and one free chair is
+ * what that takes. A game whose range cannot reach two is left alone rather than pushed past its
+ * own maximum — `tableSizeChoices` then collapses to nothing and the picker disappears, which is
+ * the existing behaviour for a range holding one size.
+ */
+export function seatRangeFor(
+  range: { readonly min: number; readonly max: number },
+  mode: RoomMode
+): { readonly min: number; readonly max: number } {
+  if (mode !== 'online' || range.min >= 2) return range;
+  return { min: Math.min(2, range.max), max: range.max };
+}

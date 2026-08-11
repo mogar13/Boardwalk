@@ -23,6 +23,7 @@ import {
   tableSizeChoices,
 } from '@/system/room/seats';
 import { registry } from '@/games/registry';
+import { seatRangeFor } from '@/system/room/modes';
 import { ANTE_RUNGS_CENTS, anteChoices, DEFAULT_ANTE_CENTS, parseAnte } from '@/system/room/ante';
 import { STARTING_BANKROLL_CENTS, validateBet } from '@boardwalk/game-logic';
 import { applyIfFresh, isFresh, nextSeq } from '@/system/room/ordering';
@@ -175,9 +176,9 @@ describe('mySeatIndex / tableIsFull / humanCount', () => {
 });
 
 /**
- * A ROOM GAME HAS AT LEAST TWO CHAIRS (plans/done/GAME_LAUNCH_MODAL.md §5.5) — stated as a rule over the
- * whole registry rather than as a fix to the one manifest that broke it, because the next game to
- * get this wrong will get it wrong the same way.
+ * A ROOM GAME HAS SOMEBODY OPPOSITE (plans/done/GAME_LAUNCH_MODAL.md §5.5) — stated as a rule over
+ * the whole registry rather than as a fix to the one manifest that broke it, because the next game
+ * to get this wrong will get it wrong the same way.
  *
  * Tic-Tac-Toe declared `{ min: 1, max: 2 }`, meaning "one human is enough" — true of the GAME and
  * false of the TABLE. `modes` already carries "you can play this alone" (`'ai'`), so conflating the
@@ -186,31 +187,60 @@ describe('mySeatIndex / tableIsFull / humanCount', () => {
  * `canStart` lights up, on a board whose `seats[1]` is `undefined`. It survived because the seat
  * picker was a small unlabelled row on a page nobody looked at twice.
  *
+ * **IT USED TO SAY "AT LEAST TWO CHAIRS", AND THAT WAS THE RIGHT RULE COUNTED THE WRONG WAY.** The
+ * property is an OPPONENT; chairs were merely how you counted one until Blackjack needed a table of
+ * one. Its opponent is the dealer, who draws to 17, beats you or busts, and never takes a seat — so
+ * a one-chair blackjack table has somebody opposite and a one-chair UNO table has a person alone in
+ * a room. Counting chairs cannot tell those apart, and the cost of it not being able to was real:
+ * when Blackjack's room-less `'solo'` mode was deleted, the two-chair minimum left the entrance
+ * offering "Solo / AI" and then seating a bot beside you with no way to ask it to leave.
+ *
+ * So the manifest DECLARES `dealerPlays` and this asks for an opponent from either source. That is
+ * `betting.house`'s shape — a fact only the game can know, declared rather than inferred — and the
+ * bijection below is what stops it becoming decoration.
+ *
  * A SOLO game is exempt by construction, not by exception: it never mounts a lobby at all.
  */
-describe('every room game seats at least two', () => {
+describe('every room game has somebody opposite', () => {
   const roomGames = registry.filter((g) => g.manifest.modes.some((m) => m !== 'solo'));
 
   it('has room games to be true of', () => {
     expect(roomGames.length).toBeGreaterThan(0);
   });
 
-  it('never declares a one-chair table', () => {
+  it('declares a one-chair table only where a dealer plays', () => {
     for (const { manifest } of roomGames) {
+      const floor = manifest.dealerPlays === true ? 1 : 2;
       expect(
         manifest.seats.min,
-        `${manifest.id}: a room with one chair is not a table`
-      ).toBeGreaterThanOrEqual(2);
+        `${manifest.id}: a room with one chair and no dealer is not a table`
+      ).toBeGreaterThanOrEqual(floor);
       expect(manifest.seats.max, `${manifest.id}: max below min`).toBeGreaterThanOrEqual(
         manifest.seats.min
       );
     }
   });
 
-  it('so the smallest table the lobby can create is startable', () => {
+  /**
+   * THE BIJECTION, and it is what keeps `dealerPlays` from rotting into a flag somebody sets out of
+   * politeness. Its ONLY effect is permitting a one-chair table, so a game that declares it and
+   * still floors at two has declared nothing — the `loadout.color` failure, in a manifest — and a
+   * game that floors at one WITHOUT it has smuggled Tic-Tac-Toe's bug back past the case above.
+   * Asserted as two sets so both directions fail loudly and separately.
+   */
+  it('declares the flag exactly where it changes something', () => {
+    const dealt = roomGames
+      .filter((g) => g.manifest.dealerPlays === true)
+      .map((g) => g.manifest.id);
+    const oneChair = roomGames.filter((g) => g.manifest.seats.min === 1).map((g) => g.manifest.id);
+    expect([...dealt].sort()).toEqual([...oneChair].sort());
+  });
+
+  it('so the smallest table the lobby can create is startable, with an opponent in it', () => {
     // `seats.min` is the default seat count and `canStart` needs a FULL table with a human in it.
-    // The one-chair table passed that check too — which is exactly why the assertion is about the
-    // SEATS and not about `tableIsFull`: a table of one is full, and it is still not a table.
+    // The one-chair table passed that check too — which is exactly why the assertion is about who
+    // is OPPOSITE and not about `tableIsFull`: a table of one is full, and whether it is a table
+    // depends entirely on whether anything is playing against you.
     for (const { manifest } of roomGames) {
       const smallest = plannedSeats({
         seatCount: manifest.seats.min,
@@ -220,11 +250,10 @@ describe('every room game seats at least two', () => {
       expect(smallest.length, `${manifest.id}`).toBe(manifest.seats.min);
       expect(tableIsFull(smallest), `${manifest.id}: an AI table is not startable`).toBe(true);
       expect(humanCount(smallest), `${manifest.id}`).toBe(1);
-      // And somebody to play against, which is the fact `min: 1` denied.
-      expect(
-        smallest.length - humanCount(smallest),
-        `${manifest.id}: nobody opposite`
-      ).toBeGreaterThanOrEqual(1);
+      // Somebody to play against — a bot in another chair, or the dealer, who has none.
+      const opponents =
+        smallest.length - humanCount(smallest) + (manifest.dealerPlays === true ? 1 : 0);
+      expect(opponents, `${manifest.id}: nobody opposite`).toBeGreaterThanOrEqual(1);
     }
   });
 });
@@ -317,6 +346,65 @@ describe('teardownPlan — only the host clears shared state', () => {
  * reads the REAL registry rather than a fixture: a manifest whose range is a single number gets no
  * control, and that has to be a fact about the manifest, not about a hand-written example.
  */
+/**
+ * A TABLE YOU OPEN FOR OTHER PEOPLE HAS A CHAIR FOR ONE — `seatRangeFor`, the mode's own view of a
+ * manifest's seat range.
+ *
+ * It exists because `seats.min` is a fact about the GAME and "online" is a fact about the TABLE, and
+ * Blackjack is where they came apart: its dealer is an opponent who takes no chair, so `min: 1` is
+ * true of the game at every table it deals — and a one-chair ONLINE table has no chair for anybody
+ * else, comes up full, and is auto-started by the entrance on the spot. "Play Online" would deal a
+ * solo hand at a table nobody can join and the room browser would (correctly) never list it.
+ *
+ * Nothing about that throws, charges wrongly or renders badly, which is why it is a rule with a
+ * guard rather than something anyone would notice.
+ */
+describe('seatRangeFor — the smallest table a way in may open', () => {
+  it('leaves every non-online mode exactly as the manifest declared it', () => {
+    const range = { min: 1, max: 4 };
+    expect(seatRangeFor(range, 'ai')).toEqual(range);
+    expect(seatRangeFor(range, 'hotseat')).toEqual(range);
+  });
+
+  it('floors an online table at two chairs', () => {
+    expect(seatRangeFor({ min: 1, max: 4 }, 'online')).toEqual({ min: 2, max: 4 });
+  });
+
+  it('leaves a range that already floors at two alone, at every mode', () => {
+    // Additivity: this must be invisible to the five games that never declared a one-chair table.
+    const range = { min: 2, max: 7 };
+    for (const mode of ['ai', 'hotseat', 'online'] as const) {
+      expect(seatRangeFor(range, mode)).toEqual(range);
+    }
+  });
+
+  it('never pushes a range past its own maximum', () => {
+    // A game that genuinely cannot seat two is left as it is rather than handed min > max, which
+    // `tableSizeChoices` would answer with an empty picker and the lobby with a table it cannot
+    // create. There is no such game today; the clamp is what keeps that from being a surprise.
+    expect(seatRangeFor({ min: 1, max: 1 }, 'online')).toEqual({ min: 1, max: 1 });
+  });
+
+  /**
+   * Read off the REAL registry: every size an online table can be created at must leave a chair
+   * for somebody, or the mode is a lie. This is the assertion the composition case in
+   * `tests/auto-seat.test.ts` rests on, stated where the range is decided.
+   */
+  it('offers no online size that seats nobody but the host, over the real registry', () => {
+    let sawOnline = false;
+    for (const { manifest } of registry) {
+      if (!manifest.modes.includes('online')) continue;
+      sawOnline = true;
+      const range = seatRangeFor(manifest.seats, 'online');
+      const sizes = tableSizeChoices(range);
+      for (const n of sizes.length > 0 ? sizes : [range.min]) {
+        expect(n, `${manifest.id} online`).toBeGreaterThanOrEqual(2);
+      }
+    }
+    expect(sawOnline).toBe(true);
+  });
+});
+
 describe('tableSizeChoices', () => {
   it('offers every size in the range, inclusive', () => {
     expect(tableSizeChoices({ min: 2, max: 7 })).toEqual([2, 3, 4, 5, 6, 7]);

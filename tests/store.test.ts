@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyEquip,
   applyPurchase,
+  applyUnequip,
   canBuy,
   CATALOG,
   cosmeticById,
@@ -18,6 +19,7 @@ import {
   isEarnOnly,
   isEquipped,
   isOwned,
+  isUnequippable,
   type Cosmetic,
 } from '@boardwalk/game-logic';
 import { defaultProfile } from '@/system/profile/defaults';
@@ -222,5 +224,98 @@ describe('applyPurchase / applyEquip', () => {
     expect(withBoth.equipped.title).toBe(title.id);
     // And the avatar stays where it is — the equipped map holds only the new kinds.
     expect(withBoth.avatar).toBe(defaultProfile('t').avatar);
+  });
+});
+
+/**
+ * TAKING SOMETHING OFF — the half the store had no way to spell.
+ *
+ * An equipped cosmetic drew a dead "Equipped" label and nothing else, so every kind was a one-way
+ * door: there is no "none" row to equip, so the only way out of a felt was buying a different felt.
+ * That is loudest for the felt (it draws under all six boards at once — buy one to look at it and
+ * every game has it for good), and identical for the other five kinds.
+ *
+ * WHAT CAN GO WRONG IS ENTIRELY ABOUT PERSISTENCE, which is why these cases are about the SHAPE of
+ * the result rather than about a boolean. Both writers rebuild `equipped` from what is present —
+ * the API's `coerceUpsert` reconstructs it key by key, `firebaseProfileRepo.save` writes the whole
+ * profile object at its own path — so an ABSENT key clears and a key carrying `undefined` only
+ * happens to clear, because `JSON.stringify` drops it before either sees it. Deleting is the same
+ * outcome on purpose instead of by accident, and `'felt' in equipped` is the only assertion that
+ * can tell the two apart.
+ */
+describe('applyUnequip — equipped is a state you can leave', () => {
+  const felt = (): Cosmetic => {
+    const item = cosmeticsOfKind('felt')[0];
+    if (!item) throw new Error('no felt in catalogue');
+    return item;
+  };
+
+  it('removes the KEY rather than setting it undefined', () => {
+    const worn = applyEquip(defaultProfile('t'), felt());
+    expect(worn.equipped.felt).toBe(felt().id);
+
+    const bare = applyUnequip(worn, 'felt');
+    expect(bare.equipped.felt).toBeUndefined();
+    // The assertion that distinguishes a deleted key from a present-but-undefined one. A profile
+    // carrying `{ felt: undefined }` reads identically through every accessor above and survives
+    // `Object.keys`, which is exactly how it would reach a writer that iterates.
+    expect('felt' in bare.equipped).toBe(false);
+  });
+
+  it('leaves every other equipped kind alone', () => {
+    const back = paidBack();
+    const title = CATALOG.find((c) => c.kind === 'title');
+    if (!title) throw new Error('no title in catalogue');
+    let p = applyEquip(defaultProfile('t'), back);
+    p = applyEquip(p, title);
+    p = applyEquip(p, felt());
+
+    const bare = applyUnequip(p, 'felt');
+    expect(bare.equipped.cardback).toBe(back.id);
+    expect(bare.equipped.title).toBe(title.id);
+    expect(bare.avatar).toBe(defaultProfile('t').avatar);
+  });
+
+  it('does not mutate the profile it was handed', () => {
+    const worn = applyEquip(defaultProfile('t'), felt());
+    const frozen = JSON.stringify(worn);
+    applyUnequip(worn, 'felt');
+    expect(JSON.stringify(worn)).toBe(frozen);
+  });
+
+  it('is a no-op by IDENTITY when nothing of that kind is worn', () => {
+    // Returned unchanged rather than rebuilt, so a redundant call cannot re-render anything that
+    // is watching the profile — the identity discipline `setOptionValue` and `setTableRule` hold.
+    const p = defaultProfile('t');
+    expect(applyUnequip(p, 'felt')).toBe(p);
+  });
+
+  it('takes every kind off, and each one leaves nothing behind', () => {
+    // Swept over the CATALOGUE rather than over one kind, because "the store sells it, so it can
+    // be taken off" has to be true of the kind that is added next, not just of the six today.
+    for (const kind of ['cardback', 'title', 'felt', 'frame', 'dice', 'chessset'] as const) {
+      const item = cosmeticsOfKind(kind)[0];
+      if (!item) continue;
+      const bare = applyUnequip(applyEquip(defaultProfile('t'), item), kind);
+      expect(kind in bare.equipped, kind).toBe(false);
+    }
+  });
+
+  /**
+   * THE AVATAR IS NOT A KIND YOU CAN TAKE OFF, and it is excluded by TYPE rather than by a branch.
+   * `Profile.avatar` is a required string that the top bar, the leaderboard row and the profile
+   * card all render unconditionally, so "no avatar" is three surfaces drawing an empty span.
+   *
+   * There is nothing to call and assert here — the point is that `applyUnequip(p, 'avatar')` does
+   * not compile — so what is asserted is the narrowing that keeps a UI from reaching it: the store
+   * card gates its Take-off button on `isUnequippable`, and this is the predicate that gate uses.
+   */
+  it('narrows the avatar out, so no caller can reach it', () => {
+    const avatars = cosmeticsOfKind('avatar');
+    expect(avatars.length).toBeGreaterThan(0);
+    for (const a of avatars) expect(isUnequippable(a), a.id).toBe(false);
+    for (const c of CATALOG.filter((c) => c.kind !== 'avatar')) {
+      expect(isUnequippable(c), c.id).toBe(true);
+    }
   });
 });

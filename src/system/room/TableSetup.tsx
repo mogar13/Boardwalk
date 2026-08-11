@@ -16,7 +16,7 @@ import {
   tableRulesFor,
   type TableRules,
 } from '@/system/room/houseRules';
-import { fillForMode, type RoomMode } from '@/system/room/modes';
+import { fillForMode, seatRangeFor, type RoomMode } from '@/system/room/modes';
 import { SeatPreview } from '@/system/room/SeatPreview';
 import {
   humanCapacity,
@@ -104,8 +104,13 @@ export function TableSetup({ manifest, mode, onEntered }: TableSetupProps) {
   // adding six CPUs before you could press Start, and a picker you have to find first does not fix
   // that. The smallest table is the one you can start on your own, which is what a player opening a
   // game alone is trying to do; anybody who wants a full house is one tap away.
-  const sizeChoices = tableSizeChoices(manifest.seats);
-  const [seatCount, setSeatCount] = useState(manifest.seats.min);
+  //
+  // The range is the MODE's, not the manifest's — `seatRangeFor` floors an online table at two
+  // chairs, because a table you open for other people needs a chair for one. Both the picker and
+  // the default read it, so they cannot disagree about the smallest table.
+  const seatRange = seatRangeFor(manifest.seats, mode);
+  const sizeChoices = tableSizeChoices(seatRange);
+  const [seatCount, setSeatCount] = useState(seatRange.min);
   // WHAT A CHAIR COSTS. Chosen here, at create, because it is stamped onto the room and every
   // joiner is bound by it — the seat-count argument, with money behind it: a table cannot grow a
   // chair under someone who joined by code, and it must certainly not raise the stakes on them.

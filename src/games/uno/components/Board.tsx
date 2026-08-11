@@ -21,6 +21,9 @@ import {
   type UnoColor,
   type UnoState,
 } from '@boardwalk/game-logic/games/uno';
+import { usePlayerPref } from '@/system/prefs/prefsStore';
+import { AUTO_DRAW_PREF, unoManifest } from '@/games/uno/manifest';
+import { stuckLine } from '@/games/uno/components/stuckLine';
 import { useAutoDraw } from '@/games/uno/components/useAutoDraw';
 import { useMoveLog } from '@/games/uno/components/useMoveLog';
 import { CallUno } from '@/games/uno/components/CallUno';
@@ -245,8 +248,16 @@ export function Board() {
     pendingWild === null &&
     mustDraw(myHand, state);
 
+  // MY OWN PREFERENCE, not the table's — instant, and binding on nobody else. It gates the ARMING
+  // only: `stuck` still means "the rulebook has collapsed this position to one action", which is
+  // what the line below and the hidden UNO call both read. Turning the draw off must not change
+  // what the board believes about the position, only who performs the move it has already named.
+  const autoDraw = usePlayerPref(unoManifest.id, AUTO_DRAW_PREF);
+
   useAutoDraw(
-    stuck && state !== null ? `${String(state.round)}:${String(state.lastEvent.seq)}` : null,
+    stuck && autoDraw && state !== null
+      ? `${String(state.round)}:${String(state.lastEvent.seq)}`
+      : null,
     () => {
       if (state === null || mySeatIndex < 0) return;
       submit({ type: 'draw' });
@@ -483,11 +494,16 @@ export function Board() {
               and then do it: the line now announces the draw the board is about to take rather than
               instructing the player to take it. The pile stays live throughout, so anyone who does
               not want to wait out the beat can still click it and skip ahead. */}
+          {/* AND IT SAYS WHICHEVER OF THOSE TWO THINGS IS TRUE, which is the whole cost of making
+              the draw optional. The announcing wording is a claim about what is ABOUT TO HAPPEN,
+              so leaving it up with the preference off would be the board promising a move nobody
+              is going to make — the player waits out a beat that never comes and the table looks
+              hung. Off, it goes back to instructing, which is what this line said before the
+              auto-draw existed at all. `stuck` is the same predicate in both branches; only the
+              verb moves. */}
           {stuck && (
             <p className="text-bw-muted text-xs" aria-live="polite">
-              {owed > 0
-                ? `Nothing answers the +${String(owed)} — taking it…`
-                : `Nothing matches ${state.color} — drawing a card…`}
+              {stuckLine({ owed, color: state.color, autoDraw })}
             </p>
           )}
 

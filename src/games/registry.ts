@@ -1,6 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 import type { GameOptionsSpec } from '@/system/options/options';
 import type { HouseRuleSpec } from '@/system/room/houseRules';
+import type { PlayerPrefSpec } from '@/system/prefs/prefs';
 import { ticTacToeManifest } from '@/games/tic-tac-toe/manifest';
 import { blackjackManifest } from '@/games/blackjack/manifest';
 import { chessManifest } from '@/games/chess/manifest';
@@ -150,6 +151,27 @@ export interface GameManifest {
   readonly seats: { readonly min: number; readonly max: number };
 
   /**
+   * THE DEALER PLAYS A HAND, AND IT SITS IN NO CHAIR — declared by Blackjack alone, and the one
+   * fact that makes a ONE-CHAIR table a table.
+   *
+   * Every room game must seat at least two, and `tests/room.test.ts` says why in its own words:
+   * "somebody opposite". That rule was written after Tic-Tac-Toe declared `{ min: 1, max: 2 }`
+   * meaning "one human is enough" — true of the GAME, false of the TABLE — and the default table
+   * came up as one chair with `seats[1]` undefined and a Start button that lit anyway.
+   *
+   * The rule was right and its arithmetic was wrong, in a way only Blackjack could show: it
+   * counted CHAIRS to decide whether there was an opponent, and blackjack's opponent never takes
+   * one. The dealer draws to 17, beats you or busts, and is the entire reason to sit down — so a
+   * one-chair blackjack table is a full table with an opponent, while a one-chair UNO table is a
+   * person alone in a room. Declaring it here rather than exempting an id keeps the guard saying
+   * something true, so game #7 cannot get a one-chair table by copying a manifest.
+   *
+   * It is NOT "the server deals this game": UNO and Liar's Dice are dealt by the referee too, and
+   * both still need two chairs, because the referee deals for them and plays nothing.
+   */
+  readonly dealerPlays?: boolean;
+
+  /**
    * Which ways the game can be played. Note these are NOT branched on inside a game — v1's
    * `"local"`-vs-`"hotseat"` split across 14 games (7 spelled it each way) is the bug this
    * project deletes with `localSeatIds` in Phase 5. This field is the LOBBY's menu of what
@@ -224,6 +246,25 @@ export interface GameManifest {
    * does not read renders perfectly and does nothing.
    */
   readonly houseRules?: readonly HouseRuleSpec[];
+
+  /**
+   * PLAYER PREFERENCES — how one player's own client operates the controls, changeable at any
+   * moment and binding nobody else. The THIRD kind, and `src/system/prefs/prefs.ts` carries the
+   * table that tells the three apart; the short version is that `options` are yours but pre-game,
+   * `houseRules` are the table's, and these are yours and instant.
+   *
+   * The test for whether something belongs here is in that file and it is worth repeating: if
+   * turning it off could change what the rules permit, or what anybody else sees, it is not a
+   * preference. UNO's auto-draw passes because it only ever fires in the position where the
+   * rulebook has already collapsed the legal set to one action.
+   *
+   * Absent on every game but UNO. Unlike `houseRules` there is no resolver to be a bijection with
+   * — a preference is read by the board directly through `usePlayerPref(gameId, spec)` — so what
+   * `tests/player-prefs.test.ts` asserts instead is that each declared default is the behaviour
+   * that already shipped, since a default is the one field here that can silently retune a live
+   * game under everybody.
+   */
+  readonly playerPrefs?: readonly PlayerPrefSpec[];
 }
 
 /**

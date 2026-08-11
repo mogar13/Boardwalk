@@ -4,6 +4,7 @@ import {
   CATALOG,
   applyEquip,
   applyPurchase,
+  applyUnequip,
   canBuy,
   canOpen,
   formatDollars,
@@ -13,6 +14,7 @@ import {
   type Cosmetic,
   type Pack,
   type PackPull,
+  type UnequippableCosmetic,
 } from '@boardwalk/game-logic';
 import type { PackPullWire } from '@/system/repo';
 import { useConfirm, useToast } from '@/ui';
@@ -30,6 +32,13 @@ export interface StoreApi {
   readonly buy: (item: Cosmetic) => void;
   /** Wear an owned cosmetic. A no-op on something not owned — the button is only shown for owned items. */
   readonly equip: (item: Cosmetic) => void;
+  /**
+   * Take one off, back to nothing equipped of that kind.
+   *
+   * It takes an `UnequippableCosmetic` rather than a `Cosmetic`, so the avatar — the one kind with
+   * no nothing-equipped state — cannot be passed here at all. See `applyUnequip`.
+   */
+  readonly unequip: (item: UnequippableCosmetic) => void;
   /**
    * Confirm, then open a pack — spends the price, grants the pull (or credits dust on a duplicate).
    *
@@ -130,6 +139,27 @@ export function useStore(): StoreApi {
     [mutateProfile, toast]
   );
 
+  /**
+   * TAKE IT OFF. No confirm and no ownership check, unlike `buy` and `equip`: nothing is spent,
+   * nothing is lost, and clicking Equip again puts it straight back — a dialog guarding a reversible
+   * free action is the OK-button problem `ActionLabel` exists to prevent, one layer up.
+   *
+   * No toast on success either. Every one of these has a visible result — the felt leaves the table,
+   * the ring leaves the avatar, the title leaves the card — so a toast would be narrating something
+   * the player is already looking at. The failure still speaks, because a write that silently did
+   * not happen looks identical to one that did.
+   */
+  const unequip = useCallback(
+    (item: UnequippableCosmetic) => {
+      const p = useAuthStore.getState().profile;
+      if (p === null) return;
+      void mutateProfile(applyUnequip(p, item.kind)).catch(() => {
+        toast.error('Could not take that off — try again.');
+      });
+    },
+    [mutateProfile, toast]
+  );
+
   const open = useCallback(
     async (pack: Pack): Promise<PackPull | null> => {
       const before = useAuthStore.getState().profile;
@@ -196,5 +226,5 @@ export function useStore(): StoreApi {
     [confirm, applyEconomy, toast]
   );
 
-  return { buy, equip, open };
+  return { buy, equip, unequip, open };
 }

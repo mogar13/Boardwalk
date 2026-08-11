@@ -4,6 +4,7 @@ import { Button, Card } from '@/ui';
 import type { GameManifest } from '@/games/registry';
 import { ChatPanel } from '@/system/chat/ChatPanel';
 import { ExitGame } from '@/system/game/ExitGame';
+import { GameRules } from '@/system/game/GameRules';
 import { GameOptions } from '@/system/options/GameOptions';
 import { useAuthStore } from '@/system/auth/authStore';
 import { formatMoney } from '@boardwalk/game-logic';
@@ -316,6 +317,22 @@ function LobbyRoom({
                 Start
               </Button>
             )}
+            {/*
+            WHAT THIS TABLE IS PLAYING, reachable once play has started — which is when it is
+            actually asked. The header's `House rules:` line above says which are ON and nothing
+            about what any of them DOES: those sentences are in the manifest and were rendered only
+            on the setup panel, a screen you leave in order to play. So "can a +4 answer a +2 here?"
+            had no answer anywhere on the page at the moment somebody plays one.
+
+            It sits beside the exit rather than on the board for `<GameResult>`'s and
+            `<ExitGame>`'s reason, arriving a fourth time: a control a player wants at a specific
+            moment must not be somewhere they have to scroll a felt to find. And it is the OS's to
+            draw, not the game's, because what it renders is manifest DATA — the same split
+            `<GameOptions>` and the lobby's own rule toggles already make. No game spells it.
+
+            It renders null for a game declaring neither kind, so five of the six draw no button.
+          */}
+            <GameRules manifest={manifest} tableRules={meta?.houseRules} />
             <ExitGame onExit={onExit} />
           </div>
         </div>
