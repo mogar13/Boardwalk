@@ -371,6 +371,26 @@ export const firebaseRoomRepo: RoomRepo = {
     await set(ref(firebaseDb(), `${ROOM(gameId, roomId)}/meta/status`), status);
   },
 
+  /**
+   * NOT AVAILABLE HERE, and it is a REFUSAL rather than a silent success — the difference matters.
+   *
+   * This path has no house rules to change: `readMeta` answers `NO_TABLE_RULES` unconditionally,
+   * because nothing on the RTDB side ever writes one (see the comment there). Writing a bag anyway
+   * would need a `database.rules.json` change and a hand-run deploy, on a path that exists to be
+   * flipped on during a Pi outage — and the one game that HAS house rules does not run here at all,
+   * since its only client-side dealer would be one player's browser holding everybody's hand.
+   *
+   * So the honest answer is "no", said out loud. Resolving `{ok: true}` would leave a host clicking
+   * a toggle that reports success and changes nothing, which is the UI-that-lies failure this whole
+   * slice is ordered around avoiding — arriving through the back door, on the fallback.
+   */
+  setHouseRules(): Promise<RepoResult<void>> {
+    return Promise.resolve({
+      ok: false,
+      error: 'House rules cannot be changed on this connection.',
+    });
+  },
+
   async writePrivate<TPrivate>(
     gameId: string,
     roomId: string,

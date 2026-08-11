@@ -3,6 +3,7 @@ import { useProfile } from '@/system/profile/useProfile';
 import { repos } from '@/system/repo';
 import { useRoomContext } from '@/system/room/roomContext';
 import type { RoomMeta, Seat } from '@/system/room/types';
+import type { TableRules } from '@/system/room/houseRules';
 import type { RepoResult } from '@/system/repo/types';
 
 /**
@@ -40,6 +41,15 @@ export interface RoomApi<TPublic> {
    */
   readonly patch: (produce: (prev: TPublic | null) => TPublic) => Promise<void>;
   readonly setStatus: (status: RoomMeta['status']) => Promise<void>;
+  /**
+   * HOST ACTION: change what the table plays by, from the next deal
+   * (plans/done/LIVE_HOUSE_RULES.md). The round in flight keeps the rules it was DEALT with — that
+   * is `deal` stamping the match, not anything this call does or could undo.
+   *
+   * It hands back a `RepoResult` rather than throwing, because a refusal here is ordinary: the
+   * referee is the judge of who may call it, and the RTDB fallback refuses it outright.
+   */
+  readonly setHouseRules: (rules: TableRules) => Promise<RepoResult<void>>;
   /**
    * Take a seat. `name` defaults to this account's display name — the ordinary case, one account one
    * seat. It is a parameter (not always the profile name) for the ONE case that needs it: a hot-seat
@@ -79,6 +89,10 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     (status: RoomMeta['status']) => repos.room.setStatus(gameId, roomId, status),
     [gameId, roomId]
   );
+  const setHouseRules = useCallback(
+    (rules: TableRules) => repos.room.setHouseRules(gameId, roomId, rules),
+    [gameId, roomId]
+  );
   const claim = useCallback(
     (index: number, name?: string) =>
       repos.room.claimSeat(gameId, roomId, index, { uid: myUid, name: name ?? myName }),
@@ -116,6 +130,7 @@ export function useRoom<TPublic>(): RoomApi<TPublic> {
     isHost: snapshot?.meta.host === myUid,
     patch,
     setStatus,
+    setHouseRules,
     claim,
     release,
     setAi,

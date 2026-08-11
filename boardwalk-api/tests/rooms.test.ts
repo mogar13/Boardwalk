@@ -296,15 +296,17 @@ describe('RoomStore — create + snapshot', () => {
   });
 
   /**
-   * WRITE-ONCE, exactly as the ante is. This is what makes "nobody can change the game under a
-   * player who already sat down" true by construction rather than by anyone remembering.
+   * ONE WRITER, exactly as the ante has none. This used to say "never changes once stamped", and it
+   * is NARROWED rather than deleted (plans/done/LIVE_HOUSE_RULES.md §3) — which is a stronger
+   * statement than either half alone, because "nothing changes them" was silently also asserting
+   * that no such writer exists, and that is the part that is no longer true.
    *
-   * It matters more than it looks: a table advertised as plain UNO that acquires stacking after a
-   * guest takes a chair is a different game than the one they agreed to, and unlike a raised ante
-   * it costs them nothing measurable — so nothing would ever surface it. Falsified by adding a
-   * setter and calling it here.
+   * The four ordinary paths must still leave them alone. That is what stops a table advertised as
+   * plain UNO from acquiring stacking as a side effect of somebody taking a chair or the host
+   * pressing Start — and unlike a raised ante it costs a guest nothing measurable, so nothing would
+   * ever surface it. Falsified by having any of these four touch the bag.
    */
-  it('never changes once stamped — seats, status, state and presence all leave them alone', () => {
+  it('seats, status, state and presence all leave the house rules alone', () => {
     const store = fixedStore();
     const res = store.create('uno', ada, 4, 'public', 0, { stack: true, playToLast: true });
     if (!res.ok) throw new Error(res.error);
@@ -318,6 +320,56 @@ describe('RoomStore — create + snapshot', () => {
       stack: true,
       playToLast: true,
     });
+  });
+
+  /**
+   * ...AND `setHouseRules` IS THE ONE THING THAT DOES. The other half of the narrowing: the guard
+   * above is only meaningful if something can still move them, or it is asserting that a feature
+   * does not exist.
+   *
+   * It works while the table is PLAYING, which is the whole point of the slice — a round in flight
+   * keeps what it was dealt with (asserted where that is observable, in `uno.test.ts`), and this
+   * writes the room the next deal will read.
+   */
+  it('setHouseRules is the one writer, and it works mid-game', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, { stack: true });
+    if (!res.ok) throw new Error(res.error);
+    const { roomId } = res;
+    store.setStatus('uno', roomId, 'playing');
+    store.setHouseRules('uno', roomId, { playToLast: true });
+    expect(store.snapshot('uno', roomId)?.meta.houseRules).toEqual({ playToLast: true });
+    // `rulesOf` is what the DEALER reads, so it must move with the snapshot — two readers of one
+    // field disagreeing is how a table gets dealt rules nobody can see.
+    expect(store.rulesOf('uno', roomId)).toEqual({ playToLast: true });
+  });
+
+  /**
+   * A RULE BAG ON THIS FRAME IS BOUNDED EXACTLY AS ONE AT CREATE — the same `sanitizeRules`, so
+   * there is one boundary rather than two that can disagree. Worth its own case because the create
+   * path's bounding test cannot see this one: a second sanitiser (or none) here would leave every
+   * assertion over there green while a browser wrote a kilobyte key into a PUBLIC listing.
+   */
+  it('bounds a hostile bag on the way in, the same way create does', () => {
+    const store = fixedStore();
+    const res = store.create('uno', ada, 4, 'public', 0, { stack: true });
+    if (!res.ok) throw new Error(res.error);
+    const { roomId } = res;
+    const set = (raw: unknown): Record<string, boolean> => {
+      store.setHouseRules('uno', roomId, raw);
+      return { ...store.snapshot('uno', roomId)?.meta.houseRules };
+    };
+    expect(set({ stack: false, crossStack: 'yes', playToLast: 1 })).toEqual({});
+    expect(set({ ['x'.repeat(33)]: true })).toEqual({});
+    for (const junk of [null, undefined, 42, 'stack', [{ stack: true }]]) expect(set(junk)).toEqual({});
+    expect(
+      Object.keys(set(Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`r${String(i)}`, true]))))
+    ).toHaveLength(16);
+    // A room that does not exist is a silent no-op rather than a throw — the shape every other
+    // mutator here has, because the gateway has already answered the caller.
+    expect(() => {
+      store.setHouseRules('uno', 'ZZZZ', { stack: true });
+    }).not.toThrow();
   });
 
   it('refuses a non-positive seat count', () => {

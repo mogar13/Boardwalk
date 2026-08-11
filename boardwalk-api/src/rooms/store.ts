@@ -47,7 +47,11 @@ interface RoomRecord {
   visibility: RoomVisibility;
   /** The stake every seat pays, stamped at create and never written again. See `RoomMeta`. */
   anteCents: number;
-  /** What the table plays by, stamped at create and never written again. See `RoomMeta`. */
+  /**
+   * What the table plays by. Stamped at create, and thereafter written by `setHouseRules` and
+   * NOTHING ELSE (plans/done/LIVE_HOUSE_RULES.md) — the ante's sibling, one writer short of it.
+   * A change lands at the next DEAL, because a dealt round carries its own stamped copy.
+   */
   houseRules: TableRules;
   status: RoomStatus;
   createdAt: number;
@@ -349,6 +353,28 @@ export class RoomStore {
     const room = this.get(gameId, roomId);
     if (room === undefined) return;
     room.status = status;
+  }
+
+  /**
+   * CHANGE WHAT THE TABLE PLAYS BY (plans/done/LIVE_HOUSE_RULES.md). The ONE writer of `houseRules`
+   * after `create`, and the reason the write-once guard is now narrower rather than gone: seats,
+   * status, state and presence must all still leave them alone, and this must be the only thing that
+   * does not. Authorization is the GATEWAY's, as everywhere in this file — host-only lives there,
+   * because only the gateway knows which uid a socket carries.
+   *
+   * IT DOES NOT REACH A ROUND IN FLIGHT, and it does not have to try. `deal` stamps the resolved
+   * rules onto the match, so a running game is played under what it was DEALT with; this writes the
+   * room, and the next deal reads the room. That is the whole "takes effect next round" mechanism —
+   * no schedule, no pending copy, nothing that can drift from what the lobby is showing.
+   *
+   * Sanitised through the SAME `sanitizeRules` the create path uses, so a rule bag arriving on this
+   * frame is bounded exactly as one arriving at create. A missing room is a silent no-op, matching
+   * every other mutator here: the gateway has already answered the caller.
+   */
+  setHouseRules(gameId: string, roomId: string, raw: unknown): void {
+    const room = this.get(gameId, roomId);
+    if (room === undefined) return;
+    room.houseRules = sanitizeRules(raw);
   }
 
   writePrivate(gameId: string, roomId: string, index: number, data: unknown): void {

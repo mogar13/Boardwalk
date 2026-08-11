@@ -193,7 +193,7 @@ function LobbyRoom({
   onExit: () => void;
   children?: ReactNode;
 }) {
-  const { seats, status, meta, isHost, setStatus } = useRoom();
+  const { seats, status, meta, isHost, setStatus, setHouseRules } = useRoom();
   const roomIdView = useRoomContext().identity.roomId;
   /**
    * ARRIVING AT A TABLE SITS YOU DOWN AT IT. Called here rather than at each entrance because there
@@ -302,7 +302,18 @@ function LobbyRoom({
           */}
             {meta !== null && ruleLabels.length > 0 && (
               <p className="text-secondary text-sm font-semibold">
-                House rules: {ruleLabels.join(' · ')}
+                {/*
+                  ONCE A ROUND IS LIVE, THIS LINE IS ABOUT THE NEXT ONE — and saying so is a
+                  correctness fix, not a nicety (plans/done/LIVE_HOUSE_RULES.md §4). It reads the
+                  ROOM, and the host can now change the room mid-game; the round in flight keeps
+                  what it was DEALT with. So during play the two differ for exactly as long as a
+                  change is pending, and an unqualified "House rules: Stacking" over a round dealt
+                  without it is a UI that lies in the ordinary way. The label is the whole fix: the
+                  OS still never reads the match's rules, because it does not need to know WHICH
+                  set is in force to say truthfully which one it is quoting.
+                */}
+                {status === 'playing' ? 'Next deal: ' : 'House rules: '}
+                {ruleLabels.join(' · ')}
               </p>
             )}
           </div>
@@ -332,7 +343,17 @@ function LobbyRoom({
 
             It renders null for a game declaring neither kind, so five of the six draw no button.
           */}
-            <GameRules manifest={manifest} tableRules={meta?.houseRules} />
+            {/*
+              The HOST gets toggles; everyone else gets the statement. `onChangeRules` is the whole
+              gate — absent means read-only, so a guest is never shown a control the referee would
+              refuse, which is the same rule that kept the toggles out of PR #91 entirely.
+            */}
+            <GameRules
+              manifest={manifest}
+              tableRules={meta?.houseRules}
+              live={status === 'playing'}
+              {...(isHost ? { onChangeRules: setHouseRules } : {})}
+            />
             <ExitGame onExit={onExit} />
           </div>
         </div>

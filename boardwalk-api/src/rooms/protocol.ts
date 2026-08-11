@@ -87,6 +87,20 @@ export type RequestMsg =
   | { t: 'setAi'; id: number; gameId: string; roomId: string; index: number; name: string | null }
   | { t: 'patchState'; id: number; gameId: string; roomId: string; data: unknown }
   | { t: 'setStatus'; id: number; gameId: string; roomId: string; status: RoomStatus }
+  /**
+   * CHANGE WHAT THE TABLE PLAYS BY, mid-game (plans/done/LIVE_HOUSE_RULES.md). Host-only, and the
+   * ONLY writer of `houseRules` after `create` — everything else still leaves them alone, which is
+   * what keeps "nobody changes the game under a player who already sat down" true.
+   *
+   * IT TAKES EFFECT AT THE NEXT DEAL, and there is no field here that says so. That is not an
+   * omission: `deal` stamps the resolved rules onto the match, so a round in flight is played under
+   * what it was DEALT with and no room-level write can reach it. Scheduling would mean a second copy
+   * of the rules that could drift from the room's.
+   *
+   * `unknown` for `create`'s reason — it arrives from a browser, and `sanitizeRules` in the store is
+   * the one place it is made safe. One boundary, not two that can disagree.
+   */
+  | { t: 'setHouseRules'; id: number; gameId: string; roomId: string; houseRules: unknown }
   | { t: 'writePrivate'; id: number; gameId: string; roomId: string; index: number; data: unknown }
   | { t: 'remove'; id: number; gameId: string; roomId: string }
   | { t: 'chatSend'; id: number; gameId: string; roomId: string; message: { uid: string; name: string; text: string } }

@@ -275,6 +275,10 @@ export class RoomGateway {
         return this.onPatchState(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), msg.data);
       case 'setStatus':
         return this.onSetStatus(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asStatus(msg.status));
+      case 'setHouseRules':
+        // Passed through raw, exactly as `create` passes it: the store is the one place a wire rule
+        // bag is bounded, so there is one sanitiser rather than two that can disagree.
+        return this.onSetHouseRules(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), msg.houseRules);
       case 'writePrivate':
         return this.onWritePrivate(conn, msg.id, asStr(msg.gameId), asStr(msg.roomId), asIndex(msg.index), msg.data);
       case 'subPrivate':
@@ -421,6 +425,28 @@ export class RoomGateway {
     this.broadcastRoom(gameId, roomId);
     // A started table leaves the index — the single most important of these fan-outs, because a
     // listing that outlives the deal sends joiners at a game already in progress.
+    this.broadcastOpen();
+  }
+
+  /**
+   * CHANGE WHAT THE TABLE PLAYS BY (plans/done/LIVE_HOUSE_RULES.md). Host-only — the decision, and
+   * the reasoning is in §1 of that plan: the invariant write-once protects is "the game you are
+   * playing right now cannot change beneath you", and that one is kept by `deal` stamping the match
+   * rather than by refusing the write. Guests never had a vote on the rules at create, so requiring
+   * one here would invent a power to defend an invariant that is not under threat.
+   *
+   * BOTH FAN-OUTS ARE LOAD-BEARING, for different readers. `broadcastRoom` is the ANNOUNCEMENT: the
+   * bag rides on `RoomMeta`, so every client at the table sees the new set the instant it changes,
+   * which is what makes host-only defensible (a rule that lands silently makes the rematch vote
+   * nominal). `broadcastOpen` is for strangers — `listOpen()` quotes `houseRules`, and "UNO" and
+   * "UNO with stacking" are different enough games to change whether somebody wants the chair.
+   */
+  private onSetHouseRules(conn: Conn, id: number, gameId: string, roomId: string, houseRules: unknown): void {
+    if (!this.store.has(gameId, roomId)) return this.reply(conn, id, { ok: false, error: 'No such table.' });
+    if (this.store.hostOf(gameId, roomId) !== conn.uid) return this.reply(conn, id, { ok: false, error: 'Host only.' });
+    this.store.setHouseRules(gameId, roomId, houseRules);
+    this.reply(conn, id, { ok: true });
+    this.broadcastRoom(gameId, roomId);
     this.broadcastOpen();
   }
 
